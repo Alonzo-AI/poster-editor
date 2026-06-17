@@ -1,25 +1,196 @@
 {
   "id": "magazine",
   "name": "Magazine",
-  "version": 1,
-  "canvas": { "width": 1080, "height": 1350, "background": "#0b0b0d" },
+  "version": 8,
+  "canvas": {
+    "width": 1080,
+    "height": 1350,
+    "background": "#0b0b0d"
+  },
   "deco": {
-    "html": "<div style=\"left:0;top:0;width:100%;height:24%;z-index:10;background:linear-gradient(to bottom, rgba(0,0,0,.74) 0%, transparent 100%);\"></div><div style=\"left:0;bottom:0;width:100%;height:66%;z-index:10;background:linear-gradient(to top, #000 0%, rgba(0,0,0,.88) 38%, transparent 100%);\"></div><div style=\"inset:0;width:100%;height:100%;z-index:9;background:radial-gradient(ellipse at 58% 36%, transparent 0 46%, rgba(0,0,0,.18) 78%, rgba(0,0,0,.42) 100%);\"></div>"
+    "html": "<div style=\"left:0;bottom:0;width:100%;height:66%;z-index:10;background:linear-gradient(to top, #000 0%, rgba(0,0,0,.88) 38%, transparent 100%);\"></div><div style=\"inset:0;width:100%;height:100%;z-index:9;background:radial-gradient(ellipse at 58% 36%, transparent 0 46%, rgba(0,0,0,.18) 78%, rgba(0,0,0,.42) 100%);\"></div>"
   },
   "textRules": {
-    "autoFit": ["heroNumber", "heroDesc", "playerName", "callout"],
-    "stats": { "autoFit": true, "maxSize": 40 }
+    "autoFit": [
+      "heroNumber",
+      "heroDesc",
+      "playerName",
+      "callout"
+    ],
+    "stats": {
+      "autoFit": true,
+      "maxSize": 40
+    }
+  },
+  "settings": {
+    "logo": {
+      "opacity": 1,
+      "scale": 1
+    },
+    "playerImage": {
+      "fitToFrame": true,
+      "fit": "cover",
+      "cropX": 0.5,
+      "cropY": 0.36,
+      "zoom": 1
+    }
   },
   "layers": [
-    { "id": "player", "type": "image", "bind": "player", "x": 0, "y": 0, "w": 1080, "h": 1350, "fit": "cover", "z": 2 },
-    { "id": "logo", "type": "image", "bind": "logo", "x": 900, "y": 55, "w": 120, "h": 120, "z": 21 },
-    { "id": "playerName", "type": "text", "bind": "playerName", "x": 80, "y": 540, "w": 920, "size": 48, "color": "onPhoto", "font": "disp", "ls": 1, "underline": false, "underlineW": 5, "underlineOffset": 8, "z": 20 },
-    { "id": "playerMeta", "type": "text", "bind": "playerMeta", "x": 80, "y": 596, "w": 920, "size": 23, "color": "secondary", "font": "cond", "weight": 600, "ls": 2, "z": 20 },
-    { "id": "eyebrow", "type": "text", "bind": "eyebrow", "x": 80, "y": 632, "w": 920, "size": 26, "color": "secondary", "font": "cond", "ls": 6, "weight": 600, "z": 20 },
-    { "id": "hero", "type": "text", "bind": "heroNumber", "x": 70, "y": 702, "w": 760, "h": 310, "size": 300, "color": "onPhoto", "font": "disp", "lh": 0.95, "z": 20 },
-    { "id": "heroDesc", "type": "text", "bind": "heroDesc", "x": 80, "y": 1028, "w": 860, "h": 80, "size": 37, "color": "onPhoto", "font": "cond", "weight": 600, "ls": 2, "lh": 1.05, "z": 20 },
-    { "id": "stat1", "type": "text", "bind": "stat1", "kind": "stat", "x": 80, "y": 1130, "w": 440, "h": 80, "size": 40, "color": "onPhoto", "font": "cond", "z": 20 },
-    { "id": "stat2", "type": "text", "bind": "stat2", "kind": "stat", "x": 540, "y": 1130, "w": 440, "h": 80, "size": 40, "color": "onPhoto", "font": "cond", "z": 20 },
-    { "id": "callout", "type": "text", "bind": "callout", "x": 0, "y": 1288, "w": 1080, "h": 50, "size": 30, "color": "onCallout", "bg": "primary", "pad": "16px 0", "font": "cond", "weight": 700, "ls": 3, "align": "center", "z": 20 }
+    {
+      "id": "player",
+      "type": "image",
+      "bind": "player",
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 1350,
+      "fit": "cover",
+      "zoom": 1,
+      "cropX": 0.5,
+      "cropY": 0.36,
+      "z": 2
+    },
+    {
+      "id": "logoPlate",
+      "type": "block",
+      "x": 770,
+      "y": 26,
+      "w": 250,
+      "h": 96,
+      "fill": "#f8f6f1",
+      "radius": 8,
+      "z": 20
+    },
+    {
+      "id": "logo",
+      "type": "image",
+      "bind": "logo",
+      "x": 790,
+      "y": 40,
+      "w": 210,
+      "h": 68,
+      "fit": "contain",
+      "z": 21
+    },
+    {
+      "id": "playerName",
+      "type": "text",
+      "bind": "playerName",
+      "x": 80,
+      "y": 68,
+      "w": 460,
+      "size": 72,
+      "color": "onPhoto",
+      "font": "disp",
+      "ls": 1,
+      "underline": true,
+      "underlineW": 5,
+      "underlineOffset": 8,
+      "z": 22
+    },
+    {
+      "id": "playerMeta",
+      "type": "text",
+      "bind": "playerMeta",
+      "x": 80,
+      "y": 152,
+      "w": 760,
+      "size": 30,
+      "color": "secondary",
+      "font": "cond",
+      "weight": 600,
+      "ls": 2,
+      "z": 22
+    },
+    {
+      "id": "eyebrow",
+      "type": "text",
+      "bind": "eyebrow",
+      "x": 80,
+      "y": 196,
+      "w": 760,
+      "size": 34,
+      "color": "secondary",
+      "font": "cond",
+      "ls": 6,
+      "weight": 600,
+      "z": 22
+    },
+    {
+      "id": "hero",
+      "type": "text",
+      "bind": "heroNumber",
+      "x": 70,
+      "y": 702,
+      "w": 760,
+      "h": 310,
+      "size": 300,
+      "color": "onPhoto",
+      "font": "disp",
+      "lh": 0.95,
+      "z": 20
+    },
+    {
+      "id": "heroDesc",
+      "type": "text",
+      "bind": "heroDesc",
+      "x": 80,
+      "y": 1028,
+      "w": 860,
+      "h": 80,
+      "size": 37,
+      "color": "onPhoto",
+      "font": "cond",
+      "weight": 600,
+      "ls": 2,
+      "lh": 1.05,
+      "z": 20
+    },
+    {
+      "id": "stat1",
+      "type": "text",
+      "bind": "stat1",
+      "kind": "stat",
+      "x": 80,
+      "y": 1130,
+      "w": 440,
+      "h": 80,
+      "size": 40,
+      "color": "onPhoto",
+      "font": "cond",
+      "z": 20
+    },
+    {
+      "id": "stat2",
+      "type": "text",
+      "bind": "stat2",
+      "kind": "stat",
+      "x": 540,
+      "y": 1130,
+      "w": 440,
+      "h": 80,
+      "size": 40,
+      "color": "onPhoto",
+      "font": "cond",
+      "z": 20
+    },
+    {
+      "id": "callout",
+      "type": "text",
+      "bind": "callout",
+      "x": 0,
+      "y": 1288,
+      "w": 1080,
+      "h": 50,
+      "size": 30,
+      "color": "onCallout",
+      "bg": "primary",
+      "pad": "16px 0",
+      "font": "cond",
+      "weight": 700,
+      "ls": 3,
+      "align": "center",
+      "z": 20
+    }
   ]
 }

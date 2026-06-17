@@ -14,6 +14,8 @@
 <script src="renderer/render-engine.js"></script>
 <script src="renderer/template-loader.js"></script>
 <script src="renderer/photo-palette.js"></script>
+<script src="renderer/magazine-header-colors.js"></script>
+<script src="stories.players.js"></script>
 <style>
   :root{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
@@ -283,16 +285,17 @@ function salukisCleanStatSlots(){
   }));
 }
 const SALUKIS_CLEAN_STAT_SLOTS = salukisCleanStatSlots();
-const SALUKIS_DARK_PANEL_H = 260;
+const SALUKIS_DARK_PANEL_H = 318;
 const SALUKIS_DARK_PANEL_TOP = SH - SALUKIS_DARK_PANEL_H;
 function salukisDarkPanelSlots(){
   const top = SALUKIS_DARK_PANEL_TOP;
-  const rowHeights = [110, 58, 92];
+  const rowHeights = [132, 70, 116];
   const [statsH, calloutH, footerH] = rowHeights;
-  const stats = { y: top, h: statsH };
+  const statsInsetTop = 12;
+  const stats = { y: top + statsInsetTop, h: statsH - statsInsetTop };
   const callout = { y: top + statsH, h: calloutH };
   const footer = { y: top + statsH + calloutH, h: footerH };
-  const boxH = 46;
+  const boxH = 48;
   const boxW = 896;
   const calloutBox = {
     x: Math.round((SW - boxW) / 2),
@@ -303,8 +306,9 @@ function salukisDarkPanelSlots(){
   return { stats, callout, footer, calloutBox };
 }
 const SALUKIS_DARK_PANEL_SLOTS = salukisDarkPanelSlots();
-const SALUKIS_LAYOUT_VERSION = 3;
-const VAPOR_LAYOUT_VERSION = 2;
+const SALUKIS_LAYOUT_VERSION = 5;
+const MAGAZINE_LAYOUT_VERSION = 8;
+const VAPOR_LAYOUT_VERSION = 3;
 const COLOR_PRESETS = [
   ["#9D2235","#FFFFFF"], ["#041E42","#C8102E"], ["#154734","#FFB81C"],
   ["#0C2340","#FF7900"], ["#500000","#FFFFFF"], ["#003594","#FFB81C"],
@@ -353,6 +357,9 @@ const state = {
   vaporGlassSettings: { mode:"frosted", preset:"frosted", color:"#ffffff", opacity:0.08, borderOpacity:0.11, blur:24 },
   salukisLayoutMeta: {},  // templateId -> layout schema version (one-time migrations only)
   vaporLayoutMeta: {},
+  magazineLayoutMeta: { v: 0 },
+  magazineHeaderColors: null,
+  salukisDarkHeaderColors: null,
 };
 
 // In headless usage, __RENDER_API_V3__.setPayload can run before init() finishes
@@ -400,6 +407,7 @@ function roleColor(role){
   }
 }
 function hexToRgb(h){ h=h.replace('#',''); if(h.length===3)h=h.split('').map(x=>x+x).join(''); const n=parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function rgbToHex(r,g,b){ return `#${[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('')}`; }
 function lum(hex){ const [r,g,b]=hexToRgb(hex); return (0.299*r+0.587*g+0.114*b)/255; }
 function rgba(hex,a){ const [r,g,b]=hexToRgb(hex); return `rgba(${r},${g},${b},${a})`; }
 /* a readable text color over a given background hex */
@@ -466,19 +474,18 @@ broadcast:{ name:"Broadcast",
 magazine:{ name:"Magazine",
   stageBg:()=>`#0b0b0d`,
   deco:()=>`
-    <div style="left:0;top:0;width:100%;height:24%;z-index:10;
-      background:linear-gradient(to bottom, ${rgba('#000000',.74)} 0%, transparent 100%);"></div>
     <div style="left:0;bottom:0;width:100%;height:66%;z-index:10;
       background:linear-gradient(to top, #000 0%, rgba(0,0,0,.88) 38%, transparent 100%);"></div>
     <div style="inset:0;width:100%;height:100%;z-index:9;
       background:radial-gradient(ellipse at 58% 36%, transparent 0 46%, ${rgba('#000000',.18)} 78%, ${rgba('#000000',.42)} 100%);"></div>`,
   layers:{
     bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    player:  img({bind:"player",x:0,y:0,w:1080,h:1350,fit:"cover",z:2}),
-    logo:    img({bind:"logo",x:900,y:55,w:120,h:120,z:21}),
-    playerName:txt({bind:"playerName",x:80,y:540,w:920,size:48,color:"onPhoto",font:F.disp,ls:1,underline:true,underlineW:5,underlineOffset:8,z:20}),
-    playerMeta:txt({bind:"playerMeta",x:80,y:596,w:920,size:23,color:"secondary",font:F.cond,weight:600,ls:2,z:20}),
-    eyebrow: txt({bind:"eyebrow",x:80,y:632,w:920,size:26,color:"secondary",font:F.cond,ls:6,weight:600,z:20}),
+    player:  img({bind:"player",x:0,y:0,w:1080,h:1350,fit:"cover",zoom:1,cropX:0.5,cropY:0.36,z:2}),
+    logoPlate:block({x:770,y:26,w:250,h:96,fill:"#f8f6f1",radius:8,z:20}),
+    logo:    img({bind:"logo",x:790,y:40,w:210,h:68,fit:"contain",z:21}),
+    playerName:txt({bind:"playerName",x:80,y:68,w:460,size:72,color:"onPhoto",font:F.disp,ls:1,underline:true,underlineW:5,underlineOffset:8,z:22}),
+    playerMeta:txt({bind:"playerMeta",x:80,y:152,w:760,size:30,color:"secondary",font:F.cond,weight:600,ls:2,z:22}),
+    eyebrow: txt({bind:"eyebrow",x:80,y:196,w:760,size:34,color:"secondary",font:F.cond,ls:6,weight:600,z:22}),
     hero:    txt({bind:"heroNumber",x:70,y:702,w:760,size:300,color:"onPhoto",font:F.disp,lh:.95,z:20}),
     heroDesc:txt({bind:"heroDesc",x:80,y:1028,w:860,h:80,size:37,color:"onPhoto",font:F.cond,weight:600,ls:2,lh:1.05,z:20}),
     stat1:   txt({bind:"stat1",kind:"stat",x:80,y:1130,w:440,size:40,color:"onPhoto",font:F.cond,z:20}),
@@ -807,18 +814,18 @@ vapor_motion: { name: "Vapor Motion",
   layers: {
     bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1, opacity: 0.25}),
     player:     img({bind:"player", x:0, y:0, w:1080, h:1350, fit:"cover", z:3, zoom:1, cropX:0.5, cropY:0.5}),
-    glassCard:  glass({x:60, y:740, w:960, h:440, z:10}),
-    logo:       img({bind:"logo", x:100, y:770, w:88, h:88, z:15}),
-    eyebrow:    txt({bind:"eyebrow", x:210, y:768, w:400, size:22, color:"secondary", font:F.sans, weight:600, ls:4, italic:true, z:15}),
-    playerName: txt({bind:"playerName", x:210, y:794, w:400, size:50, color:"white", font:F.disp, italic:true, z:15}),
-    playerMeta: txt({bind:"playerMeta", x:214, y:844, w:400, size:20, color:"muted", font:F.cond, ls:2, z:15}),
-    hero:       txt({bind:"heroNumber", x:700, y:762, w:280, h:100, size:118, color:"secondary", font:F.bebas, align:"right", z:15, lh:0.9}),
-    heroDesc:   txt({bind:"heroDesc", x:660, y:828, w:320, h:68, size:17, color:"white", font:F.sans, weight:600, align:"right", z:15, lh:1.25}),
-    stat1:      txt({bind:"stat1", kind:"stat", x:100, y:880, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
-    stat2:      txt({bind:"stat2", kind:"stat", x:100, y:962, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
-    stat3:      txt({bind:"stat3", kind:"stat", x:560, y:880, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
-    callout:    txt({bind:"callout", x:560, y:964, w:400, h:68, size:20, color:"black", bg:"secondary", pad:"12px 14px", radius:12, font:F.cond, weight:700, align:"center", z:15}),
-    footer:     txt({bind:"footer", x:60, y:1048, w:960, h:40, size:16, color:"muted", font:F.sans, ls:3, align:"center", z:15}),
+    glassCard:  glass({x:60, y:774, w:960, h:440, z:10}),
+    logo:       img({bind:"logo", x:100, y:804, w:88, h:88, z:15}),
+    eyebrow:    txt({bind:"eyebrow", x:210, y:802, w:400, size:22, color:"secondary", font:F.sans, weight:600, ls:4, italic:true, z:15}),
+    playerName: txt({bind:"playerName", x:210, y:828, w:400, size:50, color:"white", font:F.disp, italic:true, z:15}),
+    playerMeta: txt({bind:"playerMeta", x:214, y:878, w:400, size:20, color:"muted", font:F.cond, ls:2, z:15}),
+    hero:       txt({bind:"heroNumber", x:700, y:796, w:280, h:100, size:118, color:"secondary", font:F.bebas, align:"right", z:15, lh:0.9}),
+    heroDesc:   txt({bind:"heroDesc", x:660, y:862, w:320, h:68, size:17, color:"white", font:F.sans, weight:600, align:"right", z:15, lh:1.25}),
+    stat1:      txt({bind:"stat1", kind:"stat", x:100, y:914, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
+    stat2:      txt({bind:"stat2", kind:"stat", x:100, y:996, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
+    stat3:      txt({bind:"stat3", kind:"stat", x:560, y:914, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
+    callout:    txt({bind:"callout", x:560, y:998, w:400, h:68, size:20, color:"black", bg:"secondary", pad:"12px 14px", radius:12, font:F.cond, weight:700, align:"center", z:15}),
+    footer:     txt({bind:"footer", x:60, y:1082, w:960, h:40, size:16, color:"muted", font:F.sans, ls:3, align:"center", z:15}),
   }},
 
 /* ---------------- SALUKIS CLEAN ---------------- */
@@ -852,18 +859,19 @@ salukis_dark: { name: "Salukis Dark",
     <style>
       #stage[data-template="salukis_dark"] .layer[data-id="playerName"],
       #stage[data-template="salukis_dark"] .layer[data-id="playerMeta"] { font-family: ${F.bebas} !important; text-transform: uppercase !important; }
-      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] { flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 2px !important; overflow: hidden !important; text-align: center !important; padding: 0 8px !important; box-sizing: border-box !important; }
-      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] .s-n { font-family: ${F.bebas} !important; font-weight: 400 !important; line-height: 0.88 !important; width: 100% !important; color: ${state.colors.onPrimary || onColor(state.colors.primary)} !important; }
+      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] { flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 2px !important; overflow: hidden !important; text-align: center !important; padding: 8px 8px 0 !important; box-sizing: border-box !important; }
+      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] .s-n { font-family: ${F.bebas} !important; font-weight: 400 !important; line-height: 0.94 !important; width: 100% !important; color: ${state.colors.onPrimary || onColor(state.colors.primary)} !important; }
       #stage[data-template="salukis_dark"] .layer[data-id^="stat"] .s-l { font-family: ${F.cond} !important; font-size: 16px !important; font-weight: 700 !important; letter-spacing: 0.4px !important; text-transform: uppercase !important; max-width: 96% !important; line-height: 1.1 !important; flex-shrink: 0 !important; margin-top: 2px !important; color: ${state.colors.onPrimaryMuted || state.colors.onPrimary || onColor(state.colors.primary)} !important; opacity: 0.92 !important; }
       #stage[data-template="salukis_dark"] .layer[data-id="callout"],
       #stage[data-template="salukis_dark"] .layer[data-id="footer"] { display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; }
     </style>
-    <div style="left:0; top:0; width:270px; height:125px; background:#ffffff; z-index:4;"></div>
+    <div style="left:0; top:0; width:252px; height:112px; background:#f7f5ef; z-index:4;"></div>
+    <div style="right:0; top:0; width:46%; height:190px; z-index:4; background:linear-gradient(270deg, rgba(8,12,18,0.82) 0%, rgba(8,12,18,0.58) 44%, rgba(8,12,18,0) 100%);"></div>
     <div style="left:0; bottom:0; width:100%; height:${SALUKIS_DARK_PANEL_H}px; background:${state.colors.primary}; z-index:10;"></div>`,
   layers: {
-    logo:       img({bind:"logo", x:15, y:12, w:240, h:100, z:20}),
-    playerName: txt({bind:"playerName", x:320, y:40, w:700, size:60, color:"white", font:F.bebas, weight:400, align:"right", hollow:true, strokeW:2, ls:2, textTransform:"uppercase", z:20}),
-    playerMeta: txt({bind:"playerMeta", x:320, y:108, w:700, size:30, color:"white", font:F.bebas, weight:400, ls:2, align:"right", textTransform:"uppercase", z:20}),
+    logo:       img({bind:"logo", x:16, y:14, w:220, h:82, fit:"contain", z:20}),
+    playerName: txt({bind:"playerName", x:618, y:22, w:372, size:56, color:"white", font:F.bebas, weight:400, align:"right", ls:1, hollow:false, textTransform:"uppercase", z:20}),
+    playerMeta: txt({bind:"playerMeta", x:654, y:86, w:336, size:24, color:"white", font:F.bebas, weight:400, ls:2, align:"right", textTransform:"uppercase", z:20}),
     player:     img({bind:"player", x:0, y:0, w:1080, h:1350, fit:"cover", zoom:1, cropX:0.5, cropY:0.5, z:2}),
     stat1:      txt({bind:"stat1", kind:"stat", statStack:true, x:0, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
     stat2:      txt({bind:"stat2", kind:"stat", statStack:true, x:360, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
@@ -1179,6 +1187,62 @@ function shade(hex,pct){
   return `#${[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('')}`;
 }
 
+function blendHexOver(fgHex, bgHex, alpha){
+  const a=Math.max(0, Math.min(1, alpha));
+  const [fr,fg,fb]=hexToRgb(fgHex);
+  const [br,bg,bb]=hexToRgb(bgHex);
+  const mix=(f,b)=>Math.round((f*a)+(b*(1-a)));
+  return rgbToHex(mix(fr,br), mix(fg,bg), mix(fb,bb));
+}
+
+function vaporMotionSurfaceHex(){
+  const vg=vaporGlassSettingsOf();
+  const base=resolveGlassColor(vg.color);
+  if(vg.mode==="solid") return base;
+  const under=state.colors.contrast || shade(state.colors.primary || "#0b0713", -72);
+  const alpha=Math.max(0.46, Math.min(0.82, (vg.opacity ?? 0.08) + 0.42));
+  return blendHexOver(base, under, alpha);
+}
+
+function vaporMotionLayerTokens(){
+  const c=state.colors;
+  const surface=vaporMotionSurfaceHex();
+  const body=pickReadable([c.onPrimary, c.onPhoto, "#FFFFFF", "#111111"], surface, 4.5);
+  const bodyAlt=body.toLowerCase()==="#ffffff" ? shade(body, -24) : shade(body, 24);
+  const muted=pickReadable([c.onPrimaryMuted, c.secondary, bodyAlt, body], surface, 3);
+  const accent=pickReadable([c.secondary, c.primary, c.onPhotoMuted, c.onPhoto, body], surface, 3.5);
+  const buttonBg=pickReadable([c.primary, c.secondary, c.calloutBg || c.primary, accent], surface, 1.8);
+  const buttonText=pickReadable([c.onCallout, c.onPrimary, "#111111", "#FFFFFF"], buttonBg, 4.5);
+  return { body, muted, accent, buttonBg, buttonText };
+}
+
+function vaporMotionTextColorForLayer(id){
+  const t=vaporMotionLayerTokens();
+  switch(id){
+    case "eyebrow":
+    case "hero":
+      return t.accent;
+    case "playerName":
+    case "heroDesc":
+    case "stat1":
+    case "stat2":
+    case "stat3":
+      return t.body;
+    case "playerMeta":
+    case "footer":
+      return t.muted;
+    case "callout":
+      return t.buttonText;
+    default:
+      return null;
+  }
+}
+
+function vaporMotionBgColorForLayer(id){
+  if(id==="callout") return vaporMotionLayerTokens().buttonBg;
+  return null;
+}
+
 /* which bind keys are plain text inputs shown in the panel */
 const TEXT_FIELDS = [
   ["teamName","Team name"],["playerName","Player name"],
@@ -1352,6 +1416,31 @@ function applyHypeLowerThirdDefault(force=false){
   if(L.stat2) Object.assign(L.stat2,{x:580,y:1134,w:430,size:42,z:21,hidden:false});
   if(L.callout) Object.assign(L.callout,{x:0,y:1234,w:1080,size:22,z:21,hidden:false});
 }
+function applyMagazineLayerFromDef(L, def, id){
+  const d=def[id], g=L[id];
+  if(!d||!g) return;
+  g.x=d.x; g.y=d.y; g.w=d.w;
+  if(d.h!=null) g.h=d.h;
+  if(d.size!=null) g.size=d.size;
+  if(d.z!=null) g.z=d.z;
+  if(d.fit) g.fit=d.fit;
+  if(d.zoom!=null) g.zoom=d.zoom;
+  if(d.cropX!=null) g.cropX=d.cropX;
+  if(d.cropY!=null) g.cropY=d.cropY;
+  g.hidden=false;
+}
+function applyMagazineLayoutDefault(force=false){
+  if(state.template!=="magazine") return;
+  if(!state.magazineLayoutMeta) state.magazineLayoutMeta={ v:0 };
+  const L=ensureLayout(), def=layersOf();
+  const version=state.magazineLayoutMeta.v||0;
+  const legacyNameBlock=(L.playerName?.y??0)>=400;
+  const legacyLogo=(L.logo?.w??0)>=200 || (L.logo?.h??0)>140;
+  if(!force && version>=MAGAZINE_LAYOUT_VERSION && !legacyNameBlock && !legacyLogo) return;
+  const keys=["player","logoPlate","logo","playerName","playerMeta","eyebrow"];
+  for(const id of keys) applyMagazineLayerFromDef(L, def, id);
+  state.magazineLayoutMeta.v=MAGAZINE_LAYOUT_VERSION;
+}
 function neoBrutalistTextColorInvalid(id, g, def){
   if(def.type!=="text") return false;
   const c=g.color ?? def.color;
@@ -1396,6 +1485,9 @@ function applySalukisLayerFromDef(L, def, id){
   if(d.size!=null) g.size=d.size;
   if(d.font) g.font=d.font;
   if(d.align) g.align=d.align;
+  if(d.ls!=null) g.ls=d.ls;
+  if(d.color) g.color=d.color;
+  if(d.z!=null) g.z=d.z;
   if(d.hollow!=null) g.hollow=!!d.hollow;
   if(d.strokeW!=null) g.strokeW=d.strokeW;
   if(d.textTransform) g.textTransform=d.textTransform;
@@ -1433,6 +1525,9 @@ function applySalukisLayoutDefault(force=false){
   const hasSavedGeometry=keys.some(id=>L[id] && L[id].x!=null);
   if(!force && hasSavedGeometry){
     seedMissing();
+    if(t==="salukis_dark" && version<SALUKIS_LAYOUT_VERSION){
+      for(const id of ["logo","playerName","playerMeta"]) applySalukisLayerFromDef(L, def, id);
+    }
     meta[t]=SALUKIS_LAYOUT_VERSION;
     scheduleSave();
     return;
@@ -1571,8 +1666,10 @@ function resetLayout(){
   ensureLayout();
   applyBroadcastPhotoDefault(true);
   applyHypeLowerThirdDefault(true);
+  applyMagazineLayoutDefault(true);
   applyNeoBrutalistLayoutDefault(true);
   applySalukisLayoutDefault(true);
+  applyTemplateHeaderColors();
   select(null);
   buildTextFields();
   render();
@@ -1654,12 +1751,16 @@ function switchTemplate(id){
   const prev=state.template;
   if(prev==="spotlight"&&next!=="spotlight") snapshotSpotlightLayout();
   state.template=next;
+  if(next!=="magazine") state.magazineHeaderColors=null;
+  if(next!=="salukis_dark") state.salukisDarkHeaderColors=null;
   ensureLayout();
   applyBroadcastPhotoDefault();
   applyHypeLowerThirdDefault();
+  if(next==="magazine") applyMagazineLayoutDefault();
   if(next==="neo_brutalist") applyNeoBrutalistLayoutDefault();
   if(next==="salukis_clean"||next==="salukis_dark") applySalukisLayoutDefault();
-  if(next==="magazine" && shouldUsePlayerPalette(next)) applyPaletteFromPlayer();
+  if(shouldUsePlayerPalette(next)) applyPaletteFromPlayer();
+  else applyTemplateHeaderColors();
   if(next==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
   select(null);
   buildTplChips();
@@ -1702,6 +1803,35 @@ function applyTextUnderline(el, def, g){
   }
 }
 
+/** Soft opposite-value halo on Magazine header glyphs for busy photo backgrounds. */
+function magazineHeaderTextShadow(fontSize, textColor){
+  const s=Math.max(12, fontSize||30);
+  const edge=Math.max(1, Math.round(s*0.035));
+  const blur=Math.max(3, Math.round(s*0.09));
+  const fade=Math.max(6, Math.round(s*0.16));
+  const darkText=textColor && lum(textColor)<0.35;
+  const edgeC=darkText?"rgba(255,255,255,0.92)":"rgba(0,0,0,0.86)";
+  const midC=darkText?"rgba(255,248,232,0.7)":"rgba(0,0,0,0.64)";
+  const farC=darkText?"rgba(255,248,232,0.45)":"rgba(0,0,0,0.4)";
+  const ring=[];
+  for(const [dx,dy] of [[-1,-1],[0,-1],[1,-1],[-1,0],[1,0],[-1,1],[0,1],[1,1]]){
+    ring.push(`${dx*edge}px ${dy*edge}px 0 ${edgeC}`);
+  }
+  ring.push(`0 ${edge}px ${blur}px ${midC}`);
+  ring.push(`0 ${edge*2}px ${fade}px ${farC}`);
+  return ring.join(", ");
+}
+
+function salukisDarkHeaderTextShadow(fontSize, textColor){
+  const s=Math.max(12, fontSize||30);
+  const edge=Math.max(1, Math.round(s*0.03));
+  const blur=Math.max(2, Math.round(s*0.07));
+  const darkText=textColor && lum(textColor)<0.35;
+  const edgeC=darkText?"rgba(255,255,255,0.7)":"rgba(5,8,14,0.92)";
+  const blurC=darkText?"rgba(255,255,255,0.3)":"rgba(5,8,14,0.66)";
+  return `0 ${edge}px ${blur}px ${blurC}, ${edge}px 0 0 ${edgeC}, -${edge}px 0 0 ${edgeC}, 0 -${edge}px 0 ${edgeC}`;
+}
+
 function render(){
   const t = tpl();
   const L = ensureLayout();
@@ -1730,8 +1860,10 @@ function render(){
     let layerOpacity = (g.opacity!=null?g.opacity:1);
     if(def.type==="image" && def.bind==="logo"){
       const ls=logoSettingsOf(state.template);
-      displayW=Math.round(def.w*ls.scale);
-      displayH=Math.round((def.h??def.w)*ls.scale);
+      const baseW=g.w ?? def.w;
+      const baseH=g.h ?? def.h ?? def.w;
+      displayW=Math.round(baseW*ls.scale);
+      displayH=Math.round(baseH*ls.scale);
       layerOpacity=ls.opacity;
     }
     el.style.width = displayW+"px";
@@ -1773,11 +1905,24 @@ function render(){
       applyTextUnderline(el, def, g);
       const hollow=!!(g.hollow ?? def.hollow);
       const strokeW=g.strokeW ?? def.strokeW ?? 2;
+      const dynamicHeaderColor=
+        (state.template==="magazine" && state.magazineHeaderColors?.[id]) ||
+        (state.template==="salukis_dark" && state.salukisDarkHeaderColors?.[id]);
+      const vaporDynamicColor=state.template==="vapor_motion" ? vaporMotionTextColorForLayer(id) : null;
+      const textColor=dynamicHeaderColor || vaporDynamicColor || roleColor(g.color || def.color);
       if(hollow){
         el.style.color="transparent";
-        el.style.webkitTextStroke=`${strokeW}px ${roleColor(g.color || def.color)}`;
+        el.style.webkitTextStroke=`${strokeW}px ${textColor}`;
+        el.style.textShadow="";
       } else {
-        el.style.color = roleColor(g.color || def.color);
+        el.style.color = textColor;
+        if(state.template==="magazine" && ["playerName","playerMeta","eyebrow"].includes(id)){
+          el.style.textShadow=magazineHeaderTextShadow(size, textColor);
+        } else if(state.template==="salukis_dark" && ["playerName","playerMeta"].includes(id)){
+          el.style.textShadow=salukisDarkHeaderTextShadow(size, textColor);
+        } else {
+          el.style.textShadow="";
+        }
       }
       el.style.textAlign = g.align ?? def.align ?? "left";
       el.style.lineHeight = def.lh ?? 1.0;
@@ -1785,7 +1930,7 @@ function render(){
       el.style.textTransform = g.textTransform ?? def.textTransform ?? "none";
       el.style.height = (g.h? g.h+"px":"auto");
       if(def.type==="text" && (g.h || def.h)) el.style.overflow = "hidden";
-      if(def.bg){ el.style.background = roleColor(def.bg); }
+      if(def.bg){ el.style.background = vaporMotionBgColorForLayer(id) || roleColor(def.bg); }
       if(def.pad){ el.style.padding = def.pad; }
       if(def.radius){ el.style.borderRadius = def.radius+"px"; }
       if(def.outline){ el.style.border = `3px solid ${roleColor(def.color)}`; el.style.background="transparent"; }
@@ -1808,18 +1953,20 @@ function render(){
         el.style.letterSpacing=ls+"px";
         const numW=g.weight ?? def.weight ?? 900;
         const n=el.querySelector(".s-n"), l=el.querySelector(".s-l");
+        const vaporStatColor=state.template==="vapor_motion" ? vaporMotionTextColorForLayer(id) : null;
+        const vaporStatLabelColor=state.template==="vapor_motion" ? vaporMotionLayerTokens().muted : null;
         if(n){
           n.style.fontWeight=numW;
           n.style.fontSize="1em";
           n.style.fontStyle="inherit";
-          n.style.color=roleColor(g.color || def.color || "white");
+          n.style.color=vaporStatColor || roleColor(g.color || def.color || "white");
           n.style.textTransform=tt==="uppercase"?"none":tt;
         }
         if(l){
           l.style.fontWeight=Math.max(400, Math.round(numW*0.55));
           l.style.fontSize=stacked?".58em":".42em";
           l.style.fontStyle="inherit";
-          l.style.color=roleColor(g.labelColor || g.color || def.color || "white");
+          l.style.color=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
           l.style.opacity=stacked?0.78:0.92;
           l.style.textTransform=tt;
           if(stacked) l.style.letterSpacing="0.04em";
@@ -2026,7 +2173,7 @@ function attachLayerEvents(el, def, g){
     applyGeo(el, def, gg);
   });
   // helper so pan math can read the original width consistently
-  el.addEventListener("pointerup",()=>{ if(drag&&drag.id===el.dataset.id){ drag=null; clearAlignGuides(); syncInspector(); }});
+  el.addEventListener("pointerup",()=>{ if(drag&&drag.id===el.dataset.id){ const movedId=drag.id; drag=null; clearAlignGuides(); syncInspector(); scheduleTemplateHeaderColors(movedId); }});
   el.addEventListener("dblclick",(e)=>{
     e.preventDefault();
     if(def.type==="image"){ toggleCrop(el.dataset.id); return; }
@@ -2049,7 +2196,8 @@ function applyGeo(el, def, g){
   if(def.type==="image"){
     el.style.height=(g.h ?? g.w)+"px";
     const c=el.querySelector(".imgcontent");
-    if(c) applyImageStyle(c, def, g, state.images[def.bind]);
+    const im=state.images[def.bind];
+    if(c && im) applyImageStyle(c, def, g, im);
   } else if(def.type==="glass"){
     applyGlassStyle(el, def, g);
   } else if(def.type==="block"){
@@ -2213,12 +2361,12 @@ function syncInspector(){
   if(def.type==="image"){
     $("iFit").querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>{ g.fit=b.dataset.fit; render(); });
     $("iCrop").onclick=()=>toggleCrop(id);
-    $("iZoom").oninput=e=>{ g.zoom=(+e.target.value)/100; $("ivz").textContent=e.target.value+"%"; applyGeo(el(),def,g); };
-	    $("iFlipH").onclick=()=>{ g.flipH=!g.flipH; applyGeo(el(),def,g); };
-	    $("iFlipV").onclick=()=>{ g.flipV=!g.flipV; applyGeo(el(),def,g); };
-	    $("iCropReset").onclick=()=>{ g.zoom=1; g.cropX=.5; g.cropY=.5; render(); };
-	    $("iFrameFit").onclick=()=>{ Object.assign(g,{x:0,y:0,w:SW,h:SH,fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); render(); };
-	    $("iBleed").onclick=()=>{ const b=Math.round(SW*.05); const by=Math.round(SH*.05); Object.assign(g,{x:-b,y:-by,w:SW+(b*2),h:SH+(by*2),fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); render(); };
+    $("iZoom").oninput=e=>{ g.zoom=(+e.target.value)/100; $("ivz").textContent=e.target.value+"%"; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); };
+	    $("iFlipH").onclick=()=>{ g.flipH=!g.flipH; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); };
+	    $("iFlipV").onclick=()=>{ g.flipV=!g.flipV; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); };
+	    $("iCropReset").onclick=()=>{ g.zoom=1; g.cropX=.5; g.cropY=.5; scheduleTemplateHeaderColors(id); render(); };
+	    $("iFrameFit").onclick=()=>{ Object.assign(g,{x:0,y:0,w:SW,h:SH,fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); scheduleTemplateHeaderColors(id); render(); };
+	    $("iBleed").onclick=()=>{ const b=Math.round(SW*.05); const by=Math.round(SH*.05); Object.assign(g,{x:-b,y:-by,w:SW+(b*2),h:SH+(by*2),fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); scheduleTemplateHeaderColors(id); render(); };
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
     $("iW").oninput=e=>{ const v=Math.max(1,+e.target.value||1); if(g.lockAspect){ const r=(g.h??g.w)/g.w; g.h=Math.round(v*r); $("iH").value=g.h; } g.w=v; applyGeo(el(),def,g); };
@@ -2368,6 +2516,7 @@ function applyImageSrc(key, url, stored){
     slot.src=url; slot.natW=img.naturalWidth; slot.natH=img.naturalHeight; slot.el=img;
     if(stored) slot.stored=stored;
     fitImageLayer(key, img.naturalWidth/img.naturalHeight);
+    if(key==="player") applyTemplateHeaderColors();
     buildAssets(); buildLogoControls(); render(); scheduleSave();
   };
   img.src=url;
@@ -2389,10 +2538,14 @@ function loadImage(key,file){
       if(key==="player"){
         applyBroadcastPhotoDefault(true);
         applyHypeLowerThirdDefault();
+        if(state.template==="magazine") applyMagazineLayoutDefault(true);
       }
       fitImageLayer(key,im.naturalWidth/im.naturalHeight);
-      if(key==="player" && state.template==="magazine") applyPaletteFromPlayer();
-      else if(key==="logo" && state.autoPalette && !shouldUsePlayerPalette(state.template)) applyPaletteFromLogo();
+      if(key==="player" && shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
+      else if(key==="player"){
+        applyTemplateHeaderColors();
+      }
+      else if(key==="logo" && state.autoPalette && shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
       buildAssets(); buildLogoControls(); render();
       const isLogo=(key==="logo"||key==="sponsor");
       compressImage(r.result, isLogo?760:1800, isLogo?"image/png":"image/jpeg", 0.88)
@@ -2452,28 +2605,87 @@ async function applyPaletteFromPlayer(){
   const im=state.images.player;
   if(!im||!im.el){ setPalStatus("Upload a player photo first."); return false; }
   const pal=await window.PosterPhotoPalette?.applyFromPlayer(im.el);
-  if(!pal){ setPalStatus("Couldn't read colors from player photo — keeping current palette."); return false; }
-  state.detectedPalette=pal;
-  Object.assign(state.colors, pal);
-  state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
-  cP.value=state.colors.primary; cS.value=state.colors.secondary;
-  setPalStatus(`Detected from player photo: ${state.colors.primary} / ${state.colors.secondary}`);
+  if(pal){
+    state.detectedPalette=pal;
+    Object.assign(state.colors, pal);
+    state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
+    cP.value=state.colors.primary; cS.value=state.colors.secondary;
+    setPalStatus(`Detected from player photo: ${state.colors.primary} / ${state.colors.secondary}`);
+  } else {
+    setPalStatus("Couldn't read colors from player photo — keeping current palette.");
+  }
+  applyTemplateHeaderColors();
   render();
-  return true;
+  return !!pal;
+}
+const MAGAZINE_HEADER_AFFECT_LAYERS = new Set(["player","playerName","playerMeta","eyebrow"]);
+const SALUKIS_DARK_HEADER_AFFECT_LAYERS = new Set(["player","playerName","playerMeta"]);
+let _templateHeaderColorsTimer = null;
+function applyMagazineHeaderColors(){
+  if(state.template!=="magazine" || !state.images.player?.el){
+    state.magazineHeaderColors = null;
+    return;
+  }
+  state.magazineHeaderColors = window.PosterMagazineHeaderColors?.compute(
+    ensureLayout(), layersOf(), state.images.player.el, state.colors
+  ) || null;
+}
+function applySalukisDarkHeaderColors(){
+  if(state.template!=="salukis_dark" || !state.images.player?.el){
+    state.salukisDarkHeaderColors = null;
+    return;
+  }
+  state.salukisDarkHeaderColors = window.PosterMagazineHeaderColors?.computeSalukisDark(
+    ensureLayout(), layersOf(), state.images.player.el, state.colors
+  ) || null;
+}
+function applyTemplateHeaderColors(){
+  applyMagazineHeaderColors();
+  applySalukisDarkHeaderColors();
+}
+function scheduleTemplateHeaderColors(layerId){
+  const activeSet=state.template==="magazine"
+    ? MAGAZINE_HEADER_AFFECT_LAYERS
+    : state.template==="salukis_dark"
+      ? SALUKIS_DARK_HEADER_AFFECT_LAYERS
+      : null;
+  if(!activeSet) return;
+  if(layerId && !activeSet.has(layerId)) return;
+  clearTimeout(_templateHeaderColorsTimer);
+  _templateHeaderColorsTimer = setTimeout(()=>{
+    applyTemplateHeaderColors();
+    render();
+  }, 150);
+}
+function templateUsesPlayerPalette(templateId){
+  return templateId==="magazine" || templateId==="salukis_dark" || templateId==="vapor_motion";
 }
 function shouldUsePlayerPalette(templateId){
-  return templateId==="magazine" && !!state.images.player?.el;
+  return templateUsesPlayerPalette(templateId) && !!state.images.player?.el;
+}
+function shouldUseLogoPaletteForTemplate(templateId){
+  return !templateUsesPlayerPalette(templateId);
 }
 function updateBrandColorControls(){
   const label=document.getElementById("autoPalLabel");
   const btn=document.getElementById("detectPal");
   const onMagazine=state.template==="magazine";
+  const onSalukisDark=state.template==="salukis_dark";
+  const onVapor=state.template==="vapor_motion";
   if(label) label.textContent=onMagazine
     ? "Auto-detect palette from player photo (Magazine)"
-    : "Auto-detect palette from team logo";
+    : onSalukisDark
+      ? "Auto-detect palette from player photo (Salukis Dark)"
+      : onVapor
+        ? "Auto-detect palette from player photo (Vapor Motion)"
+      : "Auto-detect palette from team logo";
   if(btn) btn.textContent=onMagazine
     ? "Detect colors from player photo now"
-    : "Detect colors from logo now";
+    : onSalukisDark
+      ? "Detect colors from player photo now"
+      : onVapor
+        ? "Detect colors from player photo now"
+      : "Detect colors from logo now";
 }
 function setPalStatus(t){ const e=document.getElementById("palStatus"); if(e) e.textContent=t; }
 
@@ -2566,7 +2778,7 @@ function serializable(){
            lockTemplateFonts:state.lockTemplateFonts, logoSettings:state.logoSettings,
            spotlightVariant:state.spotlightVariant, spotlightLayouts:state.spotlightLayouts,
            vaporGlassSettings:state.vaporGlassSettings,
-           salukisLayoutMeta:state.salukisLayoutMeta, vaporLayoutMeta:state.vaporLayoutMeta, images:imgs,
+           salukisLayoutMeta:state.salukisLayoutMeta, vaporLayoutMeta:state.vaporLayoutMeta, magazineLayoutMeta:state.magazineLayoutMeta, images:imgs,
            stories:state.stories, storyIndex:state.storyIndex };
 }
 function saveState(){
@@ -2594,6 +2806,7 @@ function loadState(){
   if(d.vaporGlassSettings) state.vaporGlassSettings=Object.assign(vaporGlassSettingsOf(), d.vaporGlassSettings);
   if(d.salukisLayoutMeta) state.salukisLayoutMeta=Object.assign({}, d.salukisLayoutMeta);
   if(d.vaporLayoutMeta) state.vaporLayoutMeta=Object.assign({}, d.vaporLayoutMeta);
+  if(d.magazineLayoutMeta) state.magazineLayoutMeta=Object.assign({ v:0 }, d.magazineLayoutMeta);
   migrateVaporGlassCardLayout(d);
   if(d.spotlightVariant && SPOTLIGHT_VARIANTS[d.spotlightVariant]) state.spotlightVariant=d.spotlightVariant;
   if(Array.isArray(d.stories)){ state.stories=d.stories; state.storyIndex = (typeof d.storyIndex==="number")?d.storyIndex:-1; }
@@ -2666,14 +2879,22 @@ function applyStory(s){
   if(mapped.colors.secondary){ state.colors.secondary=mapped.colors.secondary; cS.value=mapped.colors.secondary; }
   buildTextFields();
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
-  else render();
+  else { applyTemplateHeaderColors(); render(); }
   updateTestBanner();
 }
 async function loadStoriesFromUrl(url, storyIndex=0){
   try{
-    const r=await fetch(url);
-    if(!r.ok) throw new Error(r.statusText);
-    const a=await r.json();
+    let a;
+    try{
+      const r=await fetch(url);
+      if(!r.ok) throw new Error(r.statusText);
+      a=await r.json();
+    }catch(err){
+      const isBundled=url===BUNDLED_STORIES_URL;
+      if(!isBundled || !Array.isArray(window.__BUNDLED_STORIES__)) throw err;
+      a=window.__BUNDLED_STORIES__;
+      setStoryStatus("Loaded bundled stories from local fallback.");
+    }
     const arr=Array.isArray(a)?a:(Array.isArray(a.stories)?a.stories:[a]);
     state.stories=arr.filter(s=>s&&typeof s==="object");
     state.storyIndex=state.stories.length
@@ -2785,11 +3006,11 @@ document.getElementById("autoPal").onchange=e=>{
   state.autoPalette=e.target.checked;
   if(!e.target.checked) return;
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
-  else if(state.images.logo) applyPaletteFromLogo();
+  else if(shouldUseLogoPaletteForTemplate(state.template) && state.images.logo) applyPaletteFromLogo();
 };
 document.getElementById("detectPal").onclick=()=>{
-  if(shouldUsePlayerPalette(state.template) || state.template==="magazine") applyPaletteFromPlayer();
-  else applyPaletteFromLogo();
+  if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
+  else if(shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
 };
 
 /* ============================================================
@@ -2874,7 +3095,7 @@ exportBtn.onclick=async ()=>{
 };
 
 function shouldUseLogoPalette(payload, templateId){
-  if(shouldUsePlayerPalette(templateId)) return false;
+  if(!shouldUseLogoPaletteForTemplate(templateId)) return false;
   if(payload.auto_palette===false) return false;
   if(payload.auto_palette===true) return true;
   const settings=window.PosterTemplateLoader?.getTemplateSettings?.(templateId);
@@ -2909,6 +3130,7 @@ window.__RENDER_API_V3__={
     if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
     if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
     if(state.template==="vapor_motion") buildVaporGlassControls();
+    applyTemplateHeaderColors();
     render();
     if(document.fonts?.ready) await document.fonts.ready;
     render();
@@ -2957,7 +3179,9 @@ async function init(){
   if(state.template==="neo_brutalist") applyNeoBrutalistLayoutDefault();
   if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
   if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
-  if(state.template==="magazine" && shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
+  if(state.template==="magazine") applyMagazineLayoutDefault();
+  if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
+  else applyTemplateHeaderColors();
   buildTplChips(); buildSpotlightVariantControls(); buildVaporGlassControls(); buildAssets(); buildLogoControls(); buildTextFields(); buildStorySelect();
   updateBrandColorControls();
   render(); applyZoom(); syncFrameGuide(); updateTestBanner();
