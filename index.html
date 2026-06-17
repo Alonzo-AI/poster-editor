@@ -1,0 +1,2994 @@
+<!DOCTYPE html>
+<!-- index_3.html — experimental poster lab (fork of index_2).
+     Independent sandbox: separate localStorage + __RENDER_API_V3__.
+     NOT used by POST /posters/render or the LLM compose pipeline. -->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Poster Lab v3 — Experimental</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@300;400;600;700&family=Archivo:wght@400;600;800;900&family=Bebas+Neue&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Permanent+Marker&family=Special+Elite&family=Bangers&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="renderer/render-engine.js"></script>
+<script src="renderer/template-loader.js"></script>
+<script src="renderer/photo-palette.js"></script>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e8eaed; --dim:#9aa0a6; --accent:#4f8cff; --accent2:#2d6cff;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;font-family:'Archivo',system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);}
+  #app{display:grid;grid-template-columns:340px 1fr;height:100vh;overflow:hidden;}
+
+  /* ---------- Sidebar ---------- */
+  #side{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:14px;}
+  #side h1{font-size:15px;margin:0 0 2px;font-weight:900;letter-spacing:.3px;}
+  #side .sub{font-size:11px;color:var(--dim);margin-bottom:14px;}
+  .group{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:var(--panel2);}
+  .group>summary{cursor:pointer;padding:10px 12px;font-weight:800;font-size:12px;letter-spacing:.4px;text-transform:uppercase;color:#cfd3da;list-style:none;}
+  .group>summary::-webkit-details-marker{display:none;}
+  .group>summary::after{content:"▸";float:right;color:var(--dim);transition:.15s;}
+  .group[open]>summary::after{transform:rotate(90deg);}
+  .group .body{padding:4px 12px 12px;}
+  label.fld{display:block;font-size:11px;color:var(--dim);margin:8px 0 3px;}
+  input[type=text], select, textarea{
+    width:100%;background:#0d1014;border:1px solid var(--line);color:var(--txt);
+    border-radius:7px;padding:7px 8px;font-size:13px;font-family:inherit;
+  }
+  textarea{resolve:vertical;min-height:46px;resize:vertical;}
+  input[type=color]{width:100%;height:34px;border:1px solid var(--line);border-radius:7px;background:#0d1014;padding:2px;cursor:pointer;}
+  input[type=range]{width:100%;}
+  .row{display:flex;gap:8px;}
+  .row>*{flex:1;}
+  .btn{display:block;width:100%;text-align:center;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;}
+  .btn:hover{background:var(--accent2);}
+  .btn.sec{background:#262b35;color:#cfd3da;}
+  .btn.sec:hover{background:#303644;}
+  .mini{font-size:10px;color:var(--dim);margin-top:4px;line-height:1.4;}
+  .assetrow{display:flex;align-items:center;gap:8px;margin:6px 0;}
+  .assetrow .thumb{width:42px;height:42px;border-radius:6px;border:1px solid var(--line);background:#0d1014 center/contain no-repeat;flex:none;}
+  .assetrow .meta{flex:1;min-width:0;}
+  .assetrow .meta b{font-size:12px;display:block;}
+  .assetrow .meta span{font-size:10px;color:var(--dim);}
+  .uploadbtn{font-size:11px;color:var(--accent);cursor:pointer;text-decoration:underline;}
+  .xbtn{color:#ff6b6b;cursor:pointer;font-size:11px;}
+  .swatches{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;}
+  .sw{width:22px;height:22px;border-radius:5px;border:1px solid #0006;cursor:pointer;}
+  .tplgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .tplchip{font-size:11px;padding:8px 6px;border:1px solid var(--line);border-radius:7px;background:#0d1014;cursor:pointer;text-align:center;color:#cfd3da;}
+  .tplchip.active{border-color:var(--accent);background:#16233f;color:#fff;font-weight:700;}
+
+  /* ---------- Inspector (selected layer) ---------- */
+  #inspector{border:1px solid var(--accent);border-radius:10px;margin-bottom:12px;background:#11203a;}
+  #inspector .body{padding:10px 12px;}
+  #inspector .ttl{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:9px 12px;color:#cfe1ff;border-bottom:1px solid #24344f;}
+  #inspector.empty{display:none;}
+
+  /* ---------- Stage area ---------- */
+  #main{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:
+    radial-gradient(circle at 30% 20%, #1a1f2b, #0b0d12 70%);}
+  #stageWrap{position:relative;}
+  #stage{position:relative;width:1080px;height:1350px;transform-origin:top left;overflow:hidden;
+    box-shadow:0 24px 80px #000a, 0 0 0 1px #000;}
+  .deco{position:absolute;inset:0;pointer-events:none;}
+  .deco>*{position:absolute;}
+  .layer{position:absolute;cursor:grab;user-select:none;}
+  .layer img{width:100%;height:100%;display:block;pointer-events:none;}
+  .layer .imgcontent{position:absolute;inset:0;background-position:center;background-repeat:no-repeat;pointer-events:none;}
+  #stage.frameGuide{outline:4px solid #00e5ff;outline-offset:0;}
+  #stage.frameGuide::before{content:"";position:absolute;inset:0;z-index:1000;pointer-events:none;
+    border:3px dashed #ffe600;box-shadow:inset 0 0 0 2px #000,0 0 0 2px #000;}
+  #stage.frameGuide::after{content:"4:5 FRAME · 1080×1350";position:absolute;right:12px;bottom:12px;z-index:1001;
+    pointer-events:none;background:#000c;color:#ffe600;border:1px solid #00e5ff;border-radius:6px;
+    padding:6px 9px;font:800 18px/1 'Archivo',sans-serif;letter-spacing:1px;}
+  .layer.sel{outline:2px solid var(--accent);outline-offset:1px;}
+  .layer.glass,.layer.block{cursor:grab;}
+  #alignGuidesOverlay{position:absolute;inset:0;pointer-events:none;z-index:9999;}
+  #alignGuidesOverlay .guide-v{position:absolute;top:0;width:1px;height:100%;background:#00e5ff;box-shadow:0 0 6px #00e5ff99;}
+  #alignGuidesOverlay .guide-h{position:absolute;left:0;height:1px;width:100%;background:#00e5ff;box-shadow:0 0 6px #00e5ff99;}
+  .layer.cropping{outline:2px dashed #ffd34f;outline-offset:1px;}
+  .layer.cropping .imgcontent{cursor:move;pointer-events:auto;}
+  /* resize handles (8) */
+  .layer .h{position:absolute;width:13px;height:13px;border-radius:50%;background:var(--accent);
+    border:2px solid #fff;display:none;pointer-events:auto;z-index:6;box-shadow:0 1px 3px #0007;}
+  .layer.sel .h{display:block;}
+  .layer.cropping .h{display:none;}
+  .layer .h.nw{left:-7px;top:-7px;cursor:nwse-resize;}
+  .layer .h.ne{right:-7px;top:-7px;cursor:nesw-resize;}
+  .layer .h.sw{left:-7px;bottom:-7px;cursor:nesw-resize;}
+  .layer .h.se{right:-7px;bottom:-7px;cursor:nwse-resize;}
+  .layer .h.n{left:50%;top:-7px;margin-left:-6px;cursor:ns-resize;}
+  .layer .h.s{left:50%;bottom:-7px;margin-left:-6px;cursor:ns-resize;}
+  .layer .h.w{left:-7px;top:50%;margin-top:-6px;cursor:ew-resize;}
+  .layer .h.e{right:-7px;top:50%;margin-top:-6px;cursor:ew-resize;}
+  .layer .rot{position:absolute;left:50%;top:-28px;margin-left:-8px;width:15px;height:15px;border-radius:50%;
+    background:#fff;border:2px solid var(--accent);cursor:grab;display:none;pointer-events:auto;z-index:6;}
+  .layer.sel .rot{display:block;}
+  .layer.cropping .rot{display:none;}
+  .layer.txt{display:flex;flex-direction:column;justify-content:center;}
+  /* inspector helpers */
+  .ibtns{display:flex;gap:6px;flex-wrap:wrap;}
+  .ibtns .btn{flex:1;padding:7px 4px;min-width:0;}
+  .num{width:100%;background:#0d1014;border:1px solid var(--line);color:var(--txt);border-radius:6px;padding:6px 7px;font-size:12px;font-family:inherit;}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;}
+  .seg button{flex:1;background:#0d1014;color:var(--dim);border:none;padding:7px 0;font-size:11px;cursor:pointer;font-family:inherit;}
+  .seg button.on{background:var(--accent);color:#fff;font-weight:700;}
+  .ihint{font-size:10px;color:#ffd34f;margin-top:4px;}
+  .emptyimg{display:flex;align-items:center;justify-content:center;width:100%;height:100%;
+    border:2px dashed #ffffff55;color:#ffffff99;font-size:13px;text-align:center;border-radius:6px;
+    background:#ffffff10;padding:6px;}
+  #toolbar{position:absolute;top:12px;left:12px;display:flex;gap:8px;z-index:50;}
+  #toolbar button{background:#1c2129ee;border:1px solid var(--line);color:#cfd3da;border-radius:7px;padding:7px 11px;font-size:12px;cursor:pointer;font-family:inherit;}
+  #toolbar button:hover{background:#262c36;}
+  #toolbar button.on{background:#0b3f4a;border-color:#00e5ff;color:#fff;}
+  #zoomlabel{position:absolute;bottom:12px;right:14px;font-size:11px;color:var(--dim);z-index:50;}
+  .hint{position:absolute;bottom:12px;left:14px;font-size:11px;color:var(--dim);z-index:50;}
+  #testBanner{position:absolute;top:12px;right:12px;z-index:50;background:#1c2129ee;border:1px solid var(--line);
+    color:#cfd3da;border-radius:7px;padding:7px 12px;font-size:11px;line-height:1.45;max-width:340px;pointer-events:none;}
+  #testBanner b{color:#fff;font-weight:800;}
+  body.headless #side,body.headless #toolbar,body.headless .hint,body.headless #zoomlabel,body.headless #testBanner{display:none!important;}
+  body.headless #app{grid-template-columns:1fr;}
+  #labBanner{margin:0 0 12px;padding:10px 12px;border-radius:8px;border:1px solid #3d5a80;background:#16233f;color:#cfe1ff;font-size:11px;line-height:1.45;}
+  #labBanner b{display:block;font-size:12px;margin-bottom:4px;color:#fff;}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- SIDEBAR -->
+  <div id="side">
+    <h1>Poster Lab v3</h1>
+    <div class="sub">Experimental sandbox · JSON templates · export PNG (4:5)</div>
+    <div id="labBanner">
+      <b>Independent from LLM / API pipeline</b>
+      Uses <code>index_3.html</code> only. Saves to <code>posterEditor.v3</code>.
+      Production render still uses <code>index_2.html</code>.
+    </div>
+
+    <details class="group" open>
+      <summary>Template</summary>
+      <div class="body">
+        <div class="tplgrid" id="tplGrid"></div>
+        <div class="row" style="margin-top:8px">
+          <button class="btn sec" id="tplPrev">◀ Prev</button>
+          <button class="btn sec" id="tplNext">Next ▶</button>
+        </div>
+        <div id="spotlightVariantControls" style="display:none;margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+          <label class="fld">Spotlight layout style</label>
+          <div class="tplgrid" id="spotlightVariantGrid"></div>
+          <div class="mini">Each style remembers its own positions. Reset clears the active style.</div>
+        </div>
+      </div>
+    </details>
+
+    <details class="group" open id="vaporGlassSection" style="display:none">
+      <summary>Glass card</summary>
+      <div class="body" id="vaporGlassControls"></div>
+    </details>
+
+    <details class="group" open>
+      <summary>Stories (JSON)</summary>
+      <div class="body">
+        <button class="btn sec" id="loadBundledStories" type="button">Load bundled stories</button>
+        <label class="btn sec" for="storyFile" style="cursor:pointer;margin-top:6px;display:block">⬆ Upload stories JSON</label>
+        <input type="file" id="storyFile" accept="application/json,.json" style="display:none">
+        <div id="storyControls" style="display:none;margin-top:10px">
+          <label class="fld">Player story</label>
+          <select id="storySelect"></select>
+          <div class="row" style="margin-top:8px">
+            <button class="btn sec" id="storyPrev">◀ Prev</button>
+            <button class="btn sec" id="storyNext">Next ▶</button>
+          </div>
+        </div>
+        <div class="mini" id="storyStatus">Loads text, stats & brand colors per player. Upload each player's photo & team logo separately.</div>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Brand colors</summary>
+      <div class="body">
+        <div class="row">
+          <div><label class="fld">Primary</label><input type="color" id="cPrimary" value="#9D2235"></div>
+          <div><label class="fld">Secondary</label><input type="color" id="cSecondary" value="#FFFFFF"></div>
+        </div>
+        <div class="swatches" id="presetSwatches"></div>
+        <label class="fld" style="margin-top:10px;display:flex;align-items:center;gap:7px;cursor:pointer">
+          <input type="checkbox" id="autoPal" checked style="width:auto"> <span id="autoPalLabel">Auto-detect palette from team logo</span>
+        </label>
+        <button class="btn sec" id="detectPal" style="margin-top:6px">Detect colors from logo now</button>
+        <div class="mini" id="palStatus"></div>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Images</summary>
+      <div class="body" id="assetList"></div>
+      <div id="logoControls" style="display:none;margin:0 12px 10px;padding-top:10px;border-top:1px solid var(--line)">
+        <label class="fld" id="logoCtrlLabel">Team logo — Broadcast</label>
+        <label class="fld">Opacity: <b id="logoOpacityVal">100%</b></label>
+        <input type="range" id="logoOpacity" min="0" max="100" value="100">
+        <label class="fld">Size: <b id="logoScaleVal">100%</b></label>
+        <input type="range" id="logoScale" min="50" max="150" value="100">
+      </div>
+      <div class="mini" id="bgStatus" style="padding:0 12px 4px;color:#7fd1ff"></div>
+      <div class="mini" style="padding:0 12px 10px">Upload the player photo with its background included. Click an image to select it, then drag any corner/edge dot to resize, the top dot to rotate. <b>Double-click an image to crop</b> (drag to reposition, zoom in the inspector).</div>
+    </details>
+
+    <!-- Inspector for selected layer -->
+    <div id="inspector" class="empty">
+      <div class="ttl" id="inspTitle">Selected</div>
+      <div class="body" id="inspBody"></div>
+    </div>
+
+    <details class="group" open>
+      <summary>Text content</summary>
+      <div class="body" id="textFields"></div>
+    </details>
+
+    <details class="group">
+      <summary>Layout</summary>
+      <div class="body">
+        <button class="btn sec" id="resetLayout">Reset positions for this template</button>
+        <button class="btn sec" id="exportLayout" style="margin-top:8px">Export layout JSON</button>
+        <div class="mini">Resets all layer positions, sizes & fonts to the template defaults. Your text and images are kept.</div>
+        <div class="mini" style="margin-top:6px">Export layout JSON downloads tuned positions for the current template (save to <code>layouts/authoring/</code>).</div>
+        <label class="fld" style="margin-top:10px;display:flex;align-items:center;gap:7px;cursor:pointer">
+          <input type="checkbox" id="lockFonts" style="width:auto"> Lock template fonts (recommended for testing)
+        </label>
+        <button class="btn sec" id="clearSaved" style="margin-top:10px">Clear saved data & reset</button>
+        <div class="mini">Your uploads, text & edits are auto-saved in <b>this browser</b> and reload automatically. This button wipes them back to the sample poster.</div>
+      </div>
+    </details>
+
+    <button class="btn" id="exportBtn">⬇ Export PNG</button>
+    <div class="mini" style="text-align:center">Exports at 2× (2160×2700). Needs internet for fonts on first load.</div>
+  </div>
+
+  <!-- STAGE -->
+  <div id="main">
+    <div id="toolbar">
+      <button id="zoomFit">Fit</button>
+      <button id="zoomIn">＋</button>
+      <button id="zoomOut">－</button>
+      <button id="frameGuideBtn" title="Toggle bright 4:5 frame boundary">Frame</button>
+      <button id="deselectBtn">Deselect</button>
+    </div>
+    <div id="testBanner"></div>
+    <div id="stageWrap">
+      <div id="stage"></div>
+    </div>
+    <div class="hint">Double-click text to edit · double-click an image to crop · arrows nudge · ⌘/Ctrl+D duplicate · [ / ] re-order · Del hides.</div>
+    <div id="zoomlabel"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   STATE
+============================================================ */
+const SW = 1080, SH = 1350;              // stage coords (4:5)
+const SALUKIS_CLEAN_STAT_TOP = 230;
+const SALUKIS_CLEAN_STAT_BOTTOM = 1170;    // aligns with player frame bottom (190 + 980)
+function salukisCleanStatSlots(){
+  const span = SALUKIS_CLEAN_STAT_BOTTOM - SALUKIS_CLEAN_STAT_TOP;
+  const n = 3;
+  const baseH = Math.floor(span / n);
+  return [0, 1, 2].map(i => ({
+    y: SALUKIS_CLEAN_STAT_TOP + i * baseH,
+    h: i === n - 1 ? span - i * baseH : baseH,
+  }));
+}
+const SALUKIS_CLEAN_STAT_SLOTS = salukisCleanStatSlots();
+const SALUKIS_DARK_PANEL_H = 260;
+const SALUKIS_DARK_PANEL_TOP = SH - SALUKIS_DARK_PANEL_H;
+function salukisDarkPanelSlots(){
+  const top = SALUKIS_DARK_PANEL_TOP;
+  const rowHeights = [110, 58, 92];
+  const [statsH, calloutH, footerH] = rowHeights;
+  const stats = { y: top, h: statsH };
+  const callout = { y: top + statsH, h: calloutH };
+  const footer = { y: top + statsH + calloutH, h: footerH };
+  const boxH = 46;
+  const boxW = 896;
+  const calloutBox = {
+    x: Math.round((SW - boxW) / 2),
+    y: callout.y + Math.round((callout.h - boxH) / 2),
+    w: boxW,
+    h: boxH,
+  };
+  return { stats, callout, footer, calloutBox };
+}
+const SALUKIS_DARK_PANEL_SLOTS = salukisDarkPanelSlots();
+const SALUKIS_LAYOUT_VERSION = 3;
+const VAPOR_LAYOUT_VERSION = 2;
+const COLOR_PRESETS = [
+  ["#9D2235","#FFFFFF"], ["#041E42","#C8102E"], ["#154734","#FFB81C"],
+  ["#0C2340","#FF7900"], ["#500000","#FFFFFF"], ["#003594","#FFB81C"],
+  ["#18453B","#FFFFFF"], ["#990000","#FFCC00"], ["#000000","#FF4F00"],
+];
+
+const DEFAULT_TEXT = {
+  teamName:"Arkansas Razorbacks", playerName:"Raheim Sanders",
+  position:"RB", playerClass:"Junior",
+  eyebrow:"RUSHING STREAK", heroNumber:"7", heroDesc:"CONSECUTIVE 100+ YARD GAMES",
+  stat1num:"142", stat1label:"RUSH YARDS", stat2num:"6.2", stat2label:"YARDS / CARRY",
+  stat3num:"3", stat3label:"TD", callout:"SCHOOL RECORD WATCH", hashtag:"#WPS",
+  sport:"Football", reportTitle:"EFFICIENCY REPORT CARD", avgLabel:"NCAA AVG", avgValue:"38"
+};
+
+const state = {
+  template: "magazine",
+  colors: { primary:"#9D2235", secondary:"#FFFFFF" },
+  text: { ...DEFAULT_TEXT },
+  images: {},      // key -> {src, natW, natH}
+  layouts: {},     // templateId -> layerId -> geometry overrides
+  extraLayers: {}, // templateId -> layerId -> layer def (duplicated layers)
+  cropMode: null,  // layer id currently being cropped, or null
+  selected: null,
+  zoom: null,      // null = auto-fit
+  autoPalette: true,
+  canvasOverride: null,
+  detectedPalette: null,
+  stories: [],
+  storyIndex: -1,
+  showFrameGuide: false,
+  spotlightVariant: "cover",
+  spotlightLayouts: { portrait:null, orbit:null, cover:null, vault:null, split:null },
+  lockTemplateFonts: false,
+  logoSettings: {
+    broadcast: { opacity: 1, scale: 1 },
+    magazine:  { opacity: 1, scale: 1 },
+    hype:      { opacity: 1, scale: 1 },
+    spotlight: { opacity: 1, scale: 1 },
+    cyber_pulse: { opacity: 1, scale: 1 },
+    neo_brutalist: { opacity: 1, scale: 1 },
+    vapor_motion: { opacity: 1, scale: 1 },
+    salukis_clean: { opacity: 1, scale: 1 },
+    salukis_dark:  { opacity: 1, scale: 1 },
+  },
+  vaporGlassSettings: { mode:"frosted", preset:"frosted", color:"#ffffff", opacity:0.08, borderOpacity:0.11, blur:24 },
+  salukisLayoutMeta: {},  // templateId -> layout schema version (one-time migrations only)
+  vaporLayoutMeta: {},
+};
+
+// In headless usage, __RENDER_API_V3__.setPayload can run before init() finishes
+// PosterTemplateLoader.loadAll(). That would make us render with the inline
+// (older) template definitions. This promise ensures JSON templates are
+// fully loaded and patched into TEMPLATES before we render anything.
+let _posterTemplatesLoadPromise = null;
+function ensurePosterTemplatesLoaded() {
+  if (_posterTemplatesLoadPromise) return _posterTemplatesLoadPromise;
+  if (!window.PosterTemplateLoader) {
+    _posterTemplatesLoadPromise = Promise.resolve();
+    return _posterTemplatesLoadPromise;
+  }
+  _posterTemplatesLoadPromise = (async () => {
+    try {
+      await window.PosterTemplateLoader.loadAll();
+    } catch (e) {
+      console.warn("Template JSON load:", e);
+    }
+  })();
+  return _posterTemplatesLoadPromise;
+}
+
+/* ============================================================
+   COLOR HELPERS
+============================================================ */
+function roleColor(role){
+  const c = state.colors;
+  switch(role){
+    case "primary": return c.primary;
+    case "secondary": return c.secondary;
+    case "white": return "#ffffff";
+    case "black": return "#111111";
+    case "light": return "#f1f1f1";
+    case "muted": return "#9aa0a6";
+    case "cream": return "#f4ecd8";
+    case "darkgreen": return "#13321f";
+    case "onPrimary": return c.onPrimary || onColor(c.primary);
+    case "onPrimaryMuted": return c.onPrimaryMuted || c.onPrimary || onColor(c.primary);
+    case "onPhoto": return c.onPhoto || c.onPrimary || onColor(c.primary);
+    case "onPhotoMuted": return c.onPhotoMuted || c.onPhoto || c.onPrimaryMuted || c.onPrimary || onColor(c.primary);
+    case "calloutBg": return c.calloutBg || "#ffffff";
+    case "onCallout": return c.onCallout || c.primary;
+    default: return role; // raw hex
+  }
+}
+function hexToRgb(h){ h=h.replace('#',''); if(h.length===3)h=h.split('').map(x=>x+x).join(''); const n=parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+function lum(hex){ const [r,g,b]=hexToRgb(hex); return (0.299*r+0.587*g+0.114*b)/255; }
+function rgba(hex,a){ const [r,g,b]=hexToRgb(hex); return `rgba(${r},${g},${b},${a})`; }
+/* a readable text color over a given background hex */
+function onColor(hex){ return lum(hex) > 0.55 ? "#111111" : "#ffffff"; }
+
+/* ============================================================
+   TEXT LAYER RENDERERS (inner markup by kind)
+============================================================ */
+function statHTML(numKey, labelKey){
+  return `<span class="s-n">${esc(state.text[numKey]||"")}</span><span class="s-l">${esc(state.text[labelKey]||"")}</span>`;
+}
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+/* ============================================================
+   TEMPLATE DEFINITIONS
+   Each layer: { type:'text'|'image', bind, kind, x,y,w,h, size, weight,
+                 color(role), align, font, italic, ls(letter-spacing), z,
+                 rotate, bg(role), pad, radius, fit, lh, shadow, opacity, transform }
+============================================================ */
+const F = { disp:"'Anton',sans-serif", cond:"'Oswald',sans-serif", sans:"'Archivo',sans-serif",
+            bebas:"'Bebas Neue',sans-serif", serif:"'Playfair Display',serif",
+            chalk:"'Permanent Marker',cursive", type:"'Special Elite',monospace", comic:"'Bangers',cursive" };
+const FONT_OPTS = [
+  ["Anton — display",F.disp],["Oswald — condensed",F.cond],["Archivo — sans",F.sans],
+  ["Bebas Neue",F.bebas],["Playfair — serif",F.serif],["Permanent Marker — chalk",F.chalk],
+  ["Special Elite — typewriter",F.type],["Bangers — comic",F.comic],
+];
+
+/* shorthand builders */
+function img(o){ return Object.assign({type:"image",fit:"contain",z:5},o); }
+function txt(o){ return Object.assign({type:"text",weight:700,align:"left",color:"white",font:F.sans,z:20,lh:1.0},o); }
+function glass(o){ return Object.assign({type:"glass",z:10,radius:24},o); }
+function block(o){ return Object.assign({type:"block",fill:"white",z:11,radius:3},o); }
+
+const TEMPLATES = {
+
+/* ---------------- BROADCAST ---------------- */
+broadcast:{ name:"Broadcast",
+  stageBg:()=>`linear-gradient(135deg, ${shade(state.colors.primary,-55)} 0%, #0a0a0c 70%)`,
+  deco:()=>`
+    <div style="left:-200px;top:0;width:900px;height:1700px;transform:rotate(18deg);
+      background:linear-gradient(90deg,transparent,${rgba(state.colors.secondary,.16)},transparent);"></div>
+    <div style="left:-250px;top:-260px;width:300px;height:1900px;z-index:4;transform:rotate(-35deg);
+      background:${rgba(state.colors.secondary,.18)};filter:blur(18px);"></div>
+    <div style="left:0;top:0;width:54%;height:100%;z-index:7;
+      background:linear-gradient(90deg, ${rgba('#000000',.78)} 0%, ${rgba('#000000',.50)} 68%, transparent 100%);"></div>
+    <div style="left:60px;top:615px;width:430px;height:3px;background:${state.colors.secondary};opacity:.85"></div>`,
+  layers:{
+    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
+    logo:    img({bind:"logo",x:60,y:55,w:120,h:120,z:20}),
+    player:  img({bind:"player",x:0,y:0,w:1080,h:1350,fit:"cover",z:2}),
+    eyebrow: txt({bind:"eyebrow",x:60,y:252,w:440,size:28,color:"secondary",font:F.cond,ls:5,weight:600}),
+    hero:    txt({bind:"heroNumber",x:54,y:318,w:470,size:268,color:"white",font:F.disp,lh:.92}),
+    heroDesc:txt({bind:"heroDesc",x:60,y:636,w:440,size:33,color:"secondary",font:F.cond,weight:600,lh:1.05}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:60,y:782,w:440,size:50,color:"white",font:F.cond}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:60,y:892,w:440,size:50,color:"white",font:F.cond}),
+    callout: txt({bind:"callout",x:60,y:1024,w:500,size:25,color:"black",bg:"secondary",pad:"14px 22px",radius:40,font:F.cond,weight:700,ls:1,align:"center"}),
+    playerName:txt({bind:"playerName",x:420,y:1146,w:600,size:44,color:"white",font:F.disp,align:"right"}),
+    playerMeta:txt({bind:"playerMeta",x:420,y:1202,w:600,size:24,color:"secondary",font:F.cond,weight:600,ls:2,align:"right"}),
+    footer:  txt({bind:"footer",x:60,y:1300,w:960,size:20,color:"muted",font:F.sans,weight:600,ls:2}),
+  }},
+
+/* ---------------- MAGAZINE ---------------- */
+magazine:{ name:"Magazine",
+  stageBg:()=>`#0b0b0d`,
+  deco:()=>`
+    <div style="left:0;top:0;width:100%;height:24%;z-index:10;
+      background:linear-gradient(to bottom, ${rgba('#000000',.74)} 0%, transparent 100%);"></div>
+    <div style="left:0;bottom:0;width:100%;height:66%;z-index:10;
+      background:linear-gradient(to top, #000 0%, rgba(0,0,0,.88) 38%, transparent 100%);"></div>
+    <div style="inset:0;width:100%;height:100%;z-index:9;
+      background:radial-gradient(ellipse at 58% 36%, transparent 0 46%, ${rgba('#000000',.18)} 78%, ${rgba('#000000',.42)} 100%);"></div>`,
+  layers:{
+    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
+    player:  img({bind:"player",x:0,y:0,w:1080,h:1350,fit:"cover",z:2}),
+    logo:    img({bind:"logo",x:900,y:55,w:120,h:120,z:21}),
+    playerName:txt({bind:"playerName",x:80,y:540,w:920,size:48,color:"onPhoto",font:F.disp,ls:1,underline:true,underlineW:5,underlineOffset:8,z:20}),
+    playerMeta:txt({bind:"playerMeta",x:80,y:596,w:920,size:23,color:"secondary",font:F.cond,weight:600,ls:2,z:20}),
+    eyebrow: txt({bind:"eyebrow",x:80,y:632,w:920,size:26,color:"secondary",font:F.cond,ls:6,weight:600,z:20}),
+    hero:    txt({bind:"heroNumber",x:70,y:702,w:760,size:300,color:"onPhoto",font:F.disp,lh:.95,z:20}),
+    heroDesc:txt({bind:"heroDesc",x:80,y:1028,w:860,h:80,size:37,color:"onPhoto",font:F.cond,weight:600,ls:2,lh:1.05,z:20}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:80,y:1130,w:440,size:40,color:"onPhoto",font:F.cond,z:20}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:540,y:1130,w:440,size:40,color:"onPhoto",font:F.cond,z:20}),
+    callout: txt({bind:"callout",x:0,y:1288,w:1080,size:30,color:"onCallout",bg:"primary",pad:"16px 0",font:F.cond,weight:700,ls:3,align:"center",z:20}),
+  }},
+
+/* ---------------- HYPE ---------------- */
+hype:{ name:"Hype",
+  stageBg:()=>`radial-gradient(circle at 50% 35%, ${shade(state.colors.primary,-40)} 0%, #050507 65%)`,
+  deco:()=>`
+    <div style="left:50%;top:-60px;width:520px;height:900px;transform:translateX(-50%);
+      background:radial-gradient(ellipse at top, ${rgba(state.colors.secondary,.30)}, transparent 70%);"></div>
+    <div style="left:0;top:0;width:100%;height:100%;z-index:6;
+      background:linear-gradient(90deg, ${rgba('#000000',.42)} 0%, transparent 28%, transparent 72%, ${rgba('#000000',.42)} 100%);"></div>
+    <div style="left:0;bottom:96px;width:100%;height:184px;z-index:10;
+      background:${rgba('#000000',.55)};backdrop-filter:blur(2px);border-top:2px solid ${rgba(state.colors.secondary,.6)};"></div>
+    <div style="left:540px;top:1130px;width:2px;height:74px;z-index:22;background:${rgba(state.colors.secondary,.7)};"></div>`,
+  layers:{
+    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
+    logo:    img({bind:"logo",x:55,y:55,w:100,h:100,z:20}),
+    player:  img({bind:"player",x:130,y:230,w:760,h:1000,fit:"contain",z:5}),
+    eyebrow: txt({bind:"eyebrow",x:0,y:80,w:1080,size:30,color:"secondary",font:F.cond,ls:8,weight:600,align:"center",z:20}),
+    hero:    txt({bind:"heroNumber",x:70,y:560,w:520,size:300,color:"white",font:F.disp,opacity:.85,z:6}),
+    heroDesc:txt({bind:"heroDesc",x:80,y:840,w:560,size:38,color:"white",font:F.cond,weight:700,lh:1,z:7}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:70,y:1134,w:430,size:42,color:"white",font:F.cond,align:"center",z:21}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:580,y:1134,w:430,size:42,color:"white",font:F.cond,align:"center",z:21}),
+    playerName:txt({bind:"playerName",x:0,y:1000,w:1080,size:40,color:"white",font:F.disp,align:"center",z:21}),
+    playerMeta:txt({bind:"playerMeta",x:0,y:1050,w:1080,size:22,color:"secondary",font:F.cond,weight:600,ls:2,align:"center",z:21}),
+    callout: txt({bind:"callout",x:0,y:1234,w:1080,size:22,color:"secondary",font:F.cond,ls:3,align:"center",z:21,opacity:.85}),
+    footer:  txt({bind:"footer",x:0,y:1312,w:1080,size:18,color:"muted",font:F.sans,ls:2,align:"center",z:21}),
+  }},
+
+/* ---------------- RETRO (disabled for focus sprint) ---------------- */
+retro:{ name:"Retro Card",
+  stageBg:()=>`#f4ecd8`,
+  deco:()=>`
+    <div style="left:0;top:0;width:100%;height:56%;
+      background:radial-gradient(circle at 50% 35%, ${shade(state.colors.primary,25)}, ${state.colors.primary});"></div>
+    <div style="left:24px;top:24px;right:24px;bottom:24px;width:auto;height:auto;border:14px solid ${state.colors.secondary};border-radius:26px;z-index:30;box-shadow:inset 0 0 0 3px #0003;"></div>
+    <div style="left:6%;top:46%;width:88%;height:78px;background:${shade(state.colors.primary,-15)};border-top:3px solid ${state.colors.secondary};border-bottom:3px solid ${state.colors.secondary};transform:rotate(-2deg);z-index:15;box-shadow:0 6px 16px #0005;"></div>`,
+  layers:{
+    logo:    img({bind:"logo",x:70,y:75,w:120,h:120,z:32}),
+    teamName:txt({bind:"teamName",x:90,y:90,w:900,size:46,color:"secondary",font:F.bebas,ls:5,align:"center",weight:400}),
+    player:  img({bind:"player",x:300,y:150,w:480,h:470,fit:"contain"}),
+    playerName:txt({bind:"playerName",x:90,y:625,w:900,size:46,color:"white",font:F.bebas,align:"center",ls:2,z:16,transform:"rotate(-2deg)"}),
+    playerMeta:txt({bind:"playerMeta",x:90,y:706,w:900,size:24,color:"secondary",font:F.bebas,ls:2,align:"center",z:14}),
+    eyebrow: txt({bind:"eyebrow",x:90,y:772,w:900,size:26,color:"primary",font:F.serif,italic:true,align:"center"}),
+    hero:    txt({bind:"heroNumber",x:90,y:808,w:900,size:150,color:"primary",font:F.serif,weight:900,align:"center",lh:.9}),
+    heroDesc:txt({bind:"heroDesc",x:140,y:968,w:800,size:30,color:"#5a3a1a",font:F.serif,weight:700,align:"center",lh:1.1}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:150,y:1068,w:360,size:38,color:"#3a2a14",font:F.serif,align:"center"}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:570,y:1068,w:360,size:38,color:"#3a2a14",font:F.serif,align:"center"}),
+    callout: txt({bind:"callout",x:720,y:1150,w:220,size:17,color:"white",bg:"primary",pad:"22px 10px",radius:200,font:F.bebas,ls:1,align:"center",transform:"rotate(13deg)",z:25}),
+    footer:  txt({bind:"footer",x:90,y:1262,w:900,size:18,color:"primary",font:F.serif,align:"center"}),
+  }},
+
+/* ---------------- COMIC (disabled for focus sprint) ---------------- */
+comic:{ name:"Comic",
+  stageBg:()=>`${state.colors.primary} radial-gradient(${rgba('#ffffff',.18)} 2px, transparent 2.5px) 0 0/16px 16px`,
+  deco:()=>`
+    <div style="left:0;top:0;width:100%;height:100%;
+      background:repeating-linear-gradient(58deg, ${rgba(state.colors.secondary,.10)} 0 6px, transparent 6px 38px);"></div>
+    <div style="left:24px;top:24px;right:24px;bottom:24px;width:auto;height:auto;border:12px solid ${state.colors.secondary};box-shadow:inset 0 0 0 5px #000,0 0 0 5px #000;z-index:30;"></div>
+    <div class="starburst" style="left:560px;top:300px;width:460px;height:460px;z-index:4;
+      background:${state.colors.secondary};
+      clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
+      filter:drop-shadow(0 0 0 #000);"></div>`,
+  layers:{
+    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
+    player:  img({bind:"player",x:60,y:330,w:620,h:980,fit:"contain",z:6}),
+    logo:    img({bind:"logo",x:890,y:80,w:120,h:120,z:31}),
+    eyebrow: txt({bind:"eyebrow",x:80,y:80,w:560,size:34,color:"black",bg:"secondary",pad:"12px 18px",font:F.comic,ls:1,z:20}),
+    hero:    txt({bind:"heroNumber",x:560,y:430,w:460,size:230,color:"black",font:F.comic,align:"center",z:21,lh:.9}),
+    heroDesc:txt({bind:"heroDesc",x:600,y:790,w:420,size:30,color:"black",bg:"white",pad:"14px 16px",font:F.comic,align:"center",radius:14,z:21,lh:1}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:600,y:930,w:420,size:36,color:"white",bg:"primary",pad:"10px 16px",font:F.comic,z:21}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:600,y:1010,w:420,size:36,color:"black",bg:"secondary",pad:"10px 16px",font:F.comic,z:21}),
+    callout: txt({bind:"callout",x:90,y:1190,w:900,size:42,color:"black",bg:"secondary",pad:"16px 0",font:F.comic,align:"center",ls:2,z:22,transform:"rotate(-4deg)"}),
+    playerName:txt({bind:"playerName",x:80,y:1120,w:560,size:40,color:"white",font:F.comic,z:22}),
+    playerMeta:txt({bind:"playerMeta",x:84,y:1088,w:520,size:22,color:"secondary",font:F.cond,weight:600,ls:2,z:22}),
+  }},
+
+/* ---------------- CHALKBOARD (disabled for focus sprint) ---------------- */
+chalkboard:{ name:"Chalkboard",
+  stageBg:()=>`linear-gradient(${rgba(state.colors.primary,.35)},${rgba(state.colors.primary,.35)}), #15321f`,
+  deco:()=>{
+    const s=state.colors.secondary;
+    return `
+    <svg viewBox="0 0 1080 1350" style="left:0;top:0;width:100%;height:100%;opacity:.5">
+      <g stroke="#fff" stroke-width="3" fill="none" opacity=".55" stroke-linecap="round">
+        <path d="M120 1000 q140 -120 260 -30" stroke-dasharray="2 0"/>
+        <path d="M380 970 l30 -28 m0 28 l-30 -28"/>
+        <circle cx="180" cy="1080" r="22"/><circle cx="250" cy="1090" r="22"/>
+        <path d="M520 1120 l60 -40 m0 40 l-60 -40"/>
+        <path d="M820 240 q60 80 140 60" stroke="${s}"/>
+      </g>
+    </svg>
+    <div style="left:60px;top:430px;width:430px;height:4px;background:${s};opacity:.8"></div>`;
+  },
+  layers:{
+    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
+    logo:    img({bind:"logo",x:900,y:60,w:120,h:120,z:20}),
+    player:  img({bind:"player",x:560,y:300,w:520,h:1020,fit:"contain",z:5}),
+    eyebrow: txt({bind:"eyebrow",x:60,y:130,w:500,size:34,color:"secondary",font:F.chalk,ls:1,weight:400}),
+    hero:    txt({bind:"heroNumber",x:55,y:180,w:480,size:240,color:"white",font:F.chalk,lh:.9,weight:400}),
+    heroDesc:txt({bind:"heroDesc",x:60,y:450,w:470,size:34,color:"white",font:F.chalk,weight:400,lh:1.1}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:60,y:980,w:440,size:42,color:"white",font:F.chalk,weight:400}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:60,y:1080,w:440,size:42,color:"white",font:F.chalk,weight:400}),
+    callout: txt({bind:"callout",x:560,y:160,w:430,size:30,color:"secondary",font:F.chalk,align:"center",weight:400,pad:"24px 18px",radius:200,z:22,outline:true}),
+    playerName:txt({bind:"playerName",x:560,y:1190,w:480,size:48,color:"white",font:F.chalk,align:"center",weight:400,z:21}),
+    playerMeta:txt({bind:"playerMeta",x:560,y:1268,w:480,size:26,color:"secondary",font:F.chalk,align:"center",weight:400,z:21}),
+    footer:  txt({bind:"footer",x:60,y:1310,w:520,size:22,color:"white",font:F.chalk,weight:400}),
+  }},
+
+/* ---------------- SPOTLIGHT ---------------- */
+spotlight:{ name:"Spotlight",
+  stageBg:()=>`#000`,
+  deco:()=>spotlightDeco(),
+  layers:{
+    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
+    player:  img({bind:"player",x:195,y:35,w:690,h:1000,fit:"cover",z:5,zoom:1,cropX:0.5,cropY:0.40}),
+    logo:    img({bind:"logo",x:56,y:52,w:96,h:96,z:21}),
+    eyebrow: txt({bind:"eyebrow",x:-68,y:395,w:340,size:25,color:"secondary",font:F.cond,ls:8,weight:600,transform:"rotate(-90deg)",align:"center",z:22}),
+    hero:    txt({bind:"heroNumber",x:58,y:500,w:250,size:168,color:"white",font:F.disp,lh:.85,z:22}),
+    heroDesc:txt({bind:"heroDesc",x:64,y:690,w:250,size:22,color:"secondary",font:F.cond,weight:600,lh:1.05,z:22}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:788,y:505,w:250,size:40,color:"white",font:F.cond,align:"right",z:22}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:788,y:655,w:250,size:40,color:"white",font:F.cond,align:"right",z:22}),
+    playerName:txt({bind:"playerName",x:0,y:1105,w:1080,size:42,color:"white",font:F.disp,align:"center",z:22}),
+    playerMeta:txt({bind:"playerMeta",x:0,y:1160,w:1080,size:21,color:"secondary",font:F.cond,weight:600,ls:3,align:"center",z:22}),
+    callout: txt({bind:"callout",x:0,y:1240,w:1080,size:23,color:"black",bg:"secondary",pad:"14px 0",font:F.cond,ls:3,align:"center",z:23}),
+    footer:  txt({bind:"footer",x:0,y:1308,w:1080,size:17,color:"secondary",font:F.sans,ls:2,align:"center",opacity:.72,z:22}),
+  }},
+
+/* ---------------- COLLAGE (disabled for focus sprint) ---------------- */
+collage:{ name:"Collage",
+  stageBg:()=>`linear-gradient(${rgba(state.colors.primary,.85)},${rgba(state.colors.primary,.85)}),
+     repeating-linear-gradient(0deg,#cabfa6 0 3px,#c2b69b 3px 6px)`,
+  deco:()=>`
+    <div style="left:-40px;top:240px;width:1160px;height:120px;background:${state.colors.secondary};transform:rotate(-4deg);opacity:.9;"></div>
+    <div style="left:120px;top:760px;width:520px;height:200px;background:#f7f4ec;transform:rotate(2deg);box-shadow:0 8px 20px #0006;"></div>`,
+  layers:{
+    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
+    player:  img({bind:"player",x:120,y:330,w:560,h:840,fit:"contain",z:6,transform:"rotate(-4deg)"}),
+    logo:    img({bind:"logo",x:880,y:95,w:130,h:130,z:23,transform:"rotate(6deg)"}),
+    eyebrow: txt({bind:"eyebrow",x:90,y:120,w:520,size:26,color:"black",bg:"white",pad:"8px 14px",font:F.type,transform:"rotate(-3deg)",z:20}),
+    hero:    txt({bind:"heroNumber",x:600,y:300,w:430,size:230,color:"black",bg:"white",pad:"4px 22px",font:F.serif,weight:900,align:"center",z:20,transform:"rotate(3deg)",lh:.9}),
+    heroDesc:txt({bind:"heroDesc",x:610,y:600,w:400,size:26,color:"white",bg:"primary",pad:"10px 14px",font:F.type,z:20,transform:"rotate(-2deg)",lh:1.1}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:640,y:760,w:330,size:32,color:"#222",bg:"#f7f4ec",pad:"14px 16px",font:F.type,z:21,transform:"rotate(4deg)"}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:660,y:920,w:330,size:32,color:"#222",bg:"#f7f4ec",pad:"14px 16px",font:F.type,z:21,transform:"rotate(-3deg)"}),
+    callout: txt({bind:"callout",x:120,y:1180,w:520,size:34,color:"secondary",font:F.comic,ls:1,z:22,transform:"rotate(-8deg)",outline:false}),
+    playerName:txt({bind:"playerName",x:120,y:1090,w:600,size:38,color:"white",bg:"black",pad:"6px 14px",font:F.type,z:22}),
+    playerMeta:txt({bind:"playerMeta",x:128,y:1162,w:520,size:22,color:"secondary",font:F.type,z:22,transform:"rotate(-2deg)"}),
+    footer:  txt({bind:"footer",x:620,y:1300,w:400,size:18,color:"#fff",font:F.type,align:"right"}),
+  }},
+
+/* ---------------- EFFICIENCY (disabled for focus sprint) ---------------- */
+efficiency:{ name:"Efficiency",
+  stageBg:()=>`${shade(state.colors.primary,-60)}`,
+  deco:()=>{
+    const p=state.colors.primary;
+    return `
+    <div style="right:0;top:0;width:65%;height:100%;background:#fbfbfb;z-index:2;"></div>
+    <div style="left:430px;top:560px;width:560px;height:46px;background:${p};border-radius:6px;z-index:3;"></div>
+    <div style="left:430px;top:630px;width:230px;height:46px;background:#d7d7d7;border-radius:6px;z-index:3;"></div>`;
+  },
+  layers:{
+    player:  img({bind:"player",x:0,y:180,w:430,h:1000,fit:"cover",z:4}),
+    logo:    img({bind:"logo",x:900,y:80,w:110,h:110,z:21}),
+    playerName:txt({bind:"playerName",x:20,y:1066,w:400,size:34,color:"white",font:F.cond,weight:700,z:20}),
+    playerMeta:txt({bind:"playerMeta",x:20,y:1116,w:400,size:22,color:"secondary",font:F.cond,weight:600,ls:1,z:20}),
+    eyebrow: txt({bind:"eyebrow",x:460,y:90,w:560,size:26,color:"primary",font:F.cond,ls:5,weight:600,z:20}),
+    hero:    txt({bind:"heroNumber",x:455,y:150,w:560,size:300,color:"primary",font:F.disp,lh:.8,z:20}),
+    heroDesc:txt({bind:"heroDesc",x:460,y:470,w:560,size:30,color:"#333",font:F.cond,weight:600,lh:1.05,z:20}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:460,y:760,w:540,size:42,color:"#111",font:F.cond,z:20}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:460,y:870,w:540,size:42,color:"#111",font:F.cond,z:20}),
+    callout: txt({bind:"callout",x:460,y:1010,w:520,size:26,color:"white",bg:"primary",pad:"14px 22px",radius:40,font:F.cond,align:"center",z:20}),
+    footer:  txt({bind:"footer",x:460,y:1290,w:560,size:18,color:"#999",font:F.sans,ls:2,z:20}),
+  }},
+
+/* ---------------- EFFICIENCY GAUGE (disabled for focus sprint) ---------------- */
+efficiency_gauge:{ name:"Eff. Gauge",
+  stageBg:()=>`radial-gradient(circle at 50% 40%, #20242c, #0a0b0e 70%)`,
+  deco:()=>{
+    const p=state.colors.primary, s=state.colors.secondary;
+    return `
+    <svg viewBox="0 0 1080 700" style="left:0;top:200px;width:100%;height:700px;z-index:3;">
+      <path d="M180 520 A360 360 0 0 1 900 520" fill="none" stroke="#333" stroke-width="40" stroke-linecap="round"/>
+      <path d="M180 520 A360 360 0 0 1 760 250" fill="none" stroke="${p}" stroke-width="40" stroke-linecap="round"/>
+      <line x1="540" y1="520" x2="760" y2="250" stroke="#fff" stroke-width="6"/>
+      <circle cx="540" cy="520" r="16" fill="#fff"/>
+      <text x="510" y="200" fill="${s}" font-size="22" font-family="Oswald">AVG</text>
+    </svg>`;
+  },
+  layers:{
+    player:  img({bind:"player",x:330,y:640,w:420,h:700,fit:"contain",z:6}),
+    logo:    img({bind:"logo",x:60,y:70,w:110,h:110,z:21}),
+    eyebrow: txt({bind:"eyebrow",x:0,y:90,w:1080,size:28,color:"secondary",font:F.cond,ls:6,weight:600,align:"center",z:20}),
+    hero:    txt({bind:"heroNumber",x:340,y:410,w:400,size:190,color:"white",font:F.disp,align:"center",lh:.85,z:20}),
+    heroDesc:txt({bind:"heroDesc",x:300,y:600,w:480,size:22,color:"secondary",font:F.cond,weight:600,align:"center",z:20}),
+    playerName:txt({bind:"playerName",x:0,y:1108,w:1080,size:38,color:"white",font:F.disp,align:"center",z:21}),
+    playerMeta:txt({bind:"playerMeta",x:0,y:1158,w:1080,size:22,color:"secondary",font:F.cond,weight:600,ls:2,align:"center",z:21}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:70,y:1210,w:430,size:38,color:"white",font:F.cond,align:"center",z:21}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:580,y:1210,w:430,size:38,color:"white",font:F.cond,align:"center",z:21}),
+    callout: txt({bind:"callout",x:340,y:1305,w:400,size:20,color:"black",bg:"secondary",pad:"9px 0",radius:30,font:F.cond,align:"center",z:21}),
+  }},
+
+/* ---------------- EFFICIENCY REPORT CARD (disabled for focus sprint) ---------------- */
+efficiency_report_card:{ name:"Report Card",
+  stageBg:()=>`#f6f3ec`,
+  deco:()=>{
+    const p=state.colors.primary;
+    return `
+    <div style="left:0;top:0;width:100%;height:120px;background:${p};z-index:5;"></div>
+    <div style="left:60px;top:920px;width:960px;height:2px;background:#ccc;z-index:5;"></div>
+    <div style="left:60px;top:1040px;width:960px;height:2px;background:#ccc;z-index:5;"></div>`;
+  },
+  layers:{
+    teamName:txt({bind:"teamName",x:40,y:42,w:520,size:34,color:"white",font:F.cond,weight:700,ls:1,z:20}),
+    reportTitle:txt({bind:"reportTitle",x:440,y:48,w:480,size:24,color:"white",font:F.cond,ls:3,align:"right",weight:600,z:20}),
+    logo:    img({bind:"logo",x:930,y:18,w:84,h:84,z:21}),
+    player:  img({bind:"player",x:60,y:170,w:280,h:340,fit:"cover",z:6,border:true}),
+    playerName:txt({bind:"playerName",x:370,y:196,w:640,size:52,color:"primary",font:F.disp,z:20}),
+    playerMeta:txt({bind:"playerMeta",x:372,y:262,w:560,size:24,color:"muted",font:F.cond,weight:600,ls:2,z:20}),
+    eyebrow: txt({bind:"eyebrow",x:372,y:312,w:560,size:22,color:"muted",font:F.cond,ls:4,weight:600,z:20}),
+    hero:    txt({bind:"heroNumber",x:700,y:540,w:300,size:150,color:"white",bg:"primary",pad:"30px 0",radius:300,font:F.disp,align:"center",z:20,lh:.9}),
+    heroDesc:txt({bind:"heroDesc",x:60,y:640,w:600,size:32,color:"primary",font:F.cond,weight:700,lh:1.1,z:20}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:80,y:945,w:900,size:44,color:"#222",font:F.cond,z:20}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:80,y:1065,w:900,size:44,color:"#222",font:F.cond,z:20}),
+    callout: txt({bind:"callout",x:300,y:1180,w:480,size:26,color:"white",bg:"primary",pad:"14px 0",radius:40,font:F.cond,align:"center",z:20}),
+    footer:  txt({bind:"footer",x:60,y:1290,w:960,size:18,color:"#999",font:F.sans,ls:2,align:"center",z:20}),
+  }},
+
+/* ---------------- EFFICIENCY SPLIT (disabled for focus sprint) ---------------- */
+efficiency_split:{ name:"Eff. Split",
+  stageBg:()=>`#222`,
+  deco:()=>{
+    const p=state.colors.primary, s=state.colors.secondary;
+    return `
+    <div style="left:0;top:0;width:50%;height:100%;background:${p};"></div>
+    <div style="right:0;top:0;width:50%;height:100%;background:#5a5d63;"></div>
+    <div style="left:50%;top:0;width:6px;height:100%;transform:translateX(-50%);background:${s};z-index:15;"></div>
+    <div style="left:0;bottom:0;width:100%;height:160px;background:#101216;z-index:12;"></div>
+    <div style="left:50%;top:520px;width:170px;height:170px;transform:translate(-50%,-50%);border-radius:50%;
+       background:${s};z-index:20;box-shadow:0 8px 24px #0008;"></div>`;
+  },
+  layers:{
+    eyebrow: txt({bind:"eyebrow",x:0,y:60,w:1080,size:26,color:"secondary",font:F.cond,ls:6,weight:600,align:"center",z:25}),
+    logo:    img({bind:"logo",x:900,y:70,w:120,h:120,z:26}),
+    player:  img({bind:"player",x:20,y:200,w:540,h:920,fit:"contain",z:6}),
+    playerName:txt({bind:"playerName",x:40,y:130,w:480,size:38,color:"white",font:F.disp,z:25}),
+    playerMeta:txt({bind:"playerMeta",x:42,y:184,w:460,size:22,color:"secondary",font:F.cond,weight:600,ls:2,z:25}),
+    heroNum: txt({bind:"stat1num",x:40,y:760,w:480,size:200,color:"white",font:F.disp,align:"center",z:25,lh:.85}),
+    hero:    txt({bind:"heroNumber",x:455,y:435,w:170,size:78,color:"black",font:F.disp,align:"center",z:26,lh:1}),
+    avgLabel:txt({bind:"avgLabel",x:560,y:520,w:520,size:26,color:"#ddd",font:F.cond,ls:3,align:"center",weight:600,z:25}),
+    avgValue:txt({bind:"avgValue",x:560,y:560,w:520,size:200,color:"#c9ccd1",font:F.disp,align:"center",z:25,lh:.85}),
+    stat1:   txt({bind:"stat1",kind:"stat",x:60,y:1215,w:300,size:34,color:"white",font:F.cond,align:"center",z:25}),
+    stat2:   txt({bind:"stat2",kind:"stat",x:390,y:1215,w:300,size:34,color:"white",font:F.cond,align:"center",z:25}),
+    stat3:   txt({bind:"stat3",kind:"stat",x:720,y:1215,w:300,size:34,color:"white",font:F.cond,align:"center",z:25}),
+    footer:  txt({bind:"footer",x:0,y:1315,w:1080,size:16,color:"#888",font:F.sans,ls:2,align:"center",z:25}),
+  }},
+
+/* ---------------- CYBER PULSE ---------------- */
+cyber_pulse:{ name: "Cyber Pulse",
+  stageBg: () => `linear-gradient(180deg, #060814 0%, ${shade(state.colors.primary, -75)} 100%)`,
+  deco: () => `
+    <div style="inset:0; background: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 40px 40px, linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 40px 40px; opacity: 0.6;"></div>
+    <div style="left: -100px; top: 410px; width: 1300px; height: 12px; background: ${state.colors.primary}; transform: rotate(-12deg); box-shadow: 0 0 25px ${state.colors.primary}; z-index: 3;"></div>
+    <div style="right: 60px; top: 75px; font-family: monospace; font-size: 13px; color: ${state.colors.secondary}; opacity: 0.35; letter-spacing: 3px; z-index:4;">SYS_DATA // CORE_ENG_v2.0</div>
+    <div style="left: 60px; top: 1195px; width: 16px; height: 16px; border-left: 3px solid ${state.colors.secondary}; border-top: 3px solid ${state.colors.secondary}; z-index: 10;"></div>
+    <div style="right: 60px; top: 1245px; width: 16px; height: 16px; border-right: 3px solid ${state.colors.secondary}; border-bottom: 3px solid ${state.colors.secondary}; z-index: 10;"></div>`,
+  layers: {
+    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1, opacity: 0.35}),
+    player:     img({bind:"player", x:240, y:120, w:780, h:1080, fit:"cover", z:4, zoom:1, cropX:0.5, cropY:0.40}),
+    logo:       img({bind:"logo", x:75, y:70, w:110, h:110, z:20}),
+    eyebrow:    txt({bind:"eyebrow", x:75, y:225, w:600, size:24, color:"secondary", font:F.bebas, ls:5}),
+    playerName: txt({bind:"playerName", x:75, y:265, w:850, size:86, color:"white", font:F.disp, lh:0.95, ls:1}),
+    playerMeta: txt({bind:"playerMeta", x:80, y:360, w:600, size:22, color:"secondary", font:F.cond, weight:600, ls:3}),
+    hero:       txt({bind:"heroNumber", x:75, y:900, w:400, size:240, color:"primary", font:F.bebas, lh:0.8, z:10}),
+    heroDesc:   txt({bind:"heroDesc", x:75, y:1105, w:380, size:24, color:"white", font:F.sans, weight:600, ls:1, lh:1.2}),
+    stat1:      txt({bind:"stat1", kind:"stat", x:600, y:930, w:400, size:46, color:"white", font:F.cond}),
+    stat2:      txt({bind:"stat2", kind:"stat", x:600, y:1035, w:400, size:46, color:"white", font:F.cond}),
+    callout:    txt({bind:"callout", x:75, y:1205, w:930, size:24, color:"black", bg:"secondary", pad:"14px 20px", font:F.cond, weight:800, ls:4, align:"center", z:15}),
+  }},
+
+/* ---------------- NEO BRUTALIST (Swiss editorial grid) ---------------- */
+neo_brutalist: { name: "Swiss Grid",
+  stageBg: () => '#f6f5f1',
+  deco: () => {
+    const p = state.colors.primary;
+    const s = state.colors.secondary;
+    return `
+    <div style="left:0;top:0;width:100%;height:100%;background:repeating-linear-gradient(0deg,transparent,transparent 59px,${rgba('#111',.04)} 59px,${rgba('#111',.04)} 60px),repeating-linear-gradient(90deg,transparent,transparent 59px,${rgba('#111',.04)} 59px,${rgba('#111',.04)} 60px);z-index:1;"></div>
+    <div style="left:0;top:500px;width:580px;height:748px;background:#f6f5f1;z-index:2;"></div>
+    <div style="left:0;top:0;width:580px;height:500px;background:${p};z-index:4;"></div>
+    <div style="left:0;top:500px;width:580px;height:3px;background:#111111;z-index:14;"></div>
+    <div style="left:580px;top:500px;width:3px;height:748px;background:#111111;z-index:14;"></div>
+    <div style="left:56px;top:497px;width:468px;height:6px;background:${s};z-index:15;"></div>
+    <div style="left:56px;top:665px;width:504px;height:1px;background:${rgba('#111',.14)};z-index:12;"></div>
+    <div style="left:308px;top:665px;width:1px;height:355px;background:${rgba('#111',.12)};z-index:12;"></div>
+    <div style="left:56px;top:808px;width:504px;height:1px;background:${rgba('#111',.14)};z-index:12;"></div>
+    <div style="left:576px;top:0;width:56px;height:100%;background:linear-gradient(90deg,${rgba(p,.10)},transparent);z-index:9;pointer-events:none;"></div>
+    <div style="inset:0;border:3px solid #111111;z-index:30;pointer-events:none;"></div>`;
+  },
+  layers: {
+    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1, opacity: 0.07}),
+    player:     img({bind:"player", x:579, y:-3, w:640, h:1350, fit:"cover", z:7, zoom:1, cropX:0.52, cropY:0.38}),
+    logo:       img({bind:"logo", x:56, y:52, w:108, h:108, z:22}),
+    teamName:   txt({bind:"teamName", x:180, y:62, w:360, size:26, color:"white", font:F.cond, weight:700, ls:3, z:22}),
+    eyebrow:    txt({bind:"eyebrow", x:56, y:168, w:480, size:18, color:"secondary", font:F.cond, weight:700, ls:6, z:22}),
+    hero:       txt({bind:"heroNumber", x:56, y:200, w:500, size:210, color:"white", font:F.disp, lh:0.82, weight:900, z:22}),
+    heroDesc:   txt({bind:"heroDesc", x:56, y:398, w:480, size:14, color:"white", font:F.cond, weight:600, ls:3, textTransform:"uppercase", lh:1.35, z:22}),
+    playerName: txt({bind:"playerName", x:56, y:528, w:504, size:70, color:"primary", font:F.disp, lh:0.92, weight:900, z:20}),
+    playerMeta: txt({bind:"playerMeta", x:56, y:612, w:504, size:20, color:"black", font:F.cond, weight:700, ls:2, z:20}),
+    stat1:      txt({bind:"stat1", kind:"stat", statStack:true, x:56, y:692, w:236, size:36, color:"black", font:F.cond, z:18}),
+    stat2:      txt({bind:"stat2", kind:"stat", statStack:true, x:324, y:692, w:236, size:36, color:"black", font:F.cond, z:18}),
+    stat3:      txt({bind:"stat3", kind:"stat", statStack:true, x:56, y:832, w:504, size:36, color:"black", font:F.cond, z:18}),
+    callout:    txt({bind:"callout", x:0, y:1248, w:1080, size:26, color:"white", bg:"primary", pad:"18px 24px", font:F.cond, weight:800, ls:4, align:"center", z:25}),
+    footer:     txt({bind:"footer", x:620, y:1180, w:400, size:16, color:"muted", font:F.sans, weight:600, ls:2, align:"right", z:18}),
+  }},
+
+/* ---------------- VAPOR MOTION ---------------- */
+vapor_motion: { name: "Vapor Motion",
+  stageBg: () => `#0b0713`,
+  deco: () => `
+    <div style="left: -120px; top: -120px; width: 650px; height: 650px; border-radius: 50%; background: ${state.colors.secondary}; filter: blur(140px); opacity: 0.22; z-index: 2;"></div>
+    <div style="right: -80px; bottom: 80px; width: 750px; height: 750px; border-radius: 50%; background: ${state.colors.primary}; filter: blur(160px); opacity: 0.32; z-index: 2;"></div>`,
+  layers: {
+    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1, opacity: 0.25}),
+    player:     img({bind:"player", x:0, y:0, w:1080, h:1350, fit:"cover", z:3, zoom:1, cropX:0.5, cropY:0.5}),
+    glassCard:  glass({x:60, y:740, w:960, h:440, z:10}),
+    logo:       img({bind:"logo", x:100, y:770, w:88, h:88, z:15}),
+    eyebrow:    txt({bind:"eyebrow", x:210, y:768, w:400, size:22, color:"secondary", font:F.sans, weight:600, ls:4, italic:true, z:15}),
+    playerName: txt({bind:"playerName", x:210, y:794, w:400, size:50, color:"white", font:F.disp, italic:true, z:15}),
+    playerMeta: txt({bind:"playerMeta", x:214, y:844, w:400, size:20, color:"muted", font:F.cond, ls:2, z:15}),
+    hero:       txt({bind:"heroNumber", x:700, y:762, w:280, h:100, size:118, color:"secondary", font:F.bebas, align:"right", z:15, lh:0.9}),
+    heroDesc:   txt({bind:"heroDesc", x:660, y:828, w:320, h:68, size:17, color:"white", font:F.sans, weight:600, align:"right", z:15, lh:1.25}),
+    stat1:      txt({bind:"stat1", kind:"stat", x:100, y:880, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
+    stat2:      txt({bind:"stat2", kind:"stat", x:100, y:962, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
+    stat3:      txt({bind:"stat3", kind:"stat", x:560, y:880, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
+    callout:    txt({bind:"callout", x:560, y:964, w:400, h:68, size:20, color:"black", bg:"secondary", pad:"12px 14px", radius:12, font:F.cond, weight:700, align:"center", z:15}),
+    footer:     txt({bind:"footer", x:60, y:1048, w:960, h:40, size:16, color:"muted", font:F.sans, ls:3, align:"center", z:15}),
+  }},
+
+/* ---------------- SALUKIS CLEAN ---------------- */
+salukis_clean: { name: "Salukis Clean",
+  stageBg: () => '#ffffff',
+  deco: () => `
+    <style>
+      #stage[data-template="salukis_clean"] .layer[data-id="playerName"],
+      #stage[data-template="salukis_clean"] .layer[data-id="playerMeta"] { font-family: ${F.bebas} !important; text-transform: uppercase !important; }
+      #stage[data-template="salukis_clean"] .layer[data-id^="stat"] { flex-direction: column !important; align-items: flex-start !important; justify-content: center !important; gap: 0 !important; overflow: hidden !important; }
+      #stage[data-template="salukis_clean"] .layer[data-id^="stat"] .s-n { font-family: ${F.bebas} !important; font-weight: 400 !important; line-height: 0.9 !important; color: #112233 !important; width: 100% !important; }
+      #stage[data-template="salukis_clean"] .layer[data-id^="stat"] .s-l { font-family: ${F.cond} !important; font-size: 22px !important; font-weight: 800 !important; color: ${state.colors.primary} !important; letter-spacing: 0.5px !important; text-transform: uppercase !important; max-width: 100% !important; line-height: 1.15 !important; flex-shrink: 0 !important; }
+    </style>
+    <div style="left:0; bottom:0; width:100%; height:90px; background:${state.colors.primary}; z-index:10;"></div>`,
+  layers: {
+    logo:       img({bind:"logo", x:60, y:50, w:180, h:110, z:20}),
+    playerName: txt({bind:"playerName", x:420, y:52, w:600, size:76, color:"primary", font:F.bebas, weight:400, ls:2, align:"right", textTransform:"uppercase"}),
+    playerMeta: txt({bind:"playerMeta", x:420, y:128, w:600, size:40, color:"primary", font:F.bebas, weight:400, ls:2, align:"right", hollow:true, strokeW:1.5, textTransform:"uppercase"}),
+    player:     img({bind:"player", x:60, y:190, w:520, h:980, fit:"cover", z:5, border:true, borderColor:"primary"}),
+    eyebrow:    txt({bind:"eyebrow", x:640, y:200, w:380, size:20, color:"primary", font:F.cond, weight:800, ls:1, textTransform:"uppercase"}),
+    stat1:      txt({bind:"stat1", kind:"stat", statStack:true, x:640, y:SALUKIS_CLEAN_STAT_SLOTS[0].y, w:380, h:SALUKIS_CLEAN_STAT_SLOTS[0].h, size:150, font:F.bebas, align:"left", z:18}),
+    stat2:      txt({bind:"stat2", kind:"stat", statStack:true, x:640, y:SALUKIS_CLEAN_STAT_SLOTS[1].y, w:380, h:SALUKIS_CLEAN_STAT_SLOTS[1].h, size:150, font:F.bebas, align:"left", z:18}),
+    stat3:      txt({bind:"stat3", kind:"stat", statStack:true, x:640, y:SALUKIS_CLEAN_STAT_SLOTS[2].y, w:380, h:SALUKIS_CLEAN_STAT_SLOTS[2].h, size:150, font:F.bebas, align:"left", z:18}),
+    footer:     txt({bind:"footer", x:0, y:1296, w:1080, size:24, color:"white", font:F.sans, weight:700, align:"center", ls:1, z:20, textTransform:"uppercase"}),
+  }},
+
+/* ---------------- SALUKIS DARK ---------------- */
+salukis_dark: { name: "Salukis Dark",
+  stageBg: () => '#000000',
+  deco: () => `
+    <style>
+      #stage[data-template="salukis_dark"] .layer[data-id="playerName"],
+      #stage[data-template="salukis_dark"] .layer[data-id="playerMeta"] { font-family: ${F.bebas} !important; text-transform: uppercase !important; }
+      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] { flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 2px !important; overflow: hidden !important; text-align: center !important; padding: 0 8px !important; box-sizing: border-box !important; }
+      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] .s-n { font-family: ${F.bebas} !important; font-weight: 400 !important; line-height: 0.88 !important; width: 100% !important; color: ${state.colors.onPrimary || onColor(state.colors.primary)} !important; }
+      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] .s-l { font-family: ${F.cond} !important; font-size: 16px !important; font-weight: 700 !important; letter-spacing: 0.4px !important; text-transform: uppercase !important; max-width: 96% !important; line-height: 1.1 !important; flex-shrink: 0 !important; margin-top: 2px !important; color: ${state.colors.onPrimaryMuted || state.colors.onPrimary || onColor(state.colors.primary)} !important; opacity: 0.92 !important; }
+      #stage[data-template="salukis_dark"] .layer[data-id="callout"],
+      #stage[data-template="salukis_dark"] .layer[data-id="footer"] { display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; }
+    </style>
+    <div style="left:0; top:0; width:270px; height:125px; background:#ffffff; z-index:4;"></div>
+    <div style="left:0; bottom:0; width:100%; height:${SALUKIS_DARK_PANEL_H}px; background:${state.colors.primary}; z-index:10;"></div>`,
+  layers: {
+    logo:       img({bind:"logo", x:15, y:12, w:240, h:100, z:20}),
+    playerName: txt({bind:"playerName", x:320, y:40, w:700, size:60, color:"white", font:F.bebas, weight:400, align:"right", hollow:true, strokeW:2, ls:2, textTransform:"uppercase", z:20}),
+    playerMeta: txt({bind:"playerMeta", x:320, y:108, w:700, size:30, color:"white", font:F.bebas, weight:400, ls:2, align:"right", textTransform:"uppercase", z:20}),
+    player:     img({bind:"player", x:0, y:0, w:1080, h:1350, fit:"cover", zoom:1, cropX:0.5, cropY:0.5, z:2}),
+    stat1:      txt({bind:"stat1", kind:"stat", statStack:true, x:0, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
+    stat2:      txt({bind:"stat2", kind:"stat", statStack:true, x:360, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
+    stat3:      txt({bind:"stat3", kind:"stat", statStack:true, x:720, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
+    calloutBox: block({x:SALUKIS_DARK_PANEL_SLOTS.calloutBox.x, y:SALUKIS_DARK_PANEL_SLOTS.calloutBox.y, w:SALUKIS_DARK_PANEL_SLOTS.calloutBox.w, h:SALUKIS_DARK_PANEL_SLOTS.calloutBox.h, fill:"white", radius:3, z:11}),
+    callout:    txt({bind:"callout", x:SALUKIS_DARK_PANEL_SLOTS.calloutBox.x, y:SALUKIS_DARK_PANEL_SLOTS.calloutBox.y, w:SALUKIS_DARK_PANEL_SLOTS.calloutBox.w, h:SALUKIS_DARK_PANEL_SLOTS.calloutBox.h, size:26, color:"primary", font:F.bebas, weight:400, align:"center", z:16}),
+    footer:     txt({bind:"footer", x:0, y:SALUKIS_DARK_PANEL_SLOTS.footer.y, w:1080, h:SALUKIS_DARK_PANEL_SLOTS.footer.h, size:20, color:"white", font:F.sans, weight:800, align:"center", ls:1, z:15, textTransform:"uppercase"}),
+  }},
+};
+
+window.state=state;
+window.vaporGlassSettingsOf=vaporGlassSettingsOf;
+window.logoSettingsOf=logoSettingsOf;
+window.TEMPLATES=TEMPLATES;
+
+const GLASS_CARD_STYLES = {
+  frosted:        { label:"Frosted",    mode:"frosted", color:"#ffffff", opacity:0.08, borderOpacity:0.11, blur:24 },
+  solidPrimary:   { label:"Primary",    mode:"solid",   color:"primary", opacity:0.92, borderOpacity:0.35, blur:0 },
+  solidSecondary: { label:"Secondary",  mode:"solid",   color:"secondary", opacity:0.95, borderOpacity:0.3, blur:0 },
+  solidBlack:     { label:"Black",      mode:"solid",   color:"#0c1018", opacity:0.88, borderOpacity:0.2, blur:0 },
+  solidWhite:     { label:"White",      mode:"solid",   color:"#ffffff", opacity:0.96, borderOpacity:0.25, blur:0 },
+  solidDark:      { label:"Dark slate", mode:"solid",   color:"#1a2433", opacity:0.9, borderOpacity:0.22, blur:0 },
+};
+function vaporGlassSettingsOf(){
+  if(!state.vaporGlassSettings) state.vaporGlassSettings={mode:"frosted",preset:"frosted",color:"#ffffff",opacity:0.08,borderOpacity:0.11,blur:24};
+  const vg=state.vaporGlassSettings;
+  if(!vg.mode) vg.mode=(vg.blur>0 && vg.opacity<0.5)?"frosted":"solid";
+  if(!vg.preset) vg.preset=vg.mode==="frosted"?"frosted":"custom";
+  return vg;
+}
+function resolveGlassColor(c){
+  if(c==="primary") return state.colors.primary;
+  if(c==="secondary") return state.colors.secondary;
+  return c||"#ffffff";
+}
+function applyGlassCardPreset(presetId){
+  const p=GLASS_CARD_STYLES[presetId];
+  if(!p) return;
+  const g=vaporGlassSettingsOf();
+  g.preset=presetId;
+  g.mode=p.mode;
+  g.color=p.color;
+  g.opacity=p.opacity;
+  g.borderOpacity=p.borderOpacity;
+  g.blur=p.blur??0;
+  render();
+  scheduleSave();
+  buildVaporGlassControls();
+  if(state.selected==="glassCard") syncInspector();
+}
+function markGlassCustom(){
+  vaporGlassSettingsOf().preset="custom";
+}
+function glassCardControlsHTML(){
+  const g=vaporGlassSettingsOf();
+  const activePreset=g.preset||"frosted";
+  const solid=g.mode==="solid";
+  const opPct=Math.round(g.opacity*100);
+  const bopPct=Math.round(g.borderOpacity*100);
+  const blurPx=g.blur??24;
+  const fillHex=resolveGlassColor(g.color);
+  return `
+    <label class="fld">Card style</label>
+    <div class="tplgrid glass-presets" style="grid-template-columns:repeat(3,1fr)">
+      ${Object.entries(GLASS_CARD_STYLES).map(([id,p])=>
+        `<div class="tplchip glass-preset${activePreset===id?" active":""}" data-glass-preset="${id}">${p.label}</div>`
+      ).join("")}
+    </div>
+    <label class="fld glass-tint-label">${solid?"Fill color":"Tint color"}</label>
+    <div class="row" style="align-items:center;margin-bottom:8px">
+      <div style="width:42px;height:34px;border-radius:7px;border:1px solid var(--line);background:${rgba(fillHex,g.opacity)}"></div>
+      <div style="flex:1"><input type="color" class="glass-color" value="${fillHex}"></div>
+    </div>
+    <label class="fld">Fill opacity: <b class="glass-op-val">${opPct}%</b></label>
+    <input type="range" class="glass-op" min="0" max="100" value="${opPct}">
+    <label class="fld">Border opacity: <b class="glass-bop-val">${bopPct}%</b></label>
+    <input type="range" class="glass-bop" min="0" max="100" value="${bopPct}">
+    <div class="glass-blur-row"${solid?' style="display:none"':""}>
+      <label class="fld">Blur: <b class="glass-blur-val">${blurPx}px</b></label>
+      <input type="range" class="glass-blur" min="0" max="48" value="${blurPx}">
+    </div>
+    <button class="btn sec glass-select" type="button" style="margin-top:8px">Select glass on canvas</button>
+    <div class="mini">Frosted = translucent blur. Solid = opaque brand or neutral fills. Drag the panel on the poster to move it.</div>`;
+}
+function wireGlassCardControls(root){
+  if(!root) return;
+  const g=vaporGlassSettingsOf();
+  root.querySelectorAll(".glass-preset").forEach(chip=>{
+    chip.onclick=()=>applyGlassCardPreset(chip.dataset.glassPreset);
+  });
+  const col=root.querySelector(".glass-color");
+  const op=root.querySelector(".glass-op");
+  const bop=root.querySelector(".glass-bop");
+  const blur=root.querySelector(".glass-blur");
+  const blurRow=root.querySelector(".glass-blur-row");
+  const tintLabel=root.querySelector(".glass-tint-label");
+  const opv=root.querySelector(".glass-op-val");
+  const bopv=root.querySelector(".glass-bop-val");
+  const blurv=root.querySelector(".glass-blur-val");
+  const selBtn=root.querySelector(".glass-select");
+  const refresh=()=>{
+    const solid=g.mode==="solid";
+    if(tintLabel) tintLabel.textContent=solid?"Fill color":"Tint color";
+    if(blurRow) blurRow.style.display=solid?"none":"";
+    buildVaporGlassControls();
+    if(state.selected==="glassCard") syncInspector();
+  };
+  if(col) col.oninput=e=>{ g.color=e.target.value; markGlassCustom(); render(); scheduleSave(); refresh(); };
+  if(op) op.oninput=e=>{ g.opacity=(+e.target.value)/100; if(opv) opv.textContent=e.target.value+"%"; markGlassCustom(); render(); scheduleSave(); };
+  if(bop) bop.oninput=e=>{ g.borderOpacity=(+e.target.value)/100; if(bopv) bopv.textContent=e.target.value+"%"; markGlassCustom(); render(); scheduleSave(); };
+  if(blur) blur.oninput=e=>{ g.blur=+e.target.value; if(blurv) blurv.textContent=e.target.value+"px"; g.mode=g.blur>0?"frosted":"solid"; markGlassCustom(); render(); scheduleSave(); refresh(); };
+  if(selBtn) selBtn.onclick=()=>select("glassCard");
+}
+function buildVaporGlassControls(){
+  const section=document.getElementById("vaporGlassSection");
+  const wrap=document.getElementById("vaporGlassControls");
+  const onVapor=state.template==="vapor_motion";
+  if(section) section.style.display=onVapor?"":"none";
+  if(!wrap || !onVapor) return;
+  wrap.innerHTML=glassCardControlsHTML();
+  wireGlassCardControls(wrap);
+}
+function applyGlassStyle(el, def, g){
+  const vg=vaporGlassSettingsOf();
+  const base=resolveGlassColor(vg.color);
+  const solid=vg.mode==="solid";
+  const fill=rgba(base,vg.opacity);
+  const border=rgba(base,vg.borderOpacity);
+  const blur=solid?0:(vg.blur??24);
+  const rad=g.radius??def.radius??24;
+  el.style.background=fill;
+  if(blur>0){
+    el.style.backdropFilter=`blur(${blur}px)`;
+    el.style.webkitBackdropFilter=`blur(${blur}px)`;
+  } else {
+    el.style.backdropFilter="none";
+    el.style.webkitBackdropFilter="none";
+  }
+  el.style.border=`1px solid ${border}`;
+  el.style.borderRadius=rad+"px";
+  el.style.boxShadow=solid?"0 24px 48px rgba(0,0,0,0.45)":"0 40px 80px rgba(0,0,0,0.55)";
+  el.style.height=(g.h??g.w)+"px";
+}
+function applyBlockStyle(el, def, g){
+  const fill=roleColor(g.fill || g.color || def.fill || def.color || "white");
+  el.style.background=fill;
+  el.style.borderRadius=(g.radius??def.radius??0)+"px";
+  el.style.height=(g.h??g.w)+"px";
+}
+function migrateVaporGlassCardLayout(d){
+  const vg=d?.vaporGlassSettings;
+  if(!vg || vg.cardX==null) return;
+  if(!state.layouts.vapor_motion) state.layouts.vapor_motion={};
+  const cur=state.layouts.vapor_motion.glassCard;
+  state.layouts.vapor_motion.glassCard=Object.assign({
+    x:vg.cardX, y:vg.cardY??740, w:vg.cardW??960, h:vg.cardH??440,
+    rotate:0, hidden:false, opacity:1, radius:24, lockAspect:false, z:10,
+  }, cur||{});
+  delete state.vaporGlassSettings.cardX;
+  delete state.vaporGlassSettings.cardY;
+  delete state.vaporGlassSettings.cardW;
+  delete state.vaporGlassSettings.cardH;
+}
+
+/* Focus sprint — only these appear in the template picker */
+/* v3 lab — JSON-backed templates only (same defs as index_2, narrower picker) */
+const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark"];
+const BUNDLED_STORIES_URL = "./stories.players.json";
+function spotlightDecoBase(opts={}){
+  const s=state.colors.secondary;
+  const spotX=opts.spotX??"50%", spotY=opts.spotY??"32%", spotOff=opts.spotOff??"-42%";
+  const vigX=opts.vigX??"50%", vigY=opts.vigY??"36%";
+  const extra=opts.extra??"";
+  return `
+    <div style="left:50%;top:6%;width:560px;height:880px;transform:translateX(${spotOff});z-index:3;
+      background:radial-gradient(ellipse at ${spotX} ${spotY}, ${rgba(s,.22)} 0%, ${rgba('#ffffff',.10)} 20%, transparent 50%);"></div>
+    <div style="left:0;top:0;width:26%;height:100%;z-index:4;
+      background:linear-gradient(90deg, ${rgba(s,.08)} 0%, transparent 100%);"></div>
+    <div style="inset:0;width:100%;height:100%;z-index:8;
+      background:radial-gradient(ellipse at ${vigX} ${vigY}, transparent 0 26%, ${rgba('#000000',.35)} 48%, ${rgba('#000000',.94)} 100%);"></div>
+    <div style="left:0;top:0;width:32%;height:100%;z-index:9;
+      background:linear-gradient(90deg, #000 0%, ${rgba('#000000',.78)} 58%, transparent 100%);"></div>
+    <div style="right:0;top:0;width:32%;height:100%;z-index:9;
+      background:linear-gradient(270deg, #000 0%, ${rgba('#000000',.78)} 58%, transparent 100%);"></div>
+    ${extra}`;
+}
+function spotlightDeco(variantId){
+  const id=variantId||state.spotlightVariant||"portrait";
+  const v=SPOTLIGHT_VARIANTS[id];
+  if(v&&v.deco) return v.deco();
+  return spotlightDecoBase();
+}
+const SPOTLIGHT_VARIANTS = {
+  portrait: {
+    name: "Portrait",
+    layers: {
+      player:{x:195,y:35,w:690,h:1000,fit:"cover",zoom:1,cropX:.5,cropY:.40,z:5},
+      logo:{x:56,y:52,w:96,h:96,z:21},
+      eyebrow:{x:-68,y:395,w:340,size:25,rotate:-90,z:22},
+      hero:{x:58,y:500,w:250,size:168,z:22},
+      heroDesc:{x:64,y:690,w:250,size:22,z:22},
+      stat1:{x:788,y:505,w:250,size:40,align:"right",z:22},
+      stat2:{x:788,y:655,w:250,size:40,align:"right",z:22},
+      playerName:{x:0,y:1105,w:1080,size:42,align:"center",z:22},
+      playerMeta:{x:0,y:1160,w:1080,size:21,align:"center",z:22},
+      callout:{x:0,y:1240,w:1080,size:23,z:23},
+      footer:{x:0,y:1308,w:1080,size:17,z:22},
+    }
+  },
+  orbit: {
+    name: "Orbit",
+    deco:()=>spotlightDecoBase({spotX:"58%",spotY:"30%",spotOff:"-28%",vigX:"58%",vigY:"34%"}),
+    layers: {
+      player:{x:255,y:25,w:640,h:1040,fit:"cover",zoom:1,cropX:.55,cropY:.42,z:5},
+      logo:{x:56,y:52,w:96,h:96,z:21},
+      eyebrow:{x:-72,y:360,w:360,size:24,rotate:-90,z:22},
+      hero:{x:58,y:455,w:240,size:148,z:22},
+      heroDesc:{x:64,y:600,w:250,size:22,z:22},
+      stat1:{x:58,y:720,w:250,size:38,align:"left",z:22},
+      stat2:{x:58,y:870,w:250,size:38,align:"left",z:22},
+      playerName:{x:0,y:1090,w:1080,size:46,align:"center",z:22},
+      playerMeta:{x:0,y:1150,w:1080,size:22,align:"center",z:22},
+      callout:{x:0,y:1240,w:1080,size:23,z:23},
+      footer:{x:0,y:1308,w:1080,size:17,z:22},
+    }
+  },
+  cover: {
+    name: "Cover",
+    layers: {
+      player:{x:110,y:0,w:860,h:1140,fit:"cover",zoom:1,cropX:.5,cropY:.38,z:5},
+      logo:{x:56,y:52,w:90,h:90,z:21},
+      eyebrow:{x:810,y:195,w:350,size:24,rotate:90,z:22},
+      hero:{x:52,y:720,w:340,size:172,z:22},
+      heroDesc:{x:60,y:900,w:340,size:24,z:22},
+      stat1:{x:762,y:698,w:300,size:44,align:"right",italic:true,z:22},
+      stat2:{x:762,y:848,w:300,size:44,align:"right",italic:true,z:22},
+      playerName:{x:60,y:1048,w:720,size:78,weight:800,align:"left",italic:true,z:22},
+      playerMeta:{x:60,y:1140,w:500,size:22,align:"left",z:22},
+      callout:{x:0,y:1236,w:1080,size:23,z:23},
+      footer:{x:0,y:1308,w:1080,size:17,z:22},
+    }
+  },
+  vault: {
+    name: "Vault",
+    deco:()=>spotlightDecoBase({spotX:"50%",spotY:"30%",spotOff:"-42%",vigX:"50%",vigY:"32%",
+      extra:`<div style="inset:0;width:100%;height:100%;z-index:7;pointer-events:none;
+        background:radial-gradient(ellipse at 50% 34%, transparent 0 22%, ${rgba('#000000',.20)} 40%, ${rgba('#000000',.96)} 100%);"></div>`}),
+    layers: {
+      player:{x:140,y:20,w:800,h:1060,fit:"cover",zoom:1,cropX:.5,cropY:.36,z:5},
+      logo:{x:56,y:52,w:80,h:80,z:21},
+      eyebrow:{x:-88,y:320,w:360,size:23,rotate:-90,z:22},
+      hero:{x:54,y:468,w:240,size:148,z:22},
+      heroDesc:{x:60,y:630,w:240,size:21,z:22},
+      stat1:{x:820,y:480,w:220,size:34,align:"right",z:22},
+      stat2:{x:820,y:630,w:220,size:34,align:"right",z:22},
+      playerName:{x:0,y:1090,w:1080,size:44,align:"center",z:22},
+      playerMeta:{x:0,y:1145,w:1080,size:20,align:"center",z:22},
+      callout:{x:0,y:1240,w:1080,size:23,z:23},
+      footer:{x:0,y:1308,w:1080,size:17,z:22},
+    }
+  },
+  split: {
+    name: "Split",
+    deco:()=>spotlightDecoBase({spotX:"50%",spotY:"34%",vigX:"50%",vigY:"38%",
+      extra:`<div style="left:540px;top:120px;width:1px;height:1020px;z-index:10;background:${rgba(state.colors.secondary,.40)};"></div>`}),
+    layers: {
+      player:{x:200,y:55,w:680,h:980,fit:"cover",zoom:1,cropX:.5,cropY:.40,z:5},
+      logo:{x:56,y:52,w:96,h:96,z:21},
+      eyebrow:{x:-62,y:280,w:340,size:24,rotate:-90,z:22},
+      hero:{x:56,y:490,w:250,size:160,z:22},
+      heroDesc:{x:62,y:670,w:250,size:22,z:22},
+      stat1:{x:800,y:490,w:240,size:38,align:"right",z:22},
+      stat2:{x:800,y:640,w:240,size:38,align:"right",z:22},
+      playerName:{x:0,y:1118,w:1080,size:42,align:"center",z:22},
+      playerMeta:{x:0,y:1170,w:1080,size:21,align:"center",z:22},
+      callout:{x:0,y:1240,w:1080,size:23,z:23},
+      footer:{x:0,y:1308,w:1080,size:17,z:22},
+    }
+  }
+};
+function ensureEnabledTemplate(id){
+  return ENABLED_TEMPLATES.includes(id) ? id : ENABLED_TEMPLATES[0];
+}
+function logoSettingsOf(t){
+  if(!state.logoSettings[t]) state.logoSettings[t]={opacity:1,scale:1};
+  return state.logoSettings[t];
+}
+function buildLogoControls(){
+  const wrap=document.getElementById("logoControls");
+  if(!wrap) return;
+  const im=state.images.logo;
+  if(!im){ wrap.style.display="none"; return; }
+  wrap.style.display="block";
+  const ls=logoSettingsOf(state.template);
+  const lbl=document.getElementById("logoCtrlLabel");
+  if(lbl) lbl.textContent=`Team logo — ${tpl().name}`;
+  const op=document.getElementById("logoOpacity");
+  const sc=document.getElementById("logoScale");
+  const opv=document.getElementById("logoOpacityVal");
+  const scv=document.getElementById("logoScaleVal");
+  const opPct=Math.round(ls.opacity*100);
+  const scPct=Math.round(ls.scale*100);
+  if(op){ op.value=opPct; op.oninput=e=>{ ls.opacity=(+e.target.value)/100; if(opv) opv.textContent=e.target.value+"%"; render(); scheduleSave(); }; }
+  if(sc){ sc.value=scPct; sc.oninput=e=>{ ls.scale=(+e.target.value)/100; if(scv) scv.textContent=e.target.value+"%"; render(); scheduleSave(); }; }
+  if(opv) opv.textContent=opPct+"%";
+  if(scv) scv.textContent=scPct+"%";
+}
+
+/* darken/lighten a hex by percent (-100..100) */
+function shade(hex,pct){
+  let [r,g,b]=hexToRgb(hex); const t=pct<0?0:255, p=Math.abs(pct)/100;
+  r=Math.round((t-r)*p+r); g=Math.round((t-g)*p+g); b=Math.round((t-b)*p+b);
+  return `#${[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('')}`;
+}
+
+/* which bind keys are plain text inputs shown in the panel */
+const TEXT_FIELDS = [
+  ["teamName","Team name"],["playerName","Player name"],
+  ["position","Position (e.g. RB, WR)"],["playerClass","Class / Year"],["eyebrow","Eyebrow"],
+  ["heroNumber","Hero stat number"],["heroDesc","Hero description"],
+  ["stat1num","Stat 1 — number"],["stat1label","Stat 1 — label"],
+  ["stat2num","Stat 2 — number"],["stat2label","Stat 2 — label"],
+  ["stat3num","Stat 3 — number"],["stat3label","Stat 3 — label"],
+  ["callout","Callout"],["hashtag","Hashtag"],["sport","Sport"],
+  ["reportTitle","Report title"],["avgLabel","Average label"],["avgValue","Average value"],
+];
+
+/* Same font family — varies weight, italic, spacing & color role only */
+const TEXT_STYLE_PRESETS = {
+  default:    { label:"Default" },
+  bold:       { label:"Bold",        weight:800,  italic:false, underline:false, ls:0,  textTransform:null, labelColor:null },
+  boldItalic: { label:"Bold Italic", weight:700,  italic:true,  underline:false, ls:0,  textTransform:null, labelColor:null },
+  editorial:  { label:"Editorial",   weight:400,  italic:true,  underline:false, ls:2,  textTransform:null, labelColor:"secondary" },
+  label:      { label:"Label",       weight:600,  italic:false, underline:false, ls:6,  textTransform:"uppercase", labelColor:"secondary" },
+  heavy:      { label:"Heavy",       weight:900,  italic:false, underline:false, ls:0,  textTransform:null, labelColor:null },
+};
+function applyTextStylePreset(g, def, presetId){
+  const p=TEXT_STYLE_PRESETS[presetId];
+  if(!p) return;
+  g.textStyle=presetId;
+  if(presetId==="default"){
+    g.weight=def.weight??700;
+    g.italic=!!def.italic;
+    g.ls=def.ls??null;
+    g.color=def.color??"white";
+    g.labelColor=null;
+    g.textTransform=def.textTransform??null;
+    g.underline=!!def.underline;
+    return;
+  }
+  if(p.weight!=null) g.weight=p.weight;
+  if(p.italic!=null) g.italic=p.italic;
+  if(p.underline!=null) g.underline=p.underline;
+  if(p.ls!=null) g.ls=p.ls;
+  if(p.color!=null) g.color=p.color;
+  g.labelColor=p.labelColor??null;
+  g.textTransform=p.textTransform??null;
+}
+function markTextStyleCustom(g){ g.textStyle="custom"; }
+function detectTextStylePreset(g, def){
+  if(g.textStyle && g.textStyle!=="custom" && TEXT_STYLE_PRESETS[g.textStyle]) return g.textStyle;
+  const gv=(k,dk)=>g[k]??def[k]??dk;
+  const it=!!gv("italic",false);
+  const ul=!!gv("underline",false);
+  const w=gv("weight",700);
+  const ls=gv("ls",0)||0;
+  const col=gv("color","white");
+  const lc=g.labelColor??null;
+  const tt=g.textTransform??def.textTransform??null;
+  let matched=null;
+  for(const [id,p] of Object.entries(TEXT_STYLE_PRESETS)){
+    if(id==="default"){
+      if(w===(def.weight??700) && it===!!def.italic && ul===!!def.underline && ls===(def.ls??0) &&
+         col===(def.color??"white") && !lc && !tt) return "default";
+      continue;
+    }
+    if(p.weight===w && !!p.italic===it && !!p.underline===ul && (p.ls??0)===ls &&
+       (p.color==null||p.color===col) && (p.labelColor??null)===(lc??null) &&
+       (p.textTransform??null)===(tt??null)) matched=id;
+  }
+  return matched||"custom";
+}
+function textStyleSummary(presetId, g, def){
+  if(presetId==="custom"){
+    const parts=[];
+    const w=g.weight??def.weight??700;
+    if(g.italic ?? def.italic) parts.push("Italic");
+    if(g.underline ?? def.underline) parts.push("Underline");
+    if(w>=800) parts.push("Bold");
+    else if(w>=600) parts.push("Semi-bold");
+    if((g.textTransform??def.textTransform)==="uppercase") parts.push("Uppercase");
+    if(g.labelColor) parts.push("Alt label color");
+    return parts.length?"Custom — "+parts.join(", "):"Custom";
+  }
+  return TEXT_STYLE_PRESETS[presetId]?.label??"Default";
+}
+
+/* ============================================================
+   LAYOUT (geometry) MANAGEMENT
+============================================================ */
+function tpl(){ return TEMPLATES[state.template]; }
+/* template layers merged with any duplicated (extra) layers for this template */
+function layersOf(){ return Object.assign({}, tpl().layers, state.extraLayers[state.template]||{}); }
+function ensureLayout(){
+  const t = state.template;
+  if(!state.layouts[t]) state.layouts[t] = {};
+  const L = state.layouts[t];
+  for(const [id,def] of Object.entries(layersOf())){
+    if(!L[id]) L[id] = { x:def.x, y:def.y, w:def.w, h:def.h ?? null, size:def.size ?? null,
+                         weight:def.weight ?? null, rotate:parseRotate(def.transform), italic:!!def.italic,
+                         underline:!!def.underline,
+                         ls:def.ls ?? null, color:def.color, textTransform:def.textTransform ?? null,
+                         labelColor:null, textStyle:null, hidden:false,
+                         // image transform / crop controls
+                         fit:def.fit ?? null, zoom:def.zoom ?? 1, cropX:def.cropX ?? 0.5, cropY:def.cropY ?? 0.5, flipH:false, flipV:false,
+                         opacity:(def.opacity!=null?def.opacity:1), radius:def.type==="glass"?(def.radius??24):(def.type==="block"?(def.radius??0):0),
+                         borderOn:!!def.border, borderW:6, borderColor:def.borderColor||"primary",
+                         lockAspect:def.type==="image", z:def.z ?? null };
+    else if(def.type==="text" && L[id].underline==null && def.underline) L[id].underline=true;
+  }
+  return L;
+}
+function parseRotate(t){ if(!t) return 0; const m=/rotate\((-?\d+(\.\d+)?)deg\)/.exec(t); return m?parseFloat(m[1]):0; }
+function geo(id){ return ensureLayout()[id]; }
+
+const FONT_KEY_MAP = {
+  disp: F.disp, cond: F.cond, sans: F.sans, bebas: F.bebas, serif: F.serif,
+};
+
+function applyLayoutOverrides(templateId, overrides){
+  if(!overrides || typeof overrides!=="object") return;
+  ensureLayout();
+  const L=state.layouts[templateId]||{};
+  const defs=layersOf();
+  for(const [id, patch] of Object.entries(overrides)){
+    if(!L[id]) continue;
+    const g=L[id];
+    if(patch.size!=null) g.size=patch.size;
+    if(patch.color!=null) g.color=patch.color;
+    if(patch.font!=null) g.font=FONT_KEY_MAP[patch.font]||patch.font;
+    if(patch.weight!=null) g.weight=patch.weight;
+    if(patch.align!=null) g.align=patch.align;
+    if(patch.ls!=null) g.ls=patch.ls;
+    if(patch.lh!=null) g.lh=patch.lh;
+    if(patch.italic!=null) g.italic=!!patch.italic;
+    if(patch.hollow!=null) g.hollow=!!patch.hollow;
+    if(patch.strokeW!=null) g.strokeW=patch.strokeW;
+    if(patch.underline!=null) g.underline=!!patch.underline;
+    if(patch.textTransform!=null) g.textTransform=patch.textTransform;
+    if(patch.bg!=null) g.bg=patch.bg;
+    if(patch.pad!=null) g.pad=patch.pad;
+    if(patch.radius!=null) g.radius=patch.radius;
+    if(patch.opacity!=null) g.opacity=patch.opacity;
+    if(patch.fill!=null){ g.fill=patch.fill; g.color=patch.fill; }
+    if(defs[id]?.type==="text" && patch.font==null && patch.color==null) continue;
+  }
+}
+
+function applySettingsOverrides(templateId, settings){
+  if(!settings || typeof settings!=="object") return;
+  if(settings.logo && logoSettingsOf) Object.assign(logoSettingsOf(templateId), settings.logo);
+  if(templateId==="vapor_motion" && settings.vaporGlass) Object.assign(vaporGlassSettingsOf(), settings.vaporGlass);
+}
+function applyBroadcastPhotoDefault(force=false){
+  if(state.template!=="broadcast") return;
+  const L=ensureLayout();
+  const g=L.player;
+  if(!g) return;
+  const legacyCutoutBox = g.x===540 && g.y===120 && g.w===560;
+  const notFullPhoto = g.w<900 || (g.h??0)<1000 || g.fit==="contain";
+  if(force || g.hidden || legacyCutoutBox || notFullPhoto){
+    Object.assign(g,{
+      x:0,y:0,w:1080,h:1350,fit:"cover",zoom:1,cropX:0.5,cropY:0.5,
+      hidden:false,opacity:1,z:2,rotate:0,lockAspect:true
+    });
+  }
+}
+function applyHypeLowerThirdDefault(force=false){
+  if(state.template!=="hype") return;
+  const L=ensureLayout();
+  const legacy = L.playerName?.y===1012 && L.playerMeta?.y===1066 && L.callout?.y===1106;
+  if(!force && !legacy) return;
+  if(L.playerName) Object.assign(L.playerName,{x:0,y:1000,w:1080,size:40,z:21,hidden:false});
+  if(L.playerMeta) Object.assign(L.playerMeta,{x:0,y:1050,w:1080,size:22,z:21,hidden:false});
+  if(L.stat1) Object.assign(L.stat1,{x:70,y:1134,w:430,size:42,z:21,hidden:false});
+  if(L.stat2) Object.assign(L.stat2,{x:580,y:1134,w:430,size:42,z:21,hidden:false});
+  if(L.callout) Object.assign(L.callout,{x:0,y:1234,w:1080,size:22,z:21,hidden:false});
+}
+function neoBrutalistTextColorInvalid(id, g, def){
+  if(def.type!=="text") return false;
+  const c=g.color ?? def.color;
+  const onLight=["stat1","stat2","stat3","playerMeta","footer"].includes(id);
+  const onPrimary=["hero","teamName","heroDesc","eyebrow"].includes(id);
+  if(onLight && ["white","secondary","light"].includes(c)) return true;
+  if(id==="playerName" && ["white","secondary","light"].includes(c)) return true;
+  if(onPrimary && ["black","primary","muted"].includes(c) && id!=="eyebrow") return true;
+  if(id==="heroDesc" && ["black","primary","muted"].includes(c)) return true;
+  return false;
+}
+function neoBrutalistNeedsStyleFix(L, def){
+  for(const [id,d] of Object.entries(def)){
+    const g=L[id];
+    if(g && neoBrutalistTextColorInvalid(id, g, d)) return true;
+  }
+  return false;
+}
+function applyVaporMotionLayerFromDef(L, def, id){
+  const d=def[id], g=L[id];
+  if(!d||!g) return;
+  g.x=d.x; g.y=d.y; g.w=d.w;
+  if(d.h!=null) g.h=d.h;
+  if(d.size!=null) g.size=d.size;
+  g.hidden=false;
+}
+function applyVaporMotionLayoutDefault(force=false){
+  if(state.template!=="vapor_motion") return;
+  if(!state.vaporLayoutMeta) state.vaporLayoutMeta={};
+  const version=state.vaporLayoutMeta.vapor_motion||0;
+  if(!force && version>=VAPOR_LAYOUT_VERSION) return;
+  const L=ensureLayout(), def=layersOf();
+  const keys=["glassCard","logo","eyebrow","playerName","playerMeta","hero","heroDesc","stat1","stat2","stat3","callout","footer"];
+  for(const id of keys) applyVaporMotionLayerFromDef(L, def, id);
+  state.vaporLayoutMeta.vapor_motion=VAPOR_LAYOUT_VERSION;
+}
+function applySalukisLayerFromDef(L, def, id){
+  const d=def[id], g=L[id];
+  if(!d||!g) return;
+  g.x=d.x; g.y=d.y; g.w=d.w;
+  if(d.h!=null) g.h=d.h;
+  if(d.size!=null) g.size=d.size;
+  if(d.font) g.font=d.font;
+  if(d.align) g.align=d.align;
+  if(d.hollow!=null) g.hollow=!!d.hollow;
+  if(d.strokeW!=null) g.strokeW=d.strokeW;
+  if(d.textTransform) g.textTransform=d.textTransform;
+  if(d.fill) g.fill=d.fill;
+  if(d.fit) g.fit=d.fit;
+  if(d.zoom!=null) g.zoom=d.zoom;
+  if(d.cropX!=null) g.cropX=d.cropX;
+  if(d.cropY!=null) g.cropY=d.cropY;
+  g.hidden=false;
+}
+function applySalukisLayoutDefault(force=false){
+  const t=state.template;
+  if(t!=="salukis_clean"&&t!=="salukis_dark") return;
+  if(!state.salukisLayoutMeta) state.salukisLayoutMeta={};
+  const meta=state.salukisLayoutMeta;
+  const L=ensureLayout(), def=layersOf();
+  const version=meta[t]||0;
+  const keys=t==="salukis_clean"
+    ? ["logo","playerName","playerMeta","player","eyebrow","stat1","stat2","stat3","callout","footer"]
+    : ["logo","playerName","playerMeta","player","stat1","stat2","stat3","calloutBox","callout","footer"];
+
+  const seedMissing=()=>{
+    let added=false;
+    for(const id of keys){
+      if(def[id] && !L[id]){ applySalukisLayerFromDef(L, def, id); added=true; }
+    }
+    return added;
+  };
+
+  if(!force && version>=SALUKIS_LAYOUT_VERSION){
+    if(seedMissing()) scheduleSave();
+    return;
+  }
+
+  const hasSavedGeometry=keys.some(id=>L[id] && L[id].x!=null);
+  if(!force && hasSavedGeometry){
+    seedMissing();
+    meta[t]=SALUKIS_LAYOUT_VERSION;
+    scheduleSave();
+    return;
+  }
+
+  for(const id of keys) applySalukisLayerFromDef(L, def, id);
+  meta[t]=SALUKIS_LAYOUT_VERSION;
+}
+function applyNeoBrutalistLayoutDefault(force=false){
+  if(state.template!=="neo_brutalist") return;
+  const L=ensureLayout(), def=layersOf();
+  const legacyLayout=(L.heroDesc?.x??0)>500 || (L.player?.x??0)<570 || (L.stat1?.y??0)<680;
+  const badColors=neoBrutalistNeedsStyleFix(L, def);
+  if(!force && !legacyLayout && !badColors) return;
+  const resetKeys=["logo","teamName","playerName","playerMeta","hero","heroDesc","player","eyebrow","stat1","stat2","stat3","callout","footer"];
+  for(const id of resetKeys){
+    const d=def[id], g=L[id];
+    if(!d||!g) continue;
+    g.x=d.x; g.y=d.y; g.w=d.w;
+    if(d.h!=null) g.h=d.h;
+    if(d.size!=null) g.size=d.size;
+    if(d.align) g.align=d.align;
+    if(d.z!=null) g.z=d.z;
+    if(d.cropX!=null) g.cropX=d.cropX;
+    if(d.cropY!=null) g.cropY=d.cropY;
+    if(d.color) g.color=d.color;
+    if(d.weight!=null) g.weight=d.weight;
+    g.italic=!!d.italic;
+    g.labelColor=null;
+    g.textStyle=null;
+    g.hidden=false;
+  }
+}
+function ensureSpotlightLayouts(){
+  if(!state.spotlightLayouts) state.spotlightLayouts={};
+  for(const id of Object.keys(SPOTLIGHT_VARIANTS)){
+    if(!(id in state.spotlightLayouts)) state.spotlightLayouts[id]=null;
+  }
+}
+function cloneLayoutSnapshot(L){
+  const snap={};
+  for(const [id,g] of Object.entries(L||{})) snap[id]=JSON.parse(JSON.stringify(g));
+  return snap;
+}
+function snapshotSpotlightLayout(){
+  if(state.template!=="spotlight") return;
+  ensureSpotlightLayouts();
+  const L=state.layouts.spotlight;
+  if(!L) return;
+  state.spotlightLayouts[state.spotlightVariant]=cloneLayoutSnapshot(L);
+}
+function applyVariantPreset(variantId, L){
+  const variant=SPOTLIGHT_VARIANTS[variantId];
+  if(!variant||!L) return;
+  for(const [layerId,patch] of Object.entries(variant.layers)){
+    if(L[layerId]) Object.assign(L[layerId],patch,{hidden:false});
+  }
+}
+function mergeLayoutSnapshot(L, snap){
+  for(const [layerId,patch] of Object.entries(snap)){
+    if(L[layerId]) Object.assign(L[layerId],patch);
+    else L[layerId]=JSON.parse(JSON.stringify(patch));
+  }
+}
+function restoreSpotlightLayout(variantId){
+  if(state.template!=="spotlight") return;
+  if(!SPOTLIGHT_VARIANTS[variantId]) variantId="portrait";
+  ensureSpotlightLayouts();
+  ensureLayout();
+  const L=state.layouts.spotlight;
+  const snap=state.spotlightLayouts[variantId];
+  if(snap) mergeLayoutSnapshot(L,snap);
+  else applyVariantPreset(variantId,L);
+}
+function applySpotlightVariant(id, opts){
+  if(typeof opts==="boolean") opts={forceReset:opts};
+  opts=opts||{};
+  const forceReset=!!opts.forceReset;
+  if(state.template==="spotlight"&&!forceReset) snapshotSpotlightLayout();
+  state.spotlightVariant=SPOTLIGHT_VARIANTS[id]?id:"portrait";
+  if(state.template!=="spotlight"){
+    buildSpotlightVariantControls();
+    scheduleSave();
+    return;
+  }
+  ensureLayout();
+  if(forceReset){
+    ensureSpotlightLayouts();
+    state.spotlightLayouts[state.spotlightVariant]=null;
+    applyVariantPreset(state.spotlightVariant,state.layouts.spotlight);
+  } else {
+    restoreSpotlightLayout(state.spotlightVariant);
+  }
+  select(null);
+  buildSpotlightVariantControls();
+  buildTextFields();
+  render();
+  scheduleSave();
+}
+function migrateSpotlightState(d){
+  ensureSpotlightLayouts();
+  if(d.spotlightLayouts){
+    for(const [id,snap] of Object.entries(d.spotlightLayouts)){
+      if(SPOTLIGHT_VARIANTS[id]) state.spotlightLayouts[id]=snap;
+    }
+  }
+  const L=state.layouts.spotlight;
+  const legacy=L&&L.player?.x===290&&L.player?.y===130&&L.eyebrow?.x===-95;
+  if(legacy) delete state.layouts.spotlight;
+  else if(!d.spotlightLayouts&&L){
+    state.spotlightLayouts[state.spotlightVariant]=cloneLayoutSnapshot(L);
+  }
+  if(state.template==="spotlight"){
+    restoreSpotlightLayout(state.spotlightVariant);
+  }
+}
+function resetLayout(){
+  if(state.template==="spotlight"){
+    ensureSpotlightLayouts();
+    state.spotlightLayouts[state.spotlightVariant]=null;
+    delete state.layouts.spotlight;
+    delete state.extraLayers.spotlight;
+    state.cropMode=null;
+    ensureLayout();
+    applyVariantPreset(state.spotlightVariant,state.layouts.spotlight);
+    select(null);
+    buildTextFields();
+    render();
+    updateTestBanner();
+    scheduleSave();
+    return;
+  }
+  delete state.layouts[state.template];
+  delete state.extraLayers[state.template];
+  state.cropMode=null;
+  ensureLayout();
+  applyBroadcastPhotoDefault(true);
+  applyHypeLowerThirdDefault(true);
+  applyNeoBrutalistLayoutDefault(true);
+  applySalukisLayoutDefault(true);
+  select(null);
+  buildTextFields();
+  render();
+  updateTestBanner();
+}
+function duplicateLayer(id){
+  const def=layersOf()[id]; if(!def) return;
+  const t=state.template;
+  if(!state.extraLayers[t]) state.extraLayers[t]={};
+  let n=1, nid; do{ nid=id+"_copy"+(n++); }while(layersOf()[nid]);
+  state.extraLayers[t][nid]=Object.assign({},def);
+  const L=ensureLayout(), src=geo(id);
+  L[nid]=Object.assign({},src,{x:src.x+24,y:src.y+24,z:(src.z??def.z??10)+1});
+  buildTextFields(); select(nid); render();
+}
+
+/* ============================================================
+   RENDER
+============================================================ */
+const stage = document.getElementById("stage");
+
+function bindContent(def){
+  if(def.kind==="stat"){
+    const base = def.bind; // stat1 / stat2 / stat3
+    return statHTML(base+"num", base+"label");
+  }
+  if(def.bind==="footer"){
+    if(state.template==="salukis_clean"||state.template==="salukis_dark"){
+      return esc((state.text.teamName||"").toUpperCase());
+    }
+    return `${esc(state.text.hashtag||"")}&nbsp;&nbsp;&nbsp;${esc(state.text.teamName||"")} ${esc(state.text.sport||"")}`;
+  }
+  if(def.bind==="playerMeta"){
+    const parts=[state.text.position,state.text.playerClass].filter(s=>s&&s.trim());
+    if(state.template==="salukis_clean"||state.template==="salukis_dark"){
+      return parts.map(s=>esc(s.toUpperCase())).join(' &nbsp;. &nbsp; ');
+    }
+    return parts.map(esc).join(' &nbsp;·&nbsp; ');
+  }
+  return esc(state.text[def.bind] ?? "");
+}
+
+const RE = window.PosterRenderEngine;
+function textRulesFor(id){ return window.PosterTemplateLoader?.getTextRules(id); }
+function templateAutoFitBinds(){ return RE.templateAutoFitBinds(state.template, textRulesFor); }
+function templateStatAutoFit(){ return RE.templateStatAutoFit(state.template, textRulesFor); }
+function autoFitSalukisStat(el, g, def){ RE.autoFitSalukisStat(el, g, def); }
+function autoFitGenericStat(el, g, def){ RE.autoFitGenericStat(el, g, def, state.template, textRulesFor); }
+function autoFitTextLayer(el, def, g){ RE.autoFitTextLayer(el, def, g, state.template, textRulesFor); }
+
+function fontAudit(){
+  const results=[];
+  for(const [id,def] of Object.entries(layersOf())){
+    if(def.type!=="text") continue;
+    const el=document.querySelector(`.layer[data-id="${id}"]`);
+    const expected=def.font||F.sans;
+    const computed=el?getComputedStyle(el).fontFamily:"";
+    const needle=expected.replace(/'/g,"").split(",")[0].trim().toLowerCase();
+    const ok=!!el && computed.toLowerCase().includes(needle);
+    results.push({id,bind:def.bind,expected,computed,ok});
+  }
+  return results;
+}
+
+function updateTestBanner(){
+  const b=document.getElementById("testBanner");
+  if(!b) return;
+  const t=tpl();
+  const story=state.stories[state.storyIndex];
+  const slug=story?.slug||"—";
+  const name=story?.player_name||state.text.playerName||"—";
+  const idx=state.storyIndex>=0 && state.stories.length
+    ? `${state.storyIndex+1}/${state.stories.length}` : "—";
+  b.innerHTML=`<b>${esc(t.name)}</b> · story ${idx}<br>${esc(slug)}<br>${esc(name)}`;
+}
+
+function switchTemplate(id){
+  const next=ensureEnabledTemplate(id);
+  const prev=state.template;
+  if(prev==="spotlight"&&next!=="spotlight") snapshotSpotlightLayout();
+  state.template=next;
+  ensureLayout();
+  applyBroadcastPhotoDefault();
+  applyHypeLowerThirdDefault();
+  if(next==="neo_brutalist") applyNeoBrutalistLayoutDefault();
+  if(next==="salukis_clean"||next==="salukis_dark") applySalukisLayoutDefault();
+  if(next==="magazine" && shouldUsePlayerPalette(next)) applyPaletteFromPlayer();
+  if(next==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
+  select(null);
+  buildTplChips();
+  buildSpotlightVariantControls();
+  buildVaporGlassControls();
+  buildTextFields();
+  buildLogoControls();
+  updateBrandColorControls();
+  render();
+  updateTestBanner();
+  scheduleSave();
+}
+function gotoTemplate(d){
+  const idx=ENABLED_TEMPLATES.indexOf(state.template);
+  const next=(idx+d+ENABLED_TEMPLATES.length)%ENABLED_TEMPLATES.length;
+  switchTemplate(ENABLED_TEMPLATES[next]);
+}
+function exportFilename(){
+  const story=state.stories[state.storyIndex];
+  const slug=story?.slug ? story.slug.replace(/[^\w.-]+/g,"-") : "sample";
+  return `v3-poster_${state.template}_${slug}.png`;
+}
+
+function applyTextUnderline(el, def, g){
+  const on=!!(g.underline ?? def.underline);
+  if(!on){
+    el.style.textDecoration="none";
+    el.style.textDecorationThickness="";
+    el.style.textUnderlineOffset="";
+    return;
+  }
+  const uw=g.underlineW ?? def.underlineW;
+  el.style.textDecoration="underline";
+  if(uw!=null){
+    el.style.textDecorationThickness=uw+"px";
+    el.style.textUnderlineOffset=((g.underlineOffset ?? def.underlineOffset) ?? Math.max(4, Math.round(uw*1.5)))+"px";
+  } else {
+    el.style.textDecorationThickness="";
+    el.style.textUnderlineOffset="";
+  }
+}
+
+function render(){
+  const t = tpl();
+  const L = ensureLayout();
+  stage.dataset.template = state.template;
+  // background + vars
+  stage.style.background = t.stageBg();
+  // wipe
+  stage.innerHTML = "";
+  // deco
+  const deco = document.createElement("div");
+  deco.className = "deco";
+  deco.innerHTML = t.deco();
+  stage.appendChild(deco);
+
+  // layers
+  for(const [id,def] of Object.entries(layersOf())){
+    const g = L[id];
+    if(g.hidden) continue;
+    if(def.type==="image" && def.bind==="background" && !state.images.background) continue; // no full-stage placeholder
+    const el = document.createElement("div");
+    el.className = "layer " + (def.type==="text"?"txt": def.type==="glass"?"glass": def.type==="block"?"block":"img");
+    el.dataset.id = id;
+    el.style.left = g.x+"px"; el.style.top = g.y+"px";
+    let displayW = g.w;
+    let displayH = g.h ?? g.w;
+    let layerOpacity = (g.opacity!=null?g.opacity:1);
+    if(def.type==="image" && def.bind==="logo"){
+      const ls=logoSettingsOf(state.template);
+      displayW=Math.round(def.w*ls.scale);
+      displayH=Math.round((def.h??def.w)*ls.scale);
+      layerOpacity=ls.opacity;
+    }
+    el.style.width = displayW+"px";
+    el.style.zIndex = g.z ?? def.z ?? 10;
+    el.style.opacity = layerOpacity;
+    const rot = g.rotate||0;
+    el.style.transform = rot? `rotate(${rot}deg)`:"";
+
+    if(def.type==="image"){
+      const im = state.images[def.bind];
+      el.style.height = displayH+"px";
+      if(im){
+        // Image content lives in an inner div so flip/crop apply to the photo
+        // only (not the resize handles), and so corner-radius can clip it.
+        const content=document.createElement("div");
+        content.className="imgcontent";
+        applyImageStyle(content, def, g, im);
+        el.appendChild(content);
+        if(state.cropMode===id) el.classList.add("cropping");
+      } else {
+        const ph=document.createElement("div");
+        ph.className="emptyimg";
+        ph.textContent = labelFor(def.bind)+"\n(upload)";
+        el.appendChild(ph);
+      }
+    } else if(def.type==="glass"){
+      el.style.height = displayH+"px";
+      applyGlassStyle(el, def, g);
+    } else if(def.type==="block"){
+      el.style.height = displayH+"px";
+      applyBlockStyle(el, def, g);
+    } else {
+      el.innerHTML = bindContent(def);
+      const size = g.size ?? def.size ?? 30;
+      el.style.fontFamily = state.lockTemplateFonts ? (def.font||F.sans) : (g.font||def.font||F.sans);
+      el.style.fontSize = size+"px";
+      el.style.fontWeight = g.weight ?? def.weight ?? 700;
+      el.style.fontStyle = (g.italic ?? def.italic) ? "italic":"normal";
+      applyTextUnderline(el, def, g);
+      const hollow=!!(g.hollow ?? def.hollow);
+      const strokeW=g.strokeW ?? def.strokeW ?? 2;
+      if(hollow){
+        el.style.color="transparent";
+        el.style.webkitTextStroke=`${strokeW}px ${roleColor(g.color || def.color)}`;
+      } else {
+        el.style.color = roleColor(g.color || def.color);
+      }
+      el.style.textAlign = g.align ?? def.align ?? "left";
+      el.style.lineHeight = def.lh ?? 1.0;
+      el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
+      el.style.textTransform = g.textTransform ?? def.textTransform ?? "none";
+      el.style.height = (g.h? g.h+"px":"auto");
+      if(def.type==="text" && (g.h || def.h)) el.style.overflow = "hidden";
+      if(def.bg){ el.style.background = roleColor(def.bg); }
+      if(def.pad){ el.style.padding = def.pad; }
+      if(def.radius){ el.style.borderRadius = def.radius+"px"; }
+      if(def.outline){ el.style.border = `3px solid ${roleColor(def.color)}`; el.style.background="transparent"; }
+      // stat inner styling
+      if(def.kind==="stat"){
+        const stacked=!!(def.statStack);
+        el.style.display="flex";
+        el.style.alignItems=stacked?"flex-start":"baseline";
+        el.style.gap=stacked?"2px":"10px";
+        el.style.flexWrap=stacked?"nowrap":"wrap";
+        if(stacked) el.style.flexDirection="column";
+        const statAlign=g.align??def.align;
+        if(statAlign==="center") el.style.justifyContent="center";
+        else if(statAlign==="right") el.style.justifyContent="flex-end";
+        const italic=!!(g.italic ?? def.italic);
+        const tt=g.textTransform ?? def.textTransform ?? "none";
+        const ls=(g.ls ?? def.ls) || 0;
+        el.style.fontStyle=italic?"italic":"normal";
+        applyTextUnderline(el, def, g);
+        el.style.letterSpacing=ls+"px";
+        const numW=g.weight ?? def.weight ?? 900;
+        const n=el.querySelector(".s-n"), l=el.querySelector(".s-l");
+        if(n){
+          n.style.fontWeight=numW;
+          n.style.fontSize="1em";
+          n.style.fontStyle="inherit";
+          n.style.color=roleColor(g.color || def.color || "white");
+          n.style.textTransform=tt==="uppercase"?"none":tt;
+        }
+        if(l){
+          l.style.fontWeight=Math.max(400, Math.round(numW*0.55));
+          l.style.fontSize=stacked?".58em":".42em";
+          l.style.fontStyle="inherit";
+          l.style.color=roleColor(g.labelColor || g.color || def.color || "white");
+          l.style.opacity=stacked?0.78:0.92;
+          l.style.textTransform=tt;
+          if(stacked) l.style.letterSpacing="0.04em";
+        }
+      }
+    }
+
+    // resize handles — text uses corners + left/right; images use all 8
+    const dirs = def.type==="text" ? ["nw","ne","sw","se","w","e"]
+                                   : def.type==="block" ? ["nw","ne","sw","se","n","s","w","e"]
+                                   : ["nw","ne","sw","se","n","s","w","e"];
+    dirs.forEach(d=>{ const hd=document.createElement("div"); hd.className="h "+d; hd.dataset.handle=d; el.appendChild(hd); });
+    const rt=document.createElement("div"); rt.className="rot"; rt.dataset.handle="rot"; el.appendChild(rt);
+
+    if(state.selected===id) el.classList.add("sel");
+    deco.after(el); // keep order; appended to stage
+    stage.appendChild(el);
+    if(def.type==="text") autoFitTextLayer(el, def, g);
+    if(def.kind==="stat"&&templateStatAutoFit()){
+      if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
+      else autoFitGenericStat(el, g, def);
+    }
+    attachLayerEvents(el, def, g);
+  }
+  updateTestBanner();
+  syncInspector();
+  scheduleSave();
+}
+
+function labelFor(bind){
+  return ({player:"Player image",background:"Background",logo:"Team logo",sponsor:"Sponsor logo",calloutBox:"Callout box"})[bind] || bind;
+}
+function clamp01(v){ return Math.max(0, Math.min(1, v)); }
+function imgFit(def,g){ return g.fit || def.fit || "contain"; }
+/* displayed pixel size of the source inside the layer box, given fit + zoom */
+function computeDisp(def,g,im){
+  const w=g.w, h=g.h ?? g.w;
+  const nW=(im&&im.natW)||w, nH=(im&&im.natH)||h;
+  const fit=imgFit(def,g), zoom=g.zoom||1;
+  let base;
+  if(fit==="fill")    return {dispW:w, dispH:h};
+  if(fit==="cover")   base=Math.max(w/nW, h/nH);
+  else                base=Math.min(w/nW, h/nH);   // contain
+  const s=base*zoom;
+  return {dispW:nW*s, dispH:nH*s};
+}
+/* paint the image content div: fit, crop (zoom+pan), flip, radius, border */
+function applyImageStyle(content, def, g, im){
+  content.style.backgroundImage = `url("${im.src}")`;
+  const fit=imgFit(def,g);
+  if(fit==="fill"){
+    content.style.backgroundSize="100% 100%";
+    content.style.backgroundPosition="center";
+  } else {
+    const {dispW,dispH}=computeDisp(def,g,im);
+    content.style.backgroundSize=`${dispW}px ${dispH}px`;
+    content.style.backgroundPosition=`${clamp01(g.cropX??0.5)*100}% ${clamp01(g.cropY??0.5)*100}%`;
+  }
+  let tf="";
+  if(g.flipH) tf+="scaleX(-1) ";
+  if(g.flipV) tf+="scaleY(-1) ";
+  content.style.transform=tf.trim();
+  content.style.borderRadius=(g.radius||0)+"px";
+  content.style.overflow="hidden";
+  content.style.border = g.borderOn ? `${g.borderW||6}px solid ${roleColor(g.borderColor||"primary")}` : "";
+}
+
+/* ============================================================
+   DRAG / RESIZE / ROTATE
+============================================================ */
+const SNAP_PX=6;
+function layerBox(g, def){
+  const w=g.w;
+  let h=g.h;
+  if(!h){
+    if(def.type==="image" || def.type==="glass" || def.type==="block") h=g.w;
+    else h=Math.round((g.size??def.size??30)*(def.kind==="stat"?1.8:1.35));
+  }
+  return {w,h,left:g.x,top:g.y,right:g.x+w,bottom:g.y+h,cx:g.x+w/2,cy:g.y+h/2};
+}
+function snapCoord(moving, targets, size, threshold){
+  const tries=[
+    {delta:0, guide:moving},
+    {delta:size, guide:moving+size},
+    {delta:size/2, guide:moving+size/2},
+  ];
+  let best=null, bestDist=threshold+1;
+  for(const {delta,guide} of tries){
+    for(const t of targets){
+      const d=Math.abs(guide-t);
+      if(d<=threshold && d<bestDist){ bestDist=d; best={pos:Math.round(t-delta), guide:t}; }
+    }
+  }
+  return best;
+}
+function snapMoveBox(x,y,w,h,excludeId){
+  const vTargets=new Set([0,SW/2,SW]);
+  const hTargets=new Set([0,SH/2,SH]);
+  const L=ensureLayout();
+  for(const [id,def] of Object.entries(layersOf())){
+    if(id===excludeId) continue;
+    const g=L[id]; if(!g||g.hidden) continue;
+    const b=layerBox(g,def);
+    vTargets.add(b.left); vTargets.add(b.right); vTargets.add(b.cx);
+    hTargets.add(b.top); hTargets.add(b.bottom); hTargets.add(b.cy);
+  }
+  const sx=snapCoord(x,[...vTargets],w,SNAP_PX);
+  const sy=snapCoord(y,[...hTargets],h,SNAP_PX);
+  return {
+    x:sx?sx.pos:x, y:sy?sy.pos:y,
+    vGuides:sx?[sx.guide]:[], hGuides:sy?[sy.guide]:[],
+  };
+}
+function clearAlignGuides(){
+  document.getElementById("alignGuidesOverlay")?.remove();
+}
+function renderAlignGuides(vGuides, hGuides){
+  clearAlignGuides();
+  if(!vGuides.length && !hGuides.length) return;
+  const wrap=document.createElement("div");
+  wrap.id="alignGuidesOverlay";
+  for(const x of vGuides){
+    const d=document.createElement("div");
+    d.className="guide-v";
+    d.style.left=x+"px";
+    wrap.appendChild(d);
+  }
+  for(const y of hGuides){
+    const d=document.createElement("div");
+    d.className="guide-h";
+    d.style.top=y+"px";
+    wrap.appendChild(d);
+  }
+  stage.appendChild(wrap);
+}
+let drag=null;
+function attachLayerEvents(el, def, g){
+  el.addEventListener("pointerdown",(e)=>{
+    const handle = e.target.dataset.handle;
+    e.stopPropagation();
+    if(el.isContentEditable) return;          // let text editing place the caret
+    select(el.dataset.id);
+    const sc = currentScale();
+    // in crop mode, a drag on the photo pans the image inside its frame
+    let mode = handle || "move";
+    if(!handle && state.cropMode===el.dataset.id && def.type==="image") mode="pan";
+    const r=el.getBoundingClientRect();
+    drag = { id:el.dataset.id, def, g, mode,
+             sx:e.clientX, sy:e.clientY, ox:g.x, oy:g.y, ow:g.w, oh:g.h ?? g.w,
+             osize:g.size ?? def.size ?? 30, orot:g.rotate||0, sc,
+             ocx:g.cropX??0.5, ocy:g.cropY??0.5,
+             ratio:(g.h ?? g.w)/g.w,
+             cx:r.left+r.width/2, cy:r.top+r.height/2 };
+    if(mode==="pan"){ const d=computeDisp(def,g,state.images[def.bind]); drag.dispW=d.dispW; drag.dispH=d.dispH; }
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener("pointermove",(e)=>{
+    if(!drag || drag.id!==el.dataset.id) return;
+    const dx=(e.clientX-drag.sx)/drag.sc, dy=(e.clientY-drag.sy)/drag.sc;
+    const d=drag, gg=d.g;
+    if(d.mode==="move"){
+      let nx=Math.round(d.ox+dx), ny=Math.round(d.oy+dy);
+      const box=layerBox({...gg,x:nx,y:ny},def);
+      const snap=snapMoveBox(nx,ny,box.w,box.h,d.id);
+      gg.x=snap.x; gg.y=snap.y;
+      renderAlignGuides(snap.vGuides,snap.hGuides);
+    } else if(d.mode==="rot"){
+      let ang=Math.atan2(e.clientY-d.cy, e.clientX-d.cx)*180/Math.PI + 90;
+      if(e.shiftKey) ang=Math.round(ang/15)*15;           // snap to 15°
+      gg.rotate=Math.round(ang);
+    } else if(d.mode==="pan"){
+      const bw=gg.w, bh=gg.h??gg.w;
+      if(d.dispW>bw) gg.cropX=clamp01(d.ocx - dx/(d.dispW-bw));
+      if(d.dispH>bh) gg.cropY=clamp01(d.ocy - dy/(d.dispH-bh));
+    } else {
+      // resize — d.mode is a direction string (nw,ne,sw,se,n,s,w,e)
+      const dir=d.mode;
+      let nx=d.ox, ny=d.oy, nw=d.ow, nh=d.oh;
+      if(dir.includes("e")) nw=d.ow+dx;
+      if(dir.includes("w")){ nw=d.ow-dx; nx=d.ox+dx; }
+      if(dir.includes("s")) nh=d.oh+dy;
+      if(dir.includes("n")){ nh=d.oh-dy; ny=d.oy+dy; }
+      nw=Math.max(24,nw); nh=Math.max(12,nh);
+      const corner = dir.length===2;
+      if(def.type==="image" || def.type==="glass" || def.type==="block"){
+        const lock = def.type==="image" && ((gg.lockAspect && !e.altKey) || (!gg.lockAspect && e.shiftKey));
+        if(lock){
+          if(corner){ nh=nw*d.ratio; }       // width drives height on corners
+          else if(dir==="n"||dir==="s"){ nw=nh/d.ratio; } else { nh=nw*d.ratio; }
+          nh=Math.max(12,nh); nw=Math.max(24,nw);
+        }
+        // keep the anchored (opposite) edge fixed when resizing from w/n
+        if(dir.includes("w")) nx=d.ox+(d.ow-nw);
+        if(dir.includes("n")) ny=d.oy+(d.oh-nh);
+        gg.x=Math.round(nx); gg.y=Math.round(ny);
+        gg.w=Math.round(nw); gg.h=Math.round(nh);
+      } else {
+        // text: width drives the box; font scales with width
+        if(dir.includes("w")) nx=d.ox+(d.ow-nw);
+        gg.x=Math.round(nx); gg.w=Math.round(nw);
+        gg.size=Math.max(8, Math.round(d.osize*(nw/d.ow)));
+      }
+    }
+    applyGeo(el, def, gg);
+  });
+  // helper so pan math can read the original width consistently
+  el.addEventListener("pointerup",()=>{ if(drag&&drag.id===el.dataset.id){ drag=null; clearAlignGuides(); syncInspector(); }});
+  el.addEventListener("dblclick",(e)=>{
+    e.preventDefault();
+    if(def.type==="image"){ toggleCrop(el.dataset.id); return; }
+    if(def.type==="glass") return;
+    if(def.type==="block") return;
+    if(def.kind==="stat"||def.bind==="footer") return;
+    el.contentEditable="true"; el.focus();
+    document.execCommand("selectAll",false,null);
+    el.addEventListener("blur",function h(){
+      el.contentEditable="false";
+      state.text[def.bind] = el.innerText.trim();
+      el.removeEventListener("blur",h); render(); buildTextFields();
+    });
+  });
+}
+function applyGeo(el, def, g){
+  el.style.left=g.x+"px"; el.style.top=g.y+"px"; el.style.width=g.w+"px";
+  el.style.transform = (g.rotate? `rotate(${g.rotate}deg)`:"");
+  el.style.opacity = (g.opacity!=null?g.opacity:1);
+  if(def.type==="image"){
+    el.style.height=(g.h ?? g.w)+"px";
+    const c=el.querySelector(".imgcontent");
+    if(c) applyImageStyle(c, def, g, state.images[def.bind]);
+  } else if(def.type==="glass"){
+    applyGlassStyle(el, def, g);
+  } else if(def.type==="block"){
+    applyBlockStyle(el, def, g);
+  } else if(def.kind==="stat"&&templateStatAutoFit()){
+    if(g.h) el.style.height=g.h+"px";
+    if(g.size) el.style.fontSize=g.size+"px";
+    if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
+    else autoFitGenericStat(el, g, def);
+  } else if(g.size){ el.style.fontSize=g.size+"px"; }
+  scheduleSave();
+}
+function toggleCrop(id){
+  state.cropMode = (state.cropMode===id)? null : id;
+  render(); syncInspector();
+}
+
+/* ============================================================
+   SELECTION + INSPECTOR
+============================================================ */
+function select(id){
+  if(state.cropMode && state.cropMode!==id) state.cropMode=null;
+  clearAlignGuides();
+  state.selected=id;
+  document.querySelectorAll(".layer").forEach(l=>l.classList.toggle("sel", l.dataset.id===id));
+  syncInspector();
+}
+stage.addEventListener("pointerdown",(e)=>{ if(e.target===stage||e.target.classList.contains("deco")) select(null); });
+
+const insp=document.getElementById("inspector"), inspBody=document.getElementById("inspBody"), inspTitle=document.getElementById("inspTitle");
+function syncInspector(){
+  const id=state.selected;
+  if(!id || !layersOf()[id]){ insp.classList.add("empty"); state.cropMode=null; return; }
+  insp.classList.remove("empty");
+  const def=layersOf()[id], g=geo(id);
+  const cropping = state.cropMode===id;
+  const isLogo=def.type==="image" && def.bind==="logo";
+  const isGlass=def.type==="glass";
+  const isBlock=def.type==="block";
+  inspTitle.textContent = isGlass ? "Glass card — " + id
+    : isBlock ? "Shape — " + id
+    : (def.type==="image"? labelFor(def.bind):"Text") + " — " + id;
+  const opPct=isLogo
+    ? Math.round(logoSettingsOf(state.template).opacity*100)
+    : Math.round((g.opacity!=null?g.opacity:1)*100);
+  let h="";
+
+  if(def.type==="image"){
+    const fit=imgFit(def,g);
+    h+=`<label class="fld">Fit</label>
+        <div class="seg" id="iFit">
+          ${["cover","contain","fill"].map(f=>`<button data-fit="${f}" class="${fit===f?'on':''}">${f}</button>`).join('')}
+        </div>`;
+    h+=`<button class="btn ${cropping?'':'sec'}" id="iCrop" style="margin-top:8px">${cropping?'✓ Done cropping':'✂ Crop / reposition'}</button>`;
+    if(cropping) h+=`<div class="ihint">Drag the photo to reposition · use Zoom below · click Done when finished.</div>`;
+    h+=`<label class="fld">Zoom (crop in): <b id="ivz">${Math.round((g.zoom||1)*100)}%</b></label>
+        <input type="range" id="iZoom" min="100" max="400" value="${Math.round((g.zoom||1)*100)}">`;
+	    h+=`<div class="ibtns" style="margin-top:6px">
+	          <button class="btn sec" id="iFlipH">⇋ Flip H</button>
+	          <button class="btn sec" id="iFlipV">⇅ Flip V</button>
+	          <button class="btn sec" id="iCropReset">↺ Reset crop</button>
+	        </div>`;
+	    h+=`<div class="ibtns" style="margin-top:6px">
+	          <button class="btn sec" id="iFrameFit">Fit to frame</button>
+	          <button class="btn sec" id="iBleed">Add 5% bleed</button>
+	        </div>`;
+    h+=`<div class="row" style="margin-top:8px">
+          <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
+          <div><label class="fld">Y</label><input class="num" type="number" id="iY" value="${Math.round(g.y)}"></div>
+        </div>`;
+    h+=`<div class="row" style="margin-top:6px">
+          <div><label class="fld">Width</label><input class="num" type="number" id="iW" value="${Math.round(g.w)}"></div>
+          <div><label class="fld">Height</label><input class="num" type="number" id="iH" value="${Math.round(g.h??g.w)}"></div>
+        </div>`;
+    h+=`<label class="fld" style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-top:8px">
+          <input type="checkbox" id="iLock" ${g.lockAspect?'checked':''} style="width:auto"> Lock aspect ratio</label>`;
+    h+=`<label class="fld">Rotation: <b id="ivr">${g.rotate||0}°</b></label>
+        <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
+    h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius||0}</b></label>
+        <input type="range" id="iRad" min="0" max="200" value="${g.radius||0}">`;
+    h+=`<label class="fld" style="display:flex;align-items:center;gap:7px;cursor:pointer">
+          <input type="checkbox" id="iBord" ${g.borderOn?'checked':''} style="width:auto"> Border</label>
+        <div class="row"><div><label class="fld">Width <b id="ivbw">${g.borderW||6}</b></label><input type="range" id="iBw" min="1" max="40" value="${g.borderW||6}"></div>
+        <div><label class="fld">Color</label><select id="iBc">${["primary","secondary","white","black"].map(c=>`<option value="${c}" ${(g.borderColor||'primary')===c?'selected':''}>${c}</option>`).join('')}</select></div></div>`;
+  } else if(def.type==="glass"){
+    h+=glassCardControlsHTML();
+    h+=`<label class="fld" style="margin-top:10px">Position & size</label>`;
+    h+=`<div class="row" style="margin-top:8px">
+          <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
+          <div><label class="fld">Y</label><input class="num" type="number" id="iY" value="${Math.round(g.y)}"></div>
+        </div>`;
+    h+=`<div class="row" style="margin-top:6px">
+          <div><label class="fld">Width</label><input class="num" type="number" id="iW" value="${Math.round(g.w)}"></div>
+          <div><label class="fld">Height</label><input class="num" type="number" id="iH" value="${Math.round(g.h??g.w)}"></div>
+        </div>`;
+    h+=`<label class="fld">Rotation: <b id="ivr">${g.rotate||0}°</b></label>
+        <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
+    h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??24}</b></label>
+        <input type="range" id="iRad" min="0" max="80" value="${g.radius??def.radius??24}">`;
+  } else if(def.type==="block"){
+    h+=`<label class="fld">Fill color</label>
+        <select id="iCol">${["white","primary","secondary","black"].map(c=>`<option value="${c}" ${(g.fill||g.color||def.fill||def.color||"white")===c?'selected':''}>${c}</option>`).join('')}</select>`;
+    h+=`<label class="fld" style="margin-top:10px">Position & size</label>`;
+    h+=`<div class="row" style="margin-top:8px">
+          <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
+          <div><label class="fld">Y</label><input class="num" type="number" id="iY" value="${Math.round(g.y)}"></div>
+        </div>`;
+    h+=`<div class="row" style="margin-top:6px">
+          <div><label class="fld">Width</label><input class="num" type="number" id="iW" value="${Math.round(g.w)}"></div>
+          <div><label class="fld">Height</label><input class="num" type="number" id="iH" value="${Math.round(g.h??g.w)}"></div>
+        </div>`;
+    h+=`<label class="fld">Rotation: <b id="ivr">${g.rotate||0}°</b></label>
+        <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
+    h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??0}</b></label>
+        <input type="range" id="iRad" min="0" max="80" value="${g.radius??def.radius??0}">`;
+  } else {
+    const activeStyle=detectTextStylePreset(g,def);
+    const styleCustom=activeStyle==="custom";
+    h+=`<label class="fld">Text style <span style="font-weight:400;color:var(--dim)">(same font)</span></label>`;
+    h+=`<div id="iStyleCurrent" style="margin-bottom:6px;padding:6px 8px;border-radius:7px;border:1px solid ${styleCustom?"#5a4a18":"#24344f"};background:${styleCustom?"#2a2410":"#11203a"};font-size:11px;color:#cfd3da">Active: <b style="color:${styleCustom?"#ffd34f":"#cfe1ff"}">${esc(textStyleSummary(activeStyle,g,def))}</b></div>`;
+    h+=`<div class="tplgrid" id="iStyleGrid" style="margin-bottom:6px">`;
+    for(const [sid,p] of Object.entries(TEXT_STYLE_PRESETS)){
+      h+=`<div class="tplchip${activeStyle===sid?" active":""}" data-style="${sid}">${p.label}</div>`;
+    }
+    h+=`</div>`;
+    if(!state.lockTemplateFonts){
+      h+=`<label class="fld">Font</label>
+          <select id="iFont">${FONT_OPTS.map(([nm,stk])=>`<option value="${stk.replace(/"/g,'&quot;')}" ${(g.font||def.font||F.sans)===stk?'selected':''}>${nm}</option>`).join('')}</select>`;
+    }
+    h+=`<label class="fld">Font size: <b id="ivs">${g.size ?? def.size}</b></label>
+        <input type="range" id="iFs" min="10" max="380" value="${g.size ?? def.size}">`;
+    h+=`<label class="fld">Weight</label>
+        <select id="iFw">${[300,400,600,700,800,900].map(w=>`<option ${(g.weight ?? def.weight)==w?'selected':''}>${w}</option>`).join('')}</select>`;
+    h+=`<label class="fld">Color</label>
+        <select id="iCol">${["primary","secondary","white","black","light","muted"].map(c=>`<option value="${c}" ${(g.color||def.color)===c?'selected':''}>${c}</option>`).join('')}</select>`;
+    h+=`<div class="row"><div><label class="fld">Letter spacing</label><input type="range" id="iLs" min="0" max="14" value="${(g.ls ?? def.ls)||0}"></div>
+        <div><label class="fld">Rotation: <b id="ivr2">${g.rotate||0}°</b></label><input type="range" id="iRot" min="-90" max="90" value="${g.rotate||0}"></div></div>`;
+    h+=`<label class="fld"><input type="checkbox" id="iIt" ${(g.italic ?? def.italic)?'checked':''} style="width:auto"> Italic</label>`;
+    h+=`<label class="fld"><input type="checkbox" id="iUl" ${(g.underline ?? def.underline)?'checked':''} style="width:auto"> Underline</label>`;
+    h+=`<div class="row" style="margin-top:6px">
+          <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
+          <div><label class="fld">Y</label><input class="num" type="number" id="iY" value="${Math.round(g.y)}"></div>
+          <div><label class="fld">Width</label><input class="num" type="number" id="iW" value="${Math.round(g.w)}"></div>
+        </div>`;
+  }
+
+  // shared: opacity + ordering + hide
+  h+=`<label class="fld">Opacity: <b id="ivop">${opPct}%</b></label>
+      <input type="range" id="iOp" min="0" max="100" value="${opPct}">`;
+  h+=`<div class="ibtns" style="margin-top:8px">
+        <button class="btn sec" id="iBack">⤓ Back</button>
+        <button class="btn sec" id="iFwd">⤒ Forward</button>
+        <button class="btn sec" id="iDup">⧉ Duplicate</button>
+      </div>`;
+  h+=`<button class="btn sec" id="iHide" style="margin-top:8px">Hide this element</button>`;
+  inspBody.innerHTML=h;
+
+  const el=()=>document.querySelector(`.layer[data-id="${id}"]`);
+  const $=x=>document.getElementById(x);
+
+  if(def.type==="image"){
+    $("iFit").querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>{ g.fit=b.dataset.fit; render(); });
+    $("iCrop").onclick=()=>toggleCrop(id);
+    $("iZoom").oninput=e=>{ g.zoom=(+e.target.value)/100; $("ivz").textContent=e.target.value+"%"; applyGeo(el(),def,g); };
+	    $("iFlipH").onclick=()=>{ g.flipH=!g.flipH; applyGeo(el(),def,g); };
+	    $("iFlipV").onclick=()=>{ g.flipV=!g.flipV; applyGeo(el(),def,g); };
+	    $("iCropReset").onclick=()=>{ g.zoom=1; g.cropX=.5; g.cropY=.5; render(); };
+	    $("iFrameFit").onclick=()=>{ Object.assign(g,{x:0,y:0,w:SW,h:SH,fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); render(); };
+	    $("iBleed").onclick=()=>{ const b=Math.round(SW*.05); const by=Math.round(SH*.05); Object.assign(g,{x:-b,y:-by,w:SW+(b*2),h:SH+(by*2),fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); render(); };
+    $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iW").oninput=e=>{ const v=Math.max(1,+e.target.value||1); if(g.lockAspect){ const r=(g.h??g.w)/g.w; g.h=Math.round(v*r); $("iH").value=g.h; } g.w=v; applyGeo(el(),def,g); };
+    $("iH").oninput=e=>{ const v=Math.max(1,+e.target.value||1); if(g.lockAspect){ const r=g.w/(g.h??g.w); g.w=Math.round(v*r); $("iW").value=g.w; } g.h=v; applyGeo(el(),def,g); };
+    $("iLock").onchange=e=>{ g.lockAspect=e.target.checked; };
+    $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
+    $("iBord").onchange=e=>{ g.borderOn=e.target.checked; applyGeo(el(),def,g); };
+    $("iBw").oninput=e=>{ g.borderW=+e.target.value; $("ivbw").textContent=g.borderW; applyGeo(el(),def,g); };
+    $("iBc").onchange=e=>{ g.borderColor=e.target.value; applyGeo(el(),def,g); };
+  } else if(def.type==="glass"){
+    wireGlassCardControls(inspBody);
+    $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iW").oninput=e=>{ g.w=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
+    $("iH").oninput=e=>{ g.h=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
+    $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
+  } else if(def.type==="block"){
+    $("iCol").onchange=e=>{ g.fill=e.target.value; g.color=e.target.value; applyGeo(el(),def,g); };
+    $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iW").oninput=e=>{ g.w=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
+    $("iH").oninput=e=>{ g.h=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
+    $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
+  } else {
+    $("iStyleGrid")?.querySelectorAll("[data-style]").forEach(c=>{
+      c.onclick=()=>{ applyTextStylePreset(g, def, c.dataset.style); render(); syncInspector(); scheduleSave(); };
+    });
+    const iFont=$("iFont");
+    if(iFont) iFont.onchange=e=>{ g.font=e.target.value; markTextStyleCustom(g); render(); };
+    $("iFs").oninput=e=>{
+      g.size=+e.target.value;
+      $("ivs").textContent=g.size;
+      if(def.kind==="stat"&&templateStatAutoFit()) render();
+      else applyGeo(el(),def,g);
+    };
+    $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); render(); };
+    $("iCol").onchange=e=>{ g.color=e.target.value; markTextStyleCustom(g); render(); };
+    $("iLs").oninput=e=>{ g.ls=+e.target.value; markTextStyleCustom(g); render(); };
+    $("iRot").oninput=e=>{ g.rotate=+e.target.value; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iIt").onchange=e=>{ g.italic=e.target.checked; markTextStyleCustom(g); render(); };
+    $("iUl").onchange=e=>{ g.underline=e.target.checked; markTextStyleCustom(g); render(); };
+    $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
+    $("iW").oninput=e=>{ const v=Math.max(8,+e.target.value||8); g.size=Math.max(8,Math.round((g.size??def.size)*(v/g.w))); g.w=v; applyGeo(el(),def,g); };
+  }
+
+  $("iOp").oninput=e=>{
+    if(isLogo){
+      logoSettingsOf(state.template).opacity=(+e.target.value)/100;
+      $("ivop").textContent=e.target.value+"%";
+      buildLogoControls();
+      render();
+    } else {
+      g.opacity=(+e.target.value)/100;
+      $("ivop").textContent=e.target.value+"%";
+      applyGeo(el(),def,g);
+    }
+  };
+  $("iBack").onclick=()=>{ g.z=(g.z ?? def.z ?? 10)-1; render(); };
+  $("iFwd").onclick=()=>{ g.z=(g.z ?? def.z ?? 10)+1; render(); };
+  $("iDup").onclick=()=>duplicateLayer(id);
+  $("iHide").onclick=()=>{ g.hidden=true; select(null); render(); };
+}
+
+/* ============================================================
+   SIDEBAR UI
+============================================================ */
+// template chips
+const tplGrid=document.getElementById("tplGrid");
+function buildTplChips(){
+  tplGrid.innerHTML="";
+  for(const id of ENABLED_TEMPLATES){
+    const t=TEMPLATES[id];
+    const c=document.createElement("div");
+    c.className="tplchip"+(state.template===id?" active":"");
+    c.textContent=t.name;
+    c.onclick=()=>switchTemplate(id);
+    tplGrid.appendChild(c);
+  }
+}
+function buildSpotlightVariantControls(){
+  const wrap=document.getElementById("spotlightVariantControls");
+  const grid=document.getElementById("spotlightVariantGrid");
+  if(!wrap || !grid) return;
+  if(state.template!=="spotlight"){ wrap.style.display="none"; return; }
+  wrap.style.display="block";
+  grid.innerHTML="";
+  for(const [id,v] of Object.entries(SPOTLIGHT_VARIANTS)){
+    const c=document.createElement("div");
+    c.className="tplchip"+(state.spotlightVariant===id?" active":"");
+    c.textContent=v.name;
+    c.onclick=()=>applySpotlightVariant(id);
+    grid.appendChild(c);
+  }
+}
+document.getElementById("tplPrev").onclick=()=>gotoTemplate(-1);
+document.getElementById("tplNext").onclick=()=>gotoTemplate(1);
+
+// colors
+const cP=document.getElementById("cPrimary"), cS=document.getElementById("cSecondary");
+cP.value=state.colors.primary; cS.value=state.colors.secondary;
+cP.oninput=e=>{ state.colors.primary=e.target.value; render(); if(state.template==="vapor_motion") buildVaporGlassControls(); };
+cS.oninput=e=>{ state.colors.secondary=e.target.value; render(); if(state.template==="vapor_motion") buildVaporGlassControls(); };
+const swWrap=document.getElementById("presetSwatches");
+COLOR_PRESETS.forEach(([p,s])=>{
+  const b=document.createElement("div"); b.className="sw";
+  b.style.background=`linear-gradient(135deg,${p} 50%,${s} 50%)`;
+  b.title=`${p} / ${s}`;
+  b.onclick=()=>{ state.colors.primary=p; state.colors.secondary=s; cP.value=p; cS.value=s; render(); };
+  swWrap.appendChild(b);
+});
+
+// asset uploads
+const CUTOUT_FEATURE_ENABLED = false; // keep background-removal code restorable, but disabled for this workflow
+const ASSETS=[["player","Player image"],["background","Background"],["logo","Team logo"],["sponsor","Sponsor logo"]];
+const assetList=document.getElementById("assetList");
+function buildAssets(){
+  assetList.innerHTML="";
+  ASSETS.forEach(([key,label])=>{
+    const row=document.createElement("div"); row.className="assetrow";
+    const im=state.images[key];
+    const thumb=document.createElement("div"); thumb.className="thumb";
+    if(im) thumb.style.backgroundImage=`url(${im.src})`;
+    const meta=document.createElement("div"); meta.className="meta";
+    const fid="f_"+key;
+    meta.innerHTML=`<b>${label}</b><span>${im?"loaded":"none"}</span><br>
+       <label class="uploadbtn" for="${fid}">${im?"replace":"upload"}</label>
+       ${im?` · <span class="xbtn" data-rm="${key}">remove</span>`:""}
+       ${CUTOUT_FEATURE_ENABLED&&key==="player"&&im?`<br><label style="display:flex;align-items:center;gap:6px;margin-top:5px;font-size:11px;cursor:pointer;color:#cfd3da"><input type="checkbox" data-cutbg="player" ${im.cutBg?"checked":""} style="width:auto"> Remove background</label>`:""}`;
+    const inp=document.createElement("input"); inp.type="file"; inp.accept="image/*"; inp.id=fid; inp.style.display="none";
+    inp.onchange=e=>loadImage(key,e.target.files[0]);
+    row.append(thumb,meta,inp);
+    assetList.appendChild(row);
+  });
+  assetList.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{ delete state.images[x.dataset.rm]; buildAssets(); buildLogoControls(); render(); scheduleSave(); });
+  if(CUTOUT_FEATURE_ENABLED){
+    assetList.querySelectorAll("[data-cutbg]").forEach(x=>x.onchange=e=>setCutBg(x.dataset.cutbg, e.target.checked));
+  }
+}
+function applyImageSrc(key, url, stored){
+  const slot=state.images[key]; if(!slot) return;
+  const img=new Image();
+  img.onload=()=>{
+    slot.src=url; slot.natW=img.naturalWidth; slot.natH=img.naturalHeight; slot.el=img;
+    if(stored) slot.stored=stored;
+    fitImageLayer(key, img.naturalWidth/img.naturalHeight);
+    buildAssets(); buildLogoControls(); render(); scheduleSave();
+  };
+  img.src=url;
+}
+function loadImage(key,file){
+  if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    const im=new Image();
+    im.onload=()=>{
+      if(key==="player" && im.naturalWidth > im.naturalHeight){
+        alert("Please upload a vertical (portrait) player image. Landscape images are not supported for these templates.");
+        return;
+      }
+      state.images[key]={
+        src:r.result, original:r.result, cutout:null, cutBg:false,
+        natW:im.naturalWidth, natH:im.naturalHeight, el:im,
+      };
+      if(key==="player"){
+        applyBroadcastPhotoDefault(true);
+        applyHypeLowerThirdDefault();
+      }
+      fitImageLayer(key,im.naturalWidth/im.naturalHeight);
+      if(key==="player" && state.template==="magazine") applyPaletteFromPlayer();
+      else if(key==="logo" && state.autoPalette && !shouldUsePlayerPalette(state.template)) applyPaletteFromLogo();
+      buildAssets(); buildLogoControls(); render();
+      const isLogo=(key==="logo"||key==="sponsor");
+      compressImage(r.result, isLogo?760:1800, isLogo?"image/png":"image/jpeg", 0.88)
+        .then(d=>{ if(state.images[key]){ state.images[key].stored=d; scheduleSave(); } });
+    };
+    im.src=r.result;
+  };
+  r.readAsDataURL(file);
+}
+
+/* ---- palette extraction from the team logo ---- */
+function toHexC(o){ return "#"+[o.r,o.g,o.b].map(v=>Math.max(0,Math.min(255,v)).toString(16).padStart(2,"0")).join(""); }
+function extractPalette(img){
+  const S=72, c=document.createElement("canvas"); c.width=S; c.height=S;
+  const ctx=c.getContext("2d");
+  ctx.clearRect(0,0,S,S); ctx.drawImage(img,0,0,S,S);
+  let data; try{ data=ctx.getImageData(0,0,S,S).data; }catch(e){ return null; }
+  const buckets={};
+  for(let i=0;i<data.length;i+=4){
+    if(data[i+3]<128) continue;                       // skip transparent
+    const r=data[i],g=data[i+1],b=data[i+2];
+    const k=(r>>4)+","+(g>>4)+","+(b>>4);
+    const bk=buckets[k]||(buckets[k]={n:0,r:0,g:0,b:0});
+    bk.n++; bk.r+=r; bk.g+=g; bk.b+=b;
+  }
+  const arr=Object.values(buckets).map(bk=>{
+    const r=Math.round(bk.r/bk.n),g=Math.round(bk.g/bk.n),b=Math.round(bk.b/bk.n);
+    const mx=Math.max(r,g,b),mn=Math.min(r,g,b);
+    return {n:bk.n,r,g,b,sat:mx?(mx-mn)/mx:0,lum:(0.299*r+0.587*g+0.114*b)/255};
+  });
+  if(!arr.length) return null;
+  arr.sort((a,b)=>b.n-a.n);
+  const dist=(a,b)=>Math.abs(a.r-b.r)+Math.abs(a.g-b.g)+Math.abs(a.b-b.b);
+  const colorful=arr.filter(o=>o.sat>0.22 && o.lum>0.07 && o.lum<0.96);
+  const primary = colorful[0] || arr[0];
+  let secondary = colorful.find(o=>o!==primary && dist(o,primary)>120)
+               || arr.find(o=>o!==primary && dist(o,primary)>140);
+  if(!secondary) secondary = primary.lum<0.5 ? {r:255,g:255,b:255} : {r:17,g:17,b:17};
+  return { primary:toHexC(primary), secondary:toHexC(secondary) };
+}
+function applyPaletteFromLogo(){
+  const im=state.images.logo;
+  if(!im||!im.el){ setPalStatus("Upload a team logo first."); return false; }
+  const pal=extractPalette(im.el);
+  if(!pal){ setPalStatus("Couldn't read colors — keeping current palette."); return false; }
+  state.detectedPalette=pal;
+  state.colors.primary=pal.primary; state.colors.secondary=pal.secondary;
+  const contrast=window.PosterTemplateLoader?.getTemplateSettings?.(state.template)?.brandColors?.contrast;
+  if(contrast) state.colors.contrast=contrast;
+  state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
+  cP.value=pal.primary; cS.value=pal.secondary;
+  setPalStatus(`Detected from logo: ${pal.primary} / ${pal.secondary}`);
+  render();
+  return true;
+}
+async function applyPaletteFromPlayer(){
+  const im=state.images.player;
+  if(!im||!im.el){ setPalStatus("Upload a player photo first."); return false; }
+  const pal=await window.PosterPhotoPalette?.applyFromPlayer(im.el);
+  if(!pal){ setPalStatus("Couldn't read colors from player photo — keeping current palette."); return false; }
+  state.detectedPalette=pal;
+  Object.assign(state.colors, pal);
+  state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
+  cP.value=state.colors.primary; cS.value=state.colors.secondary;
+  setPalStatus(`Detected from player photo: ${state.colors.primary} / ${state.colors.secondary}`);
+  render();
+  return true;
+}
+function shouldUsePlayerPalette(templateId){
+  return templateId==="magazine" && !!state.images.player?.el;
+}
+function updateBrandColorControls(){
+  const label=document.getElementById("autoPalLabel");
+  const btn=document.getElementById("detectPal");
+  const onMagazine=state.template==="magazine";
+  if(label) label.textContent=onMagazine
+    ? "Auto-detect palette from player photo (Magazine)"
+    : "Auto-detect palette from team logo";
+  if(btn) btn.textContent=onMagazine
+    ? "Detect colors from player photo now"
+    : "Detect colors from logo now";
+}
+function setPalStatus(t){ const e=document.getElementById("palStatus"); if(e) e.textContent=t; }
+
+/* ============================================================
+   BACKGROUND REMOVAL (in-browser ML cutout, @imgly)
+============================================================ */
+function setBgStatus(t){ const e=document.getElementById("bgStatus"); if(e) e.textContent=t||""; }
+function blobToDataURL(b){ return new Promise(res=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.readAsDataURL(b); }); }
+let _imglyMod=null;
+const _cutoutCache=new Map();
+function cutoutFingerprint(src){
+  let h=0; const s=src.slice(0,500);
+  for(let i=0;i<s.length;i++) h=((h<<5)-h)+s.charCodeAt(i)|0;
+  return String(h)+"_"+src.length;
+}
+/* @imgly accepts png/jpeg/webp data URLs; re-encode anything else to PNG */
+function toSupportedSrc(src){
+  return new Promise((res)=>{
+    const ok=/^data:image\/(png|jpeg|jpg|webp)[;,]/i.test(src);
+    if(ok) return res(src);
+    const im=new Image();
+    im.onload=()=>{
+      const c=document.createElement("canvas");
+      c.width=im.naturalWidth||im.width; c.height=im.naturalHeight||im.height;
+      c.getContext("2d").drawImage(im,0,0);
+      try{ res(c.toDataURL("image/png")); }catch(_){ res(src); }
+    };
+    im.onerror=()=>res(src);
+    im.src=src;
+  });
+}
+async function setCutBg(key, enabled){
+  if(!CUTOUT_FEATURE_ENABLED){
+    const im=state.images[key];
+    if(im && im.cutBg){
+      im.cutBg=false;
+      applyImageSrc(key, im.original||im.src);
+    }
+    setBgStatus("");
+    return;
+  }
+  const im=state.images[key]; if(!im) return;
+  if(!enabled){
+    const original=im.original||im.src;
+    if(!im.original) im.original=original;
+    im.cutBg=false;
+    applyImageSrc(key, original);
+    setBgStatus("Original photo restored.");
+    return;
+  }
+  const original=im.original||im.src;
+  if(!im.original) im.original=original;
+  const useCutout=(url, cached)=>{
+    im.cutout=url; im.cutBg=true;
+    _cutoutCache.set(cutoutFingerprint(original), url);
+    compressImage(url, 1600, "image/png", 0.92).then(d=>applyImageSrc(key, url, d));
+    setBgStatus(cached ? "Background removed (cached)." : "Background removed.");
+  };
+  if(im.cutout){ useCutout(im.cutout, true); return; }
+  const fp=cutoutFingerprint(original);
+  if(_cutoutCache.has(fp)){ useCutout(_cutoutCache.get(fp), true); return; }
+  setBgStatus("Loading cutout model… (first run downloads ~a few MB, needs internet)");
+  try{
+    if(!_imglyMod) _imglyMod=await import("https://esm.sh/@imgly/background-removal@1.7.0");
+    const removeBackground=_imglyMod.removeBackground||_imglyMod.default;
+    const src=await toSupportedSrc(original);
+    const blob=await removeBackground(src,{ output:{format:"image/png"},
+      progress:(k,c,t)=>{ if(typeof k==="string"&&k.startsWith("fetch")&&t) setBgStatus(`Downloading model… ${Math.round(100*c/t)}%`);
+                          else setBgStatus("Removing background…"); }});
+    const url=await blobToDataURL(blob);
+    useCutout(url);
+  }catch(e){
+    im.cutBg=false;
+    buildAssets();
+    setBgStatus("Background removal failed: "+(e&&e.message||e));
+  }
+}
+
+/* ============================================================
+   PERSISTENCE (this browser only, via localStorage)
+============================================================ */
+const LS_KEY = "posterEditor.v3";
+let _saveTimer=null;
+function scheduleSave(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(saveState,450); }
+function serializable(){
+  const imgs={};
+  for(const [k,v] of Object.entries(state.images)) imgs[k]={src:v.stored||v.src,natW:v.natW,natH:v.natH};
+  return { v:3, template:state.template, colors:state.colors, text:state.text,
+           layouts:state.layouts, extraLayers:state.extraLayers, autoPalette:state.autoPalette,
+           lockTemplateFonts:state.lockTemplateFonts, logoSettings:state.logoSettings,
+           spotlightVariant:state.spotlightVariant, spotlightLayouts:state.spotlightLayouts,
+           vaporGlassSettings:state.vaporGlassSettings,
+           salukisLayoutMeta:state.salukisLayoutMeta, vaporLayoutMeta:state.vaporLayoutMeta, images:imgs,
+           stories:state.stories, storyIndex:state.storyIndex };
+}
+function saveState(){
+  const data=serializable();
+  try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }
+  catch(e){
+    // most likely quota exceeded from large images — keep text/layout, drop images
+    try{ const slim={...data}; delete slim.images; localStorage.setItem(LS_KEY, JSON.stringify(slim));
+         setPalStatus("Saved (images too large to remember in this browser)."); }
+    catch(_){ /* give up silently */ }
+  }
+}
+function loadState(){
+  let raw; try{ raw=localStorage.getItem(LS_KEY); }catch(e){ return false; }
+  if(!raw) return false;
+  let d; try{ d=JSON.parse(raw); }catch(e){ return false; }
+  if(d.template && TEMPLATES[d.template]) state.template=ensureEnabledTemplate(d.template);
+  if(d.colors) state.colors=Object.assign(state.colors, d.colors);
+  if(d.text) state.text=Object.assign({...DEFAULT_TEXT}, d.text);
+  if(d.layouts) state.layouts=d.layouts;
+  if(d.extraLayers) state.extraLayers=d.extraLayers;
+  if(typeof d.autoPalette==="boolean") state.autoPalette=d.autoPalette;
+  if(typeof d.lockTemplateFonts==="boolean") state.lockTemplateFonts=d.lockTemplateFonts;
+  if(d.logoSettings) state.logoSettings=Object.assign(state.logoSettings, d.logoSettings);
+  if(d.vaporGlassSettings) state.vaporGlassSettings=Object.assign(vaporGlassSettingsOf(), d.vaporGlassSettings);
+  if(d.salukisLayoutMeta) state.salukisLayoutMeta=Object.assign({}, d.salukisLayoutMeta);
+  if(d.vaporLayoutMeta) state.vaporLayoutMeta=Object.assign({}, d.vaporLayoutMeta);
+  migrateVaporGlassCardLayout(d);
+  if(d.spotlightVariant && SPOTLIGHT_VARIANTS[d.spotlightVariant]) state.spotlightVariant=d.spotlightVariant;
+  if(Array.isArray(d.stories)){ state.stories=d.stories; state.storyIndex = (typeof d.storyIndex==="number")?d.storyIndex:-1; }
+  if(d.images){
+    for(const [k,v] of Object.entries(d.images)){
+      state.images[k]={src:v.src,natW:v.natW,natH:v.natH,stored:v.src};
+      const im=new Image(); im.onload=()=>{ state.images[k] && (state.images[k].el=im); }; im.src=v.src;
+    }
+  }
+  applyBroadcastPhotoDefault();
+  applyHypeLowerThirdDefault();
+  migrateSpotlightState(d);
+  return true;
+}
+/* downscale + re-encode so uploads fit in localStorage; logos keep PNG alpha */
+function compressImage(src, maxDim, mime, quality){
+  return new Promise(res=>{
+    const im=new Image();
+    im.onload=()=>{
+      let w=im.naturalWidth, h=im.naturalHeight;
+      const s=Math.min(1, maxDim/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(im,0,0,w,h);
+      try{ res(c.toDataURL(mime,quality)); }catch(e){ res(src); }
+    };
+    im.onerror=()=>res(src);
+    im.src=src;
+  });
+}
+function fitImageLayer(key,ratio){
+  const t=tpl(); const L=ensureLayout();
+  for(const [id,def] of Object.entries(t.layers)){
+    if(def.type==="image"&&def.bind===key&&def.fit==="contain"){
+      const g=L[id]; g.h=Math.round(g.w/ratio);
+    }
+  }
+}
+
+// text fields
+const textFieldsWrap=document.getElementById("textFields");
+function buildTextFields(){
+  // show only fields relevant to current template binds
+  const binds=new Set();
+  Object.values(layersOf()).forEach(d=>{
+    if(d.kind==="stat"){ binds.add(d.bind+"num"); binds.add(d.bind+"label"); }
+    else if(d.bind==="footer"){ binds.add("hashtag"); binds.add("sport"); binds.add("teamName"); }
+    else if(d.bind==="playerMeta"){ binds.add("position"); binds.add("playerClass"); }
+    else binds.add(d.bind);
+  });
+  // always allow hashtag/sport if a footer exists already handled
+  textFieldsWrap.innerHTML="";
+  TEXT_FIELDS.forEach(([key,label])=>{
+    if(!binds.has(key)) return;
+    const wrap=document.createElement("div");
+    wrap.innerHTML=`<label class="fld">${label}</label>`;
+    const i=document.createElement("input"); i.type="text"; i.value=state.text[key]??"";
+    i.oninput=e=>{ state.text[key]=e.target.value; render(); };
+    wrap.appendChild(i); textFieldsWrap.appendChild(wrap);
+  });
+}
+
+/* ============================================================
+   STORIES (JSON import)
+============================================================ */
+const SPORT_MAP = PosterRenderEngine.SPORT_MAP;
+function applyStory(s){
+  const mapped = PosterRenderEngine.mapStoryToText(s);
+  Object.assign(state.text, mapped.text);
+  if(mapped.colors.primary){ state.colors.primary=mapped.colors.primary; cP.value=mapped.colors.primary; }
+  if(mapped.colors.secondary){ state.colors.secondary=mapped.colors.secondary; cS.value=mapped.colors.secondary; }
+  buildTextFields();
+  if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
+  else render();
+  updateTestBanner();
+}
+async function loadStoriesFromUrl(url, storyIndex=0){
+  try{
+    const r=await fetch(url);
+    if(!r.ok) throw new Error(r.statusText);
+    const a=await r.json();
+    const arr=Array.isArray(a)?a:(Array.isArray(a.stories)?a.stories:[a]);
+    state.stories=arr.filter(s=>s&&typeof s==="object");
+    state.storyIndex=state.stories.length
+      ? Math.max(0, Math.min(storyIndex, state.stories.length-1)) : -1;
+    buildStorySelect();
+    if(state.storyIndex>=0) applyStory(state.stories[state.storyIndex]);
+    else updateTestBanner();
+    scheduleSave();
+  }catch(e){ setStoryStatus("Failed to load stories: "+(e&&e.message||e)); }
+}
+function buildStorySelect(){
+  const wrap=document.getElementById("storyControls"), sel=document.getElementById("storySelect");
+  if(!state.stories.length){ wrap.style.display="none"; return; }
+  wrap.style.display="block";
+  sel.innerHTML=state.stories.map((s,i)=>
+    `<option value="${i}">${i+1}. ${esc(s.player_name||s.slug||"story")}${s.team_name?" — "+esc(s.team_name):""}</option>`).join("");
+  sel.value=String(Math.max(0,state.storyIndex));
+  sel.onchange=e=>{ state.storyIndex=+e.target.value; applyStory(state.stories[state.storyIndex]); scheduleSave(); };
+  setStoryStatus(`${state.stories.length} stories loaded — ${state.storyIndex+1} selected.`);
+}
+function gotoStory(d){
+  if(!state.stories.length) return;
+  state.storyIndex=(state.storyIndex+d+state.stories.length)%state.stories.length;
+  document.getElementById("storySelect").value=String(state.storyIndex);
+  applyStory(state.stories[state.storyIndex]);
+  setStoryStatus(`${state.stories.length} stories loaded — ${state.storyIndex+1} selected.`);
+  scheduleSave();
+}
+function setStoryStatus(t){ const e=document.getElementById("storyStatus"); if(e) e.textContent=t; }
+document.getElementById("storyFile").onchange=e=>{
+  const file=e.target.files[0]; if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>{
+    let arr; try{ arr=JSON.parse(r.result); }catch(err){ setStoryStatus("Invalid JSON: "+err.message); return; }
+    if(!Array.isArray(arr)) arr = Array.isArray(arr.stories) ? arr.stories : [arr];
+    state.stories = arr.filter(s=>s && typeof s==="object");
+    state.storyIndex = state.stories.length ? 0 : -1;
+    buildStorySelect();
+    if(state.storyIndex>=0) applyStory(state.stories[0]);
+    scheduleSave();
+  };
+  r.readAsText(file);
+  e.target.value="";  // allow re-uploading the same file
+};
+document.getElementById("storyPrev").onclick=()=>gotoStory(-1);
+document.getElementById("storyNext").onclick=()=>gotoStory(1);
+document.getElementById("loadBundledStories").onclick=()=>loadStoriesFromUrl(BUNDLED_STORIES_URL, state.storyIndex>=0?state.storyIndex:0);
+
+function exportLayoutJSON(){
+  const t=state.template;
+  ensureLayout();
+  const L=state.layouts[t]||{};
+  const payload={
+    templateId:t,
+    exportedAt:new Date().toISOString(),
+    layoutVersion:state.salukisLayoutMeta?.[t]??1,
+    layers:JSON.parse(JSON.stringify(L)),
+    settings:{
+      logo:logoSettingsOf(t),
+      ...(t==="vapor_motion"?{vaporGlass:vaporGlassSettingsOf()}:{}),
+    },
+    colors:{...state.colors},
+    text:{...state.text},
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`layout-${t}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+document.getElementById("resetLayout").onclick=resetLayout;
+document.getElementById("exportLayout").onclick=exportLayoutJSON;
+document.getElementById("lockFonts").onchange=e=>{
+  state.lockTemplateFonts=e.target.checked;
+  render();
+  scheduleSave();
+};
+document.getElementById("clearSaved").onclick=()=>{
+  if(!confirm("Clear all saved images, text and layout from this browser and reset to the sample poster?")) return;
+  try{ localStorage.removeItem(LS_KEY); }catch(e){}
+  location.reload();
+};
+document.getElementById("deselectBtn").onclick=()=>select(null);
+
+/* ---- keyboard shortcuts: nudge, order, flip, duplicate, delete ---- */
+document.addEventListener("keydown",(e)=>{
+  const t=e.target;
+  if(t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+  if(e.key==="Escape"){ if(state.cropMode){ state.cropMode=null; render(); syncInspector(); } else select(null); return; }
+  const id=state.selected; if(!id || !layersOf()[id]) return;
+  const def=layersOf()[id], g=geo(id), step=e.shiftKey?10:1;
+  let act=true;
+  switch(e.key){
+    case "ArrowLeft":  g.x-=step; break;
+    case "ArrowRight": g.x+=step; break;
+    case "ArrowUp":    g.y-=step; break;
+    case "ArrowDown":  g.y+=step; break;
+    case "Delete": case "Backspace": g.hidden=true; select(null); break;
+    case "[": g.z=(g.z ?? def.z ?? 10)-1; break;
+    case "]": g.z=(g.z ?? def.z ?? 10)+1; break;
+    case "d": case "D": if(e.metaKey||e.ctrlKey){ duplicateLayer(id); } else act=false; break;
+    case "h": case "H": if(def.type==="image"){ g.flipH=!g.flipH; } else act=false; break;
+    default: act=false;
+  }
+  if(act){ e.preventDefault(); render(); }
+});
+document.getElementById("autoPal").onchange=e=>{
+  state.autoPalette=e.target.checked;
+  if(!e.target.checked) return;
+  if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
+  else if(state.images.logo) applyPaletteFromLogo();
+};
+document.getElementById("detectPal").onclick=()=>{
+  if(shouldUsePlayerPalette(state.template) || state.template==="magazine") applyPaletteFromPlayer();
+  else applyPaletteFromLogo();
+};
+
+/* ============================================================
+   ZOOM / FIT
+============================================================ */
+const main=document.getElementById("main"), wrap=document.getElementById("stageWrap"), zlabel=document.getElementById("zoomlabel");
+let _scale=1;
+function currentScale(){ return _scale; }
+function fitScale(){
+  const pad=60;
+  const sw=(main.clientWidth-pad)/SW, sh=(main.clientHeight-pad)/SH;
+  return Math.min(sw,sh);
+}
+function applyZoom(){
+  _scale = state.zoom ?? fitScale();
+  stage.style.transform=`scale(${_scale})`;
+  wrap.style.width=(SW*_scale)+"px"; wrap.style.height=(SH*_scale)+"px";
+  zlabel.textContent=Math.round(_scale*100)+"%";
+}
+function syncFrameGuide(){
+  const on=!!state.showFrameGuide;
+  stage.classList.toggle("frameGuide", on);
+  const btn=document.getElementById("frameGuideBtn");
+  if(btn){
+    btn.classList.toggle("on", on);
+    btn.textContent=on ? "Frame ✓" : "Frame";
+  }
+}
+document.getElementById("zoomFit").onclick=()=>{ state.zoom=null; applyZoom(); };
+document.getElementById("zoomIn").onclick=()=>{ state.zoom=(state.zoom??fitScale())*1.15; applyZoom(); };
+document.getElementById("zoomOut").onclick=()=>{ state.zoom=(state.zoom??fitScale())/1.15; applyZoom(); };
+document.getElementById("frameGuideBtn").onclick=()=>{ state.showFrameGuide=!state.showFrameGuide; syncFrameGuide(); };
+window.addEventListener("resize",()=>{ if(state.zoom==null) applyZoom(); });
+window.addEventListener("pointerup",()=>{ if(drag){ drag=null; clearAlignGuides(); }});
+
+/* ============================================================
+   EXPORT + HEADLESS RENDER API
+============================================================ */
+function loadImageFromUrl(key, url){
+  return new Promise((resolve, reject)=>{
+    const im=new Image();
+    im.crossOrigin="anonymous";
+    im.onload=()=>{
+      state.images[key]={src:url, stored:url, natW:im.naturalWidth, natH:im.naturalHeight, el:im};
+      resolve();
+    };
+    im.onerror=()=>reject(new Error("Failed to load image: "+url));
+    im.src=url;
+  });
+}
+async function captureStagePng(){
+  const prevSel=state.selected; select(null);
+  const prevTransform=stage.style.transform;
+  const guideWasOn=state.showFrameGuide;
+  stage.classList.remove("frameGuide");
+  stage.style.transform="scale(1)";
+  wrap.style.width=SW+"px"; wrap.style.height=SH+"px";
+  if(document.fonts?.ready) await document.fonts.ready;
+  render();
+  await new Promise(r=>setTimeout(r,120));
+  const canvas=await html2canvas(stage,{scale:2,backgroundColor:null,useCORS:true,logging:false,width:SW,height:SH});
+  if(guideWasOn) stage.classList.add("frameGuide");
+  stage.style.transform=prevTransform;
+  applyZoom();
+  syncFrameGuide();
+  select(prevSel);
+  return canvas;
+}
+const exportBtn=document.getElementById("exportBtn");
+exportBtn.onclick=async ()=>{
+  exportBtn.textContent="Rendering…"; exportBtn.disabled=true;
+  try{
+    const canvas=await captureStagePng();
+    const a=document.createElement("a");
+    a.download=exportFilename();
+    a.href=canvas.toDataURL("image/png");
+    a.click();
+  }catch(err){ alert("Export failed: "+err.message); }
+  finally{
+    exportBtn.textContent="⬇ Export PNG"; exportBtn.disabled=false;
+  }
+};
+
+function shouldUseLogoPalette(payload, templateId){
+  if(shouldUsePlayerPalette(templateId)) return false;
+  if(payload.auto_palette===false) return false;
+  if(payload.auto_palette===true) return true;
+  const settings=window.PosterTemplateLoader?.getTemplateSettings?.(templateId);
+  if(settings?.brandColors?.fromLogo) return true;
+  return state.autoPalette;
+}
+
+window.__RENDER_API_V3__={
+  async setPayload(payload){
+    const styleId=payload.style||payload.template;
+    await ensurePosterTemplatesLoaded();
+    if(styleId && TEMPLATES[styleId]) state.template=ensureEnabledTemplate(styleId);
+    if(payload.auto_palette===false) state.autoPalette=false;
+    else if(payload.auto_palette===true) state.autoPalette=true;
+    if(payload.story) applyStory(payload.story);
+    if(payload.colors) Object.assign(state.colors, PosterRenderEngine.enrichThemeColors({ ...state.colors, ...payload.colors }));
+    else state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
+    if(payload.canvas_background) state.canvasOverride=payload.canvas_background;
+    const pUrl=payload.player_image||payload.playerImageUrl;
+    const lUrl=payload.logo_url||payload.logoUrl;
+    if(pUrl) await loadImageFromUrl("player", pUrl);
+    if(lUrl){
+      await loadImageFromUrl("logo", lUrl);
+      if(shouldUseLogoPalette(payload, state.template)) applyPaletteFromLogo();
+    } else if(shouldUseLogoPalette(payload, state.template) && state.images.logo) {
+      applyPaletteFromLogo();
+    }
+    if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
+    ensureLayout();
+    if(payload.layout_overrides) applyLayoutOverrides(state.template, payload.layout_overrides);
+    if(payload.settings) applySettingsOverrides(state.template, payload.settings);
+    if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
+    if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
+    if(state.template==="vapor_motion") buildVaporGlassControls();
+    render();
+    if(document.fonts?.ready) await document.fonts.ready;
+    render();
+  },
+  async exportPng(){
+    const canvas=await captureStagePng();
+    return canvas.toDataURL("image/png");
+  },
+  async exportPngBuffer(){
+    const canvas=await captureStagePng();
+    return new Promise((resolve,reject)=>{
+      canvas.toBlob(b=>{ if(!b) reject(new Error("PNG encode failed")); else b.arrayBuffer().then(resolve); }, "image/png");
+    });
+  },
+  render(){ render(); },
+  getState(){ return serializable(); },
+  applyStory,
+  loadImageFromUrl,
+};
+
+/* ============================================================
+   INIT
+============================================================ */
+async function init(){
+  if(new URLSearchParams(location.search).get("headless")==="1") document.body.classList.add("headless");
+  loadState();                       // restore this browser's saved work, if any
+  state.template=ensureEnabledTemplate(state.template);
+  const qs=new URLSearchParams(location.search);
+  const qp=qs.get("tpl");
+  if(qp && TEMPLATES[qp]) state.template=ensureEnabledTemplate(qp);
+  const storyParam=+(qs.get("story")||0)||0;
+  const surl=qs.get("storiesurl");
+  if(surl){
+    loadStoriesFromUrl(surl, storyParam);
+  } else if(!state.stories.length){
+    loadStoriesFromUrl(BUNDLED_STORIES_URL, storyParam);
+  }
+  cP.value=state.colors.primary; cS.value=state.colors.secondary;
+  const ap=document.getElementById("autoPal"); if(ap) ap.checked=state.autoPalette;
+  const lf=document.getElementById("lockFonts"); if(lf) lf.checked=state.lockTemplateFonts;
+  if(window.PosterTemplateLoader){
+    await ensurePosterTemplatesLoaded();
+  }
+  ensureLayout();
+  if(state.template==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
+  if(state.template==="neo_brutalist") applyNeoBrutalistLayoutDefault();
+  if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
+  if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
+  if(state.template==="magazine" && shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
+  buildTplChips(); buildSpotlightVariantControls(); buildVaporGlassControls(); buildAssets(); buildLogoControls(); buildTextFields(); buildStorySelect();
+  updateBrandColorControls();
+  render(); applyZoom(); syncFrameGuide(); updateTestBanner();
+  // re-apply zoom after fonts load (metrics shift)
+  if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ render(); applyZoom(); updateTestBanner(); });
+}
+
+window.__TEST_V3__={
+  ENABLED_TEMPLATES,
+  SPOTLIGHT_VARIANTS,
+  getState(){ return { template:state.template, spotlightVariant:state.spotlightVariant,
+    spotlightLayouts:state.spotlightLayouts, spotlightLayout:state.layouts.spotlight,
+    storyIndex:state.storyIndex,
+    slug:state.stories[state.storyIndex]?.slug||null, playerName:state.text.playerName }; },
+  setTemplate(id){ switchTemplate(id); },
+  applySpotlightVariant,
+  snapshotSpotlightLayout,
+  restoreSpotlightLayout,
+  setStoryIndex(i){
+    if(!state.stories.length) return;
+    state.storyIndex=Math.max(0, Math.min(i, state.stories.length-1));
+    document.getElementById("storySelect").value=String(state.storyIndex);
+    applyStory(state.stories[state.storyIndex]);
+    scheduleSave();
+  },
+  fontAudit,
+  waitReady(){ return document.fonts?.ready||Promise.resolve(); },
+  exportFilename,
+  renderApi:()=>window.__RENDER_API_V3__,
+};
+init().catch(e=>console.error(e));
+</script>
+</body>
+</html>
