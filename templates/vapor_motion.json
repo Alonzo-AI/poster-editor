@@ -1,0 +1,38 @@
+{
+  "id": "vapor_motion",
+  "name": "Vapor Motion",
+  "version": 4,
+  "canvas": { "width": 1080, "height": 1350, "background": "{{contrast}}" },
+  "deco": {
+    "html": "<div style=\"left:-120px;top:-120px;width:620px;height:620px;border-radius:50%;background:{{secondary}};filter:blur(145px);opacity:0.18;z-index:2;\"></div><div style=\"right:-140px;top:60px;width:520px;height:520px;border-radius:50%;background:{{primary}};filter:blur(155px);opacity:0.18;z-index:2;\"></div><div style=\"left:0;bottom:0;width:100%;height:44%;background:linear-gradient(to top, {{contrast}} 0%, {{contrast}} 62%, rgba(11,17,30,0.76) 82%, rgba(11,17,30,0) 100%);z-index:9;\"></div><div style=\"left:0;bottom:430px;width:100%;height:2px;background:{{onContrast}};opacity:0.9;z-index:11;\"></div><div style=\"left:356px;bottom:128px;width:2px;height:104px;background:{{primary}};opacity:0.95;z-index:11;\"></div><div style=\"left:678px;bottom:128px;width:2px;height:104px;background:{{primary}};opacity:0.95;z-index:11;\"></div><div style=\"left:72px;bottom:132px;width:250px;height:3px;background:{{primary}};opacity:0.95;z-index:11;\"></div>"
+  },
+  "settings": {
+    "logo": { "opacity": 1, "scale": 1 },
+    "playerImage": {
+      "fit": "cover",
+      "zoom": 1.02,
+      "cropX": 0.5,
+      "cropY": 0.34,
+      "fitToFrame": true
+    }
+  },
+  "textRules": {
+    "autoFit": ["eyebrow", "heroNumber", "heroDesc", "playerName", "callout", "footer"],
+    "stats": { "autoFit": true, "maxSize": 54 }
+  },
+  "layers": [
+    { "id": "bgImage", "type": "image", "bind": "background", "x": 0, "y": 0, "w": 1080, "h": 1350, "fit": "cover", "z": 1, "opacity": 0.18 },
+    { "id": "player", "type": "image", "bind": "player", "x": 0, "y": 0, "w": 1080, "h": 1350, "fit": "cover", "zoom": 1.02, "cropX": 0.5, "cropY": 0.34, "z": 3 },
+    { "id": "logo", "type": "image", "bind": "logo", "x": 72, "y": 72, "w": 100, "h": 100, "fit": "contain", "z": 15 },
+    { "id": "eyebrow", "type": "text", "bind": "eyebrow", "x": 72, "y": 944, "w": 280, "h": 28, "size": 20, "color": "secondary", "font": "sans", "weight": 700, "ls": 4, "italic": true, "z": 15 },
+    { "id": "playerName", "type": "text", "bind": "playerName", "x": 72, "y": 972, "w": 620, "h": 72, "size": 72, "color": "white", "font": "disp", "z": 15 },
+    { "id": "playerMeta", "type": "text", "bind": "playerMeta", "x": 72, "y": 1048, "w": 420, "h": 28, "size": 22, "color": "muted", "font": "cond", "ls": 2, "z": 15 },
+    { "id": "hero", "type": "text", "bind": "heroNumber", "x": 736, "y": 936, "w": 272, "h": 128, "size": 164, "color": "secondary", "font": "bebas", "align": "right", "lh": 0.9, "z": 15 },
+    { "id": "heroDesc", "type": "text", "bind": "heroDesc", "x": 700, "y": 1048, "w": 308, "h": 54, "size": 18, "color": "white", "font": "sans", "weight": 600, "align": "right", "lh": 1.2, "z": 15 },
+    { "id": "stat1", "type": "text", "bind": "stat1", "kind": "stat", "statStack": true, "x": 72, "y": 1098, "w": 248, "h": 96, "size": 56, "color": "white", "font": "cond", "align": "left", "z": 15 },
+    { "id": "stat2", "type": "text", "bind": "stat2", "kind": "stat", "statStack": true, "x": 394, "y": 1098, "w": 248, "h": 96, "size": 56, "color": "white", "font": "cond", "align": "left", "z": 15 },
+    { "id": "stat3", "type": "text", "bind": "stat3", "kind": "stat", "statStack": true, "x": 716, "y": 1098, "w": 292, "h": 96, "size": 56, "color": "white", "font": "cond", "align": "left", "z": 15 },
+    { "id": "callout", "type": "text", "bind": "callout", "x": 72, "y": 1220, "w": 264, "h": 46, "size": 18, "color": "black", "bg": "secondary", "pad": "10px 14px", "radius": 999, "font": "cond", "weight": 700, "align": "center", "z": 15 },
+    { "id": "footer", "type": "text", "bind": "footer", "x": 388, "y": 1224, "w": 620, "h": 38, "size": 17, "color": "muted", "font": "sans", "ls": 2, "align": "right", "z": 15 }
+  ]
+}

@@ -258,11 +258,11 @@
     return { hex, bucket: classifyBucket(lum(hex)) };
   }
 
-  function computeWithConfig(layout, layersDef, playerImageEl, themeColors, config) {
-    if (!layout || !layersDef || !playerImageEl) return null;
+  function sampleWithConfig(layout, layersDef, playerImageEl, config) {
+    if (!layout || !layersDef || !playerImageEl || !config) return null;
     const playerDef = layersDef.player;
     const playerG = layout.player;
-    if (!playerDef || !playerG || !config) return null;
+    if (!playerDef || !playerG) return null;
 
     const canvas = document.createElement("canvas");
     canvas.width = SW;
@@ -283,9 +283,38 @@
       const box = layerBox(g, def);
       const sample = sampleRect(ctx, box.left, box.top, box.w, box.h);
       if (!sample) continue;
+      out[id] = sample;
+    }
+    return Object.keys(out).length ? out : null;
+  }
+
+  function resolveFromSamples(samples, themeColors, config) {
+    if (!samples || !config) return null;
+    const out = {};
+    for (const [id, sample] of Object.entries(samples)) {
       out[id] = resolveLayerColor(id, sample.bucket, sample.hex, themeColors, config.colorMap);
     }
     return Object.keys(out).length ? out : null;
+  }
+
+  function computeWithConfig(layout, layersDef, playerImageEl, themeColors, config) {
+    const samples = sampleWithConfig(layout, layersDef, playerImageEl, config);
+    return resolveFromSamples(samples, themeColors, config);
+  }
+
+  function configFor(templateId) {
+    if (templateId === "salukis_dark") {
+      return {
+        layers: SALUKIS_DARK_HEADER_LAYERS,
+        colorMap: SALUKIS_DARK_HEADER_COLOR_MAP,
+        drawDeco: drawSalukisDarkDeco,
+      };
+    }
+    return {
+      layers: HEADER_LAYERS,
+      colorMap: MAGAZINE_HEADER_COLOR_MAP,
+      drawDeco: drawMagazineDeco,
+    };
   }
 
   function compute(layout, layersDef, playerImageEl, themeColors) {
@@ -304,9 +333,19 @@
     });
   }
 
+  function sample(layout, layersDef, playerImageEl, templateId) {
+    return sampleWithConfig(layout, layersDef, playerImageEl, configFor(templateId));
+  }
+
+  function resolve(samples, themeColors, templateId) {
+    return resolveFromSamples(samples, themeColors, configFor(templateId));
+  }
+
   global.PosterMagazineHeaderColors = {
     compute,
     computeSalukisDark,
+    sample,
+    resolve,
     MAGAZINE_HEADER_COLOR_MAP,
     SALUKIS_DARK_HEADER_COLOR_MAP,
     HEADER_LAYERS,

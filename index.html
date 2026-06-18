@@ -40,7 +40,7 @@
     width:100%;background:#0d1014;border:1px solid var(--line);color:var(--txt);
     border-radius:7px;padding:7px 8px;font-size:13px;font-family:inherit;
   }
-  textarea{resolve:vertical;min-height:46px;resize:vertical;}
+  textarea{min-height:46px;resize:vertical;}
   input[type=color]{width:100%;height:34px;border:1px solid var(--line);border-radius:7px;background:#0d1014;padding:2px;cursor:pointer;}
   input[type=range]{width:100%;}
   .row{display:flex;gap:8px;}
@@ -229,6 +229,11 @@
       <div class="body" id="textFields"></div>
     </details>
 
+    <details class="group" open>
+      <summary>Caption colors</summary>
+      <div class="body" id="captionColorControls"></div>
+    </details>
+
     <details class="group">
       <summary>Layout</summary>
       <div class="body">
@@ -308,7 +313,7 @@ function salukisDarkPanelSlots(){
 const SALUKIS_DARK_PANEL_SLOTS = salukisDarkPanelSlots();
 const SALUKIS_LAYOUT_VERSION = 5;
 const MAGAZINE_LAYOUT_VERSION = 8;
-const VAPOR_LAYOUT_VERSION = 3;
+const VAPOR_LAYOUT_VERSION = 4;
 const COLOR_PRESETS = [
   ["#9D2235","#FFFFFF"], ["#041E42","#C8102E"], ["#154734","#FFB81C"],
   ["#0C2340","#FF7900"], ["#500000","#FFFFFF"], ["#003594","#FFB81C"],
@@ -351,6 +356,7 @@ const state = {
     cyber_pulse: { opacity: 1, scale: 1 },
     neo_brutalist: { opacity: 1, scale: 1 },
     vapor_motion: { opacity: 1, scale: 1 },
+    big_sky_leader: { opacity: 1, scale: 1 },
     salukis_clean: { opacity: 1, scale: 1 },
     salukis_dark:  { opacity: 1, scale: 1 },
   },
@@ -358,7 +364,9 @@ const state = {
   salukisLayoutMeta: {},  // templateId -> layout schema version (one-time migrations only)
   vaporLayoutMeta: {},
   magazineLayoutMeta: { v: 0 },
+  magazineHeaderSamples: null,
   magazineHeaderColors: null,
+  salukisDarkHeaderSamples: null,
   salukisDarkHeaderColors: null,
 };
 
@@ -397,8 +405,10 @@ function roleColor(role){
     case "muted": return "#9aa0a6";
     case "cream": return "#f4ecd8";
     case "darkgreen": return "#13321f";
+    case "contrast": return c.contrast || "#0b111e";
     case "onPrimary": return c.onPrimary || onColor(c.primary);
     case "onPrimaryMuted": return c.onPrimaryMuted || c.onPrimary || onColor(c.primary);
+    case "onContrast": return c.onContrast || onColor(c.contrast || "#0b111e");
     case "onPhoto": return c.onPhoto || c.onPrimary || onColor(c.primary);
     case "onPhotoMuted": return c.onPhotoMuted || c.onPhoto || c.onPrimaryMuted || c.onPrimary || onColor(c.primary);
     case "calloutBg": return c.calloutBg || "#ffffff";
@@ -925,6 +935,14 @@ function applyGlassCardPreset(presetId){
 function markGlassCustom(){
   vaporGlassSettingsOf().preset="custom";
 }
+const _previewRenderFrames={};
+function queuePreviewRender(key, cb){
+  if(_previewRenderFrames[key]) cancelAnimationFrame(_previewRenderFrames[key]);
+  _previewRenderFrames[key]=requestAnimationFrame(()=>{
+    _previewRenderFrames[key]=0;
+    cb();
+  });
+}
 function glassCardControlsHTML(){
   const g=vaporGlassSettingsOf();
   const activePreset=g.preset||"frosted";
@@ -979,16 +997,28 @@ function wireGlassCardControls(root){
     buildVaporGlassControls();
     if(state.selected==="glassCard") syncInspector();
   };
-  if(col) col.oninput=e=>{ g.color=e.target.value; markGlassCustom(); render(); scheduleSave(); refresh(); };
-  if(op) op.oninput=e=>{ g.opacity=(+e.target.value)/100; if(opv) opv.textContent=e.target.value+"%"; markGlassCustom(); render(); scheduleSave(); };
-  if(bop) bop.oninput=e=>{ g.borderOpacity=(+e.target.value)/100; if(bopv) bopv.textContent=e.target.value+"%"; markGlassCustom(); render(); scheduleSave(); };
-  if(blur) blur.oninput=e=>{ g.blur=+e.target.value; if(blurv) blurv.textContent=e.target.value+"px"; g.mode=g.blur>0?"frosted":"solid"; markGlassCustom(); render(); scheduleSave(); refresh(); };
+  if(col){
+    col.oninput=e=>{ g.color=e.target.value; markGlassCustom(); queuePreviewRender("glassCard",()=>{ render(); refresh(); }); };
+    col.onchange=()=>scheduleSave();
+  }
+  if(op){
+    op.oninput=e=>{ g.opacity=(+e.target.value)/100; if(opv) opv.textContent=e.target.value+"%"; markGlassCustom(); queuePreviewRender("glassCard",()=>render()); };
+    op.onchange=()=>scheduleSave();
+  }
+  if(bop){
+    bop.oninput=e=>{ g.borderOpacity=(+e.target.value)/100; if(bopv) bopv.textContent=e.target.value+"%"; markGlassCustom(); queuePreviewRender("glassCard",()=>render()); };
+    bop.onchange=()=>scheduleSave();
+  }
+  if(blur){
+    blur.oninput=e=>{ g.blur=+e.target.value; if(blurv) blurv.textContent=e.target.value+"px"; g.mode=g.blur>0?"frosted":"solid"; markGlassCustom(); queuePreviewRender("glassCard",()=>{ render(); refresh(); }); };
+    blur.onchange=()=>scheduleSave();
+  }
   if(selBtn) selBtn.onclick=()=>select("glassCard");
 }
 function buildVaporGlassControls(){
   const section=document.getElementById("vaporGlassSection");
   const wrap=document.getElementById("vaporGlassControls");
-  const onVapor=state.template==="vapor_motion";
+  const onVapor=state.template==="vapor_motion" && !!layersOf().glassCard;
   if(section) section.style.display=onVapor?"":"none";
   if(!wrap || !onVapor) return;
   wrap.innerHTML=glassCardControlsHTML();
@@ -1038,7 +1068,7 @@ function migrateVaporGlassCardLayout(d){
 
 /* Focus sprint — only these appear in the template picker */
 /* v3 lab — JSON-backed templates only (same defs as index_2, narrower picker) */
-const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark"];
+const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader"];
 const BUNDLED_STORIES_URL = "./stories.players.json";
 function spotlightDecoBase(opts={}){
   const s=state.colors.secondary;
@@ -1174,8 +1204,16 @@ function buildLogoControls(){
   const scv=document.getElementById("logoScaleVal");
   const opPct=Math.round(ls.opacity*100);
   const scPct=Math.round(ls.scale*100);
-  if(op){ op.value=opPct; op.oninput=e=>{ ls.opacity=(+e.target.value)/100; if(opv) opv.textContent=e.target.value+"%"; render(); scheduleSave(); }; }
-  if(sc){ sc.value=scPct; sc.oninput=e=>{ ls.scale=(+e.target.value)/100; if(scv) scv.textContent=e.target.value+"%"; render(); scheduleSave(); }; }
+  if(op){
+    op.value=opPct;
+    op.oninput=e=>{ ls.opacity=(+e.target.value)/100; if(opv) opv.textContent=e.target.value+"%"; queuePreviewRender("logoControls",()=>render()); };
+    op.onchange=()=>scheduleSave();
+  }
+  if(sc){
+    sc.value=scPct;
+    sc.oninput=e=>{ ls.scale=(+e.target.value)/100; if(scv) scv.textContent=e.target.value+"%"; queuePreviewRender("logoControls",()=>render()); };
+    sc.onchange=()=>scheduleSave();
+  }
   if(opv) opv.textContent=opPct+"%";
   if(scv) scv.textContent=scPct+"%";
 }
@@ -1196,6 +1234,9 @@ function blendHexOver(fgHex, bgHex, alpha){
 }
 
 function vaporMotionSurfaceHex(){
+  if(!layersOf().glassCard){
+    return state.colors.contrast || shade(state.colors.primary || "#0b0713", -72);
+  }
   const vg=vaporGlassSettingsOf();
   const base=resolveGlassColor(vg.color);
   if(vg.mode==="solid") return base;
@@ -1340,7 +1381,7 @@ function ensureLayout(){
                          weight:def.weight ?? null, rotate:parseRotate(def.transform), italic:!!def.italic,
                          underline:!!def.underline,
                          ls:def.ls ?? null, color:def.color, textTransform:def.textTransform ?? null,
-                         labelColor:null, textStyle:null, hidden:false,
+                         labelColor:null, textStyle:null, manualSize:false, hidden:false,
                          // image transform / crop controls
                          fit:def.fit ?? null, zoom:def.zoom ?? 1, cropX:def.cropX ?? 0.5, cropY:def.cropY ?? 0.5, flipH:false, flipV:false,
                          opacity:(def.opacity!=null?def.opacity:1), radius:def.type==="glass"?(def.radius??24):(def.type==="block"?(def.radius??0):0),
@@ -1352,6 +1393,87 @@ function ensureLayout(){
 }
 function parseRotate(t){ if(!t) return 0; const m=/rotate\((-?\d+(\.\d+)?)deg\)/.exec(t); return m?parseFloat(m[1]):0; }
 function geo(id){ return ensureLayout()[id]; }
+
+/* ---- undo / redo (layout-only snapshots, no images) ---- */
+const UNDO_MAX=50;
+const undoStack=[], redoStack=[];
+let _restoringUndo=false, dragUndoBefore=null;
+function cloneDeep(v){ try{ return structuredClone(v); }catch(_){ return JSON.parse(JSON.stringify(v)); } }
+function cloneEditableState(){
+  const t=state.template;
+  return {
+    template:t,
+    layouts:cloneDeep(state.layouts[t]||{}),
+    extraLayers:cloneDeep(state.extraLayers[t]||{}),
+    selected:state.selected,
+    cropMode:state.cropMode,
+  };
+}
+function editableStatesEqual(a,b){
+  return JSON.stringify(a.layouts)===JSON.stringify(b.layouts)
+    && JSON.stringify(a.extraLayers)===JSON.stringify(b.extraLayers)
+    && a.selected===b.selected
+    && a.cropMode===b.cropMode;
+}
+function clearUndoHistory(){ undoStack.length=0; redoStack.length=0; dragUndoBefore=null; }
+function pushUndo(){
+  if(_restoringUndo) return;
+  undoStack.push(cloneEditableState());
+  if(undoStack.length>UNDO_MAX) undoStack.shift();
+  redoStack.length=0;
+}
+function beginDragUndo(){
+  if(_restoringUndo || dragUndoBefore) return;
+  dragUndoBefore=cloneEditableState();
+}
+function commitDragUndo(){
+  if(_restoringUndo){ dragUndoBefore=null; return; }
+  if(!dragUndoBefore) return;
+  const cur=cloneEditableState();
+  if(!editableStatesEqual(dragUndoBefore,cur)){
+    undoStack.push(dragUndoBefore);
+    if(undoStack.length>UNDO_MAX) undoStack.shift();
+    redoStack.length=0;
+  }
+  dragUndoBefore=null;
+}
+function restoreEditableState(snap){
+  if(!snap || snap.template!==state.template) return;
+  _restoringUndo=true;
+  state.layouts[snap.template]=cloneDeep(snap.layouts);
+  state.extraLayers[snap.template]=cloneDeep(snap.extraLayers);
+  state.selected=snap.selected;
+  state.cropMode=snap.cropMode;
+  document.querySelectorAll(".layer.cropping").forEach(n=>n.classList.remove("cropping"));
+  _restoringUndo=false;
+  scheduleTemplateHeaderColors("player");
+  buildCaptionColorControls();
+  render();
+  scheduleSave();
+}
+function undo(){
+  if(!undoStack.length) return;
+  const snap=undoStack[undoStack.length-1];
+  if(snap.template!==state.template) return;
+  undoStack.pop();
+  redoStack.push(cloneEditableState());
+  restoreEditableState(snap);
+}
+function redo(){
+  if(!redoStack.length) return;
+  const snap=redoStack[redoStack.length-1];
+  if(snap.template!==state.template) return;
+  redoStack.pop();
+  undoStack.push(cloneEditableState());
+  restoreEditableState(snap);
+}
+function withUndo(fn){ pushUndo(); fn(); }
+function wireInspectorUndoInputs(root){
+  if(!root) return;
+  root.querySelectorAll('input[type="range"],input[type="number"]').forEach(inp=>{
+    inp.addEventListener("pointerdown",()=>pushUndo());
+  });
+}
 
 const FONT_KEY_MAP = {
   disp: F.disp, cond: F.cond, sans: F.sans, bebas: F.bebas, serif: F.serif,
@@ -1422,6 +1544,7 @@ function applyMagazineLayerFromDef(L, def, id){
   g.x=d.x; g.y=d.y; g.w=d.w;
   if(d.h!=null) g.h=d.h;
   if(d.size!=null) g.size=d.size;
+  g.manualSize=false;
   if(d.z!=null) g.z=d.z;
   if(d.fit) g.fit=d.fit;
   if(d.zoom!=null) g.zoom=d.zoom;
@@ -1465,6 +1588,29 @@ function applyVaporMotionLayerFromDef(L, def, id){
   g.x=d.x; g.y=d.y; g.w=d.w;
   if(d.h!=null) g.h=d.h;
   if(d.size!=null) g.size=d.size;
+  g.manualSize=false;
+  if(d.font) g.font=d.font;
+  if(d.align) g.align=d.align;
+  if(d.ls!=null) g.ls=d.ls;
+  if(d.color) g.color=d.color;
+  if(d.labelColor!=null) g.labelColor=d.labelColor;
+  if(d.weight!=null) g.weight=d.weight;
+  if(d.z!=null) g.z=d.z;
+  if(d.textTransform!=null) g.textTransform=d.textTransform;
+  if(d.fill!=null){ g.fill=d.fill; g.color=d.fill; }
+  if(d.bg!=null) g.bg=d.bg;
+  if(d.pad!=null) g.pad=d.pad;
+  if(d.radius!=null) g.radius=d.radius;
+  if(d.opacity!=null) g.opacity=d.opacity;
+  if(d.fit) g.fit=d.fit;
+  if(d.zoom!=null) g.zoom=d.zoom;
+  if(d.cropX!=null) g.cropX=d.cropX;
+  if(d.cropY!=null) g.cropY=d.cropY;
+  g.italic=!!d.italic;
+  g.underline=!!d.underline;
+  g.hollow=!!d.hollow;
+  if(d.strokeW!=null) g.strokeW=d.strokeW;
+  g.rotate=parseRotate(d.transform);
   g.hidden=false;
 }
 function applyVaporMotionLayoutDefault(force=false){
@@ -1473,7 +1619,7 @@ function applyVaporMotionLayoutDefault(force=false){
   const version=state.vaporLayoutMeta.vapor_motion||0;
   if(!force && version>=VAPOR_LAYOUT_VERSION) return;
   const L=ensureLayout(), def=layersOf();
-  const keys=["glassCard","logo","eyebrow","playerName","playerMeta","hero","heroDesc","stat1","stat2","stat3","callout","footer"];
+  const keys=["glassCard","logo","eyebrow","playerName","playerMeta","hero","heroDesc","stat1","stat2","stat3","callout","footer","statBand","divider","bgImage","player"];
   for(const id of keys) applyVaporMotionLayerFromDef(L, def, id);
   state.vaporLayoutMeta.vapor_motion=VAPOR_LAYOUT_VERSION;
 }
@@ -1624,6 +1770,7 @@ function applySpotlightVariant(id, opts){
   select(null);
   buildSpotlightVariantControls();
   buildTextFields();
+  buildCaptionColorControls();
   render();
   scheduleSave();
 }
@@ -1645,6 +1792,7 @@ function migrateSpotlightState(d){
   }
 }
 function resetLayout(){
+  clearUndoHistory();
   if(state.template==="spotlight"){
     ensureSpotlightLayouts();
     state.spotlightLayouts[state.spotlightVariant]=null;
@@ -1655,6 +1803,7 @@ function resetLayout(){
     applyVariantPreset(state.spotlightVariant,state.layouts.spotlight);
     select(null);
     buildTextFields();
+    buildCaptionColorControls();
     render();
     updateTestBanner();
     scheduleSave();
@@ -1672,10 +1821,13 @@ function resetLayout(){
   applyTemplateHeaderColors();
   select(null);
   buildTextFields();
+  buildCaptionColorControls();
   render();
   updateTestBanner();
+  scheduleSave();
 }
 function duplicateLayer(id){
+  pushUndo();
   const def=layersOf()[id]; if(!def) return;
   const t=state.template;
   if(!state.extraLayers[t]) state.extraLayers[t]={};
@@ -1683,7 +1835,7 @@ function duplicateLayer(id){
   state.extraLayers[t][nid]=Object.assign({},def);
   const L=ensureLayout(), src=geo(id);
   L[nid]=Object.assign({},src,{x:src.x+24,y:src.y+24,z:(src.z??def.z??10)+1});
-  buildTextFields(); select(nid); render();
+  buildTextFields(); buildCaptionColorControls(); select(nid); render(); scheduleSave();
 }
 
 /* ============================================================
@@ -1747,17 +1899,21 @@ function updateTestBanner(){
 }
 
 function switchTemplate(id){
+  clearUndoHistory();
   const next=ensureEnabledTemplate(id);
   const prev=state.template;
   if(prev==="spotlight"&&next!=="spotlight") snapshotSpotlightLayout();
   state.template=next;
   if(next!=="magazine") state.magazineHeaderColors=null;
+  if(next!=="magazine") state.magazineHeaderSamples=null;
   if(next!=="salukis_dark") state.salukisDarkHeaderColors=null;
+  if(next!=="salukis_dark") state.salukisDarkHeaderSamples=null;
   ensureLayout();
   applyBroadcastPhotoDefault();
   applyHypeLowerThirdDefault();
   if(next==="magazine") applyMagazineLayoutDefault();
   if(next==="neo_brutalist") applyNeoBrutalistLayoutDefault();
+  if(next==="vapor_motion") applyVaporMotionLayoutDefault();
   if(next==="salukis_clean"||next==="salukis_dark") applySalukisLayoutDefault();
   if(shouldUsePlayerPalette(next)) applyPaletteFromPlayer();
   else applyTemplateHeaderColors();
@@ -1767,6 +1923,7 @@ function switchTemplate(id){
   buildSpotlightVariantControls();
   buildVaporGlassControls();
   buildTextFields();
+  buildCaptionColorControls();
   buildLogoControls();
   updateBrandColorControls();
   render();
@@ -1993,7 +2150,6 @@ function render(){
   }
   updateTestBanner();
   syncInspector();
-  scheduleSave();
 }
 
 function labelFor(bind){
@@ -2109,6 +2265,7 @@ function attachLayerEvents(el, def, g){
     e.stopPropagation();
     if(el.isContentEditable) return;          // let text editing place the caret
     select(el.dataset.id);
+    beginDragUndo();
     const sc = currentScale();
     // in crop mode, a drag on the photo pans the image inside its frame
     let mode = handle || "move";
@@ -2173,7 +2330,16 @@ function attachLayerEvents(el, def, g){
     applyGeo(el, def, gg);
   });
   // helper so pan math can read the original width consistently
-  el.addEventListener("pointerup",()=>{ if(drag&&drag.id===el.dataset.id){ const movedId=drag.id; drag=null; clearAlignGuides(); syncInspector(); scheduleTemplateHeaderColors(movedId); }});
+  el.addEventListener("pointerup",()=>{
+    if(drag&&drag.id===el.dataset.id){
+      const movedId=drag.id;
+      drag=null;
+      clearAlignGuides();
+      commitDragUndo();
+      syncInspector();
+      scheduleTemplateHeaderColors(movedId);
+    }
+  });
   el.addEventListener("dblclick",(e)=>{
     e.preventDefault();
     if(def.type==="image"){ toggleCrop(el.dataset.id); return; }
@@ -2185,7 +2351,7 @@ function attachLayerEvents(el, def, g){
     el.addEventListener("blur",function h(){
       el.contentEditable="false";
       state.text[def.bind] = el.innerText.trim();
-      el.removeEventListener("blur",h); render(); buildTextFields();
+      el.removeEventListener("blur",h); render(); buildTextFields(); buildCaptionColorControls(); scheduleSave();
     });
   });
 }
@@ -2211,15 +2377,23 @@ function applyGeo(el, def, g){
   scheduleSave();
 }
 function toggleCrop(id){
+  const def=layersOf()[id];
+  if(!def || def.type!=="image" || !state.images[def.bind]) return;
   state.cropMode = (state.cropMode===id)? null : id;
-  render(); syncInspector();
+  document.querySelectorAll(".layer.cropping").forEach(n=>n.classList.remove("cropping"));
+  const active=document.querySelector(`.layer[data-id="${state.cropMode}"]`);
+  if(active) active.classList.add("cropping");
+  syncInspector();
 }
 
 /* ============================================================
    SELECTION + INSPECTOR
 ============================================================ */
 function select(id){
-  if(state.cropMode && state.cropMode!==id) state.cropMode=null;
+  if(state.cropMode && state.cropMode!==id){
+    state.cropMode=null;
+    document.querySelectorAll(".layer.cropping").forEach(n=>n.classList.remove("cropping"));
+  }
   clearAlignGuides();
   state.selected=id;
   document.querySelectorAll(".layer").forEach(l=>l.classList.toggle("sel", l.dataset.id===id));
@@ -2230,7 +2404,12 @@ stage.addEventListener("pointerdown",(e)=>{ if(e.target===stage||e.target.classL
 const insp=document.getElementById("inspector"), inspBody=document.getElementById("inspBody"), inspTitle=document.getElementById("inspTitle");
 function syncInspector(){
   const id=state.selected;
-  if(!id || !layersOf()[id]){ insp.classList.add("empty"); state.cropMode=null; return; }
+  if(!id || !layersOf()[id]){
+    insp.classList.add("empty");
+    state.cropMode=null;
+    document.querySelectorAll(".layer.cropping").forEach(n=>n.classList.remove("cropping"));
+    return;
+  }
   insp.classList.remove("empty");
   const def=layersOf()[id], g=geo(id);
   const cropping = state.cropMode===id;
@@ -2332,7 +2511,7 @@ function syncInspector(){
     h+=`<label class="fld">Weight</label>
         <select id="iFw">${[300,400,600,700,800,900].map(w=>`<option ${(g.weight ?? def.weight)==w?'selected':''}>${w}</option>`).join('')}</select>`;
     h+=`<label class="fld">Color</label>
-        <select id="iCol">${["primary","secondary","white","black","light","muted"].map(c=>`<option value="${c}" ${(g.color||def.color)===c?'selected':''}>${c}</option>`).join('')}</select>`;
+        <select id="iCol">${CAPTION_COLOR_OPTIONS.filter(([v])=>v!=="__default").map(([c,name])=>`<option value="${c}" ${(g.color||def.color)===c?'selected':''}>${name}</option>`).join('')}</select>`;
     h+=`<div class="row"><div><label class="fld">Letter spacing</label><input type="range" id="iLs" min="0" max="14" value="${(g.ls ?? def.ls)||0}"></div>
         <div><label class="fld">Rotation: <b id="ivr2">${g.rotate||0}°</b></label><input type="range" id="iRot" min="-90" max="90" value="${g.rotate||0}"></div></div>`;
     h+=`<label class="fld"><input type="checkbox" id="iIt" ${(g.italic ?? def.italic)?'checked':''} style="width:auto"> Italic</label>`;
@@ -2359,14 +2538,14 @@ function syncInspector(){
   const $=x=>document.getElementById(x);
 
   if(def.type==="image"){
-    $("iFit").querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>{ g.fit=b.dataset.fit; render(); });
+    $("iFit").querySelectorAll("[data-fit]").forEach(b=>b.onclick=()=>withUndo(()=>{ g.fit=b.dataset.fit; render(); scheduleSave(); }));
     $("iCrop").onclick=()=>toggleCrop(id);
     $("iZoom").oninput=e=>{ g.zoom=(+e.target.value)/100; $("ivz").textContent=e.target.value+"%"; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); };
-	    $("iFlipH").onclick=()=>{ g.flipH=!g.flipH; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); };
-	    $("iFlipV").onclick=()=>{ g.flipV=!g.flipV; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); };
-	    $("iCropReset").onclick=()=>{ g.zoom=1; g.cropX=.5; g.cropY=.5; scheduleTemplateHeaderColors(id); render(); };
-	    $("iFrameFit").onclick=()=>{ Object.assign(g,{x:0,y:0,w:SW,h:SH,fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); scheduleTemplateHeaderColors(id); render(); };
-	    $("iBleed").onclick=()=>{ const b=Math.round(SW*.05); const by=Math.round(SH*.05); Object.assign(g,{x:-b,y:-by,w:SW+(b*2),h:SH+(by*2),fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); scheduleTemplateHeaderColors(id); render(); };
+	    $("iFlipH").onclick=()=>withUndo(()=>{ g.flipH=!g.flipH; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); });
+	    $("iFlipV").onclick=()=>withUndo(()=>{ g.flipV=!g.flipV; applyGeo(el(),def,g); scheduleTemplateHeaderColors(id); });
+	    $("iCropReset").onclick=()=>withUndo(()=>{ g.zoom=1; g.cropX=.5; g.cropY=.5; scheduleTemplateHeaderColors(id); render(); scheduleSave(); });
+	    $("iFrameFit").onclick=()=>withUndo(()=>{ Object.assign(g,{x:0,y:0,w:SW,h:SH,fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); scheduleTemplateHeaderColors(id); render(); scheduleSave(); });
+	    $("iBleed").onclick=()=>withUndo(()=>{ const b=Math.round(SW*.05); const by=Math.round(SH*.05); Object.assign(g,{x:-b,y:-by,w:SW+(b*2),h:SH+(by*2),fit:"cover",zoom:1,cropX:.5,cropY:.5,rotate:0}); scheduleTemplateHeaderColors(id); render(); scheduleSave(); });
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
     $("iW").oninput=e=>{ const v=Math.max(1,+e.target.value||1); if(g.lockAspect){ const r=(g.h??g.w)/g.w; g.h=Math.round(v*r); $("iH").value=g.h; } g.w=v; applyGeo(el(),def,g); };
@@ -2395,25 +2574,26 @@ function syncInspector(){
     $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
   } else {
     $("iStyleGrid")?.querySelectorAll("[data-style]").forEach(c=>{
-      c.onclick=()=>{ applyTextStylePreset(g, def, c.dataset.style); render(); syncInspector(); scheduleSave(); };
+      c.onclick=()=>withUndo(()=>{ applyTextStylePreset(g, def, c.dataset.style); render(); scheduleSave(); });
     });
     const iFont=$("iFont");
-    if(iFont) iFont.onchange=e=>{ g.font=e.target.value; markTextStyleCustom(g); render(); };
+    if(iFont) iFont.onchange=e=>{ g.font=e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
     $("iFs").oninput=e=>{
       g.size=+e.target.value;
+      g.manualSize=true;
       $("ivs").textContent=g.size;
-      if(def.kind==="stat"&&templateStatAutoFit()) render();
+      if(def.kind==="stat"&&templateStatAutoFit()){ render(); scheduleSave(); }
       else applyGeo(el(),def,g);
     };
-    $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); render(); };
-    $("iCol").onchange=e=>{ g.color=e.target.value; markTextStyleCustom(g); render(); };
-    $("iLs").oninput=e=>{ g.ls=+e.target.value; markTextStyleCustom(g); render(); };
+    $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
+    $("iCol").onchange=e=>{ g.color=e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); buildCaptionColorControls(); };
+    $("iLs").oninput=e=>{ g.ls=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); };
     $("iRot").oninput=e=>{ g.rotate=+e.target.value; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
-    $("iIt").onchange=e=>{ g.italic=e.target.checked; markTextStyleCustom(g); render(); };
-    $("iUl").onchange=e=>{ g.underline=e.target.checked; markTextStyleCustom(g); render(); };
+    $("iIt").onchange=e=>{ g.italic=e.target.checked; markTextStyleCustom(g); applyGeo(el(),def,g); };
+    $("iUl").onchange=e=>{ g.underline=e.target.checked; markTextStyleCustom(g); applyGeo(el(),def,g); };
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
-    $("iW").oninput=e=>{ const v=Math.max(8,+e.target.value||8); g.size=Math.max(8,Math.round((g.size??def.size)*(v/g.w))); g.w=v; applyGeo(el(),def,g); };
+    $("iW").oninput=e=>{ const v=Math.max(8,+e.target.value||8); g.size=Math.max(8,Math.round((g.size??def.size)*(v/g.w))); g.manualSize=true; g.w=v; applyGeo(el(),def,g); };
   }
 
   $("iOp").oninput=e=>{
@@ -2421,17 +2601,19 @@ function syncInspector(){
       logoSettingsOf(state.template).opacity=(+e.target.value)/100;
       $("ivop").textContent=e.target.value+"%";
       buildLogoControls();
-      render();
+      queuePreviewRender("logoInspectorOpacity",()=>render());
     } else {
       g.opacity=(+e.target.value)/100;
       $("ivop").textContent=e.target.value+"%";
       applyGeo(el(),def,g);
     }
   };
-  $("iBack").onclick=()=>{ g.z=(g.z ?? def.z ?? 10)-1; render(); };
-  $("iFwd").onclick=()=>{ g.z=(g.z ?? def.z ?? 10)+1; render(); };
+  $("iOp").onchange=()=>scheduleSave();
+  $("iBack").onclick=()=>withUndo(()=>{ g.z=(g.z ?? def.z ?? 10)-1; render(); scheduleSave(); });
+  $("iFwd").onclick=()=>withUndo(()=>{ g.z=(g.z ?? def.z ?? 10)+1; render(); scheduleSave(); });
   $("iDup").onclick=()=>duplicateLayer(id);
-  $("iHide").onclick=()=>{ g.hidden=true; select(null); render(); };
+  $("iHide").onclick=()=>withUndo(()=>{ g.hidden=true; select(null); buildCaptionColorControls(); render(); scheduleSave(); });
+  wireInspectorUndoInputs(inspBody);
 }
 
 /* ============================================================
@@ -2471,14 +2653,34 @@ document.getElementById("tplNext").onclick=()=>gotoTemplate(1);
 // colors
 const cP=document.getElementById("cPrimary"), cS=document.getElementById("cSecondary");
 cP.value=state.colors.primary; cS.value=state.colors.secondary;
-cP.oninput=e=>{ state.colors.primary=e.target.value; render(); if(state.template==="vapor_motion") buildVaporGlassControls(); };
-cS.oninput=e=>{ state.colors.secondary=e.target.value; render(); if(state.template==="vapor_motion") buildVaporGlassControls(); };
+let _brandPreviewTimer=0;
+function queueBrandPreview(save=false){
+  clearTimeout(_brandPreviewTimer);
+  _brandPreviewTimer=setTimeout(()=>{
+    applyTemplateHeaderColors({resample:save});
+    render();
+    if(state.template==="vapor_motion") buildVaporGlassControls();
+    if(save) scheduleSave();
+  }, save ? 0 : 120);
+}
+function applyManualBrandColors(primary, secondary, save=false){
+  state.colors.primary=primary;
+  state.colors.secondary=secondary;
+  state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
+  cP.value=state.colors.primary;
+  cS.value=state.colors.secondary;
+  queueBrandPreview(save);
+}
+cP.oninput=e=>applyManualBrandColors(e.target.value, state.colors.secondary);
+cS.oninput=e=>applyManualBrandColors(state.colors.primary, e.target.value);
+cP.onchange=e=>applyManualBrandColors(e.target.value, state.colors.secondary, true);
+cS.onchange=e=>applyManualBrandColors(state.colors.primary, e.target.value, true);
 const swWrap=document.getElementById("presetSwatches");
 COLOR_PRESETS.forEach(([p,s])=>{
   const b=document.createElement("div"); b.className="sw";
   b.style.background=`linear-gradient(135deg,${p} 50%,${s} 50%)`;
   b.title=`${p} / ${s}`;
-  b.onclick=()=>{ state.colors.primary=p; state.colors.secondary=s; cP.value=p; cS.value=s; render(); };
+  b.onclick=()=>applyManualBrandColors(p, s, true);
   swWrap.appendChild(b);
 });
 
@@ -2538,7 +2740,7 @@ function loadImage(key,file){
       if(key==="player"){
         applyBroadcastPhotoDefault(true);
         applyHypeLowerThirdDefault();
-        if(state.template==="magazine") applyMagazineLayoutDefault(true);
+        if(state.template==="magazine") applyMagazineLayoutDefault();
       }
       fitImageLayer(key,im.naturalWidth/im.naturalHeight);
       if(key==="player" && shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
@@ -2599,6 +2801,7 @@ function applyPaletteFromLogo(){
   cP.value=pal.primary; cS.value=pal.secondary;
   setPalStatus(`Detected from logo: ${pal.primary} / ${pal.secondary}`);
   render();
+  scheduleSave();
   return true;
 }
 async function applyPaletteFromPlayer(){
@@ -2616,32 +2819,49 @@ async function applyPaletteFromPlayer(){
   }
   applyTemplateHeaderColors();
   render();
+  if(pal) scheduleSave();
   return !!pal;
 }
 const MAGAZINE_HEADER_AFFECT_LAYERS = new Set(["player","playerName","playerMeta","eyebrow"]);
 const SALUKIS_DARK_HEADER_AFFECT_LAYERS = new Set(["player","playerName","playerMeta"]);
 let _templateHeaderColorsTimer = null;
 function applyMagazineHeaderColors(){
+  const api=window.PosterMagazineHeaderColors;
   if(state.template!=="magazine" || !state.images.player?.el){
+    state.magazineHeaderSamples = null;
     state.magazineHeaderColors = null;
     return;
   }
-  state.magazineHeaderColors = window.PosterMagazineHeaderColors?.compute(
-    ensureLayout(), layersOf(), state.images.player.el, state.colors
+  state.magazineHeaderSamples = api?.sample?.(
+    ensureLayout(), layersOf(), state.images.player.el, "magazine"
+  ) || null;
+  state.magazineHeaderColors = api?.resolve?.(
+    state.magazineHeaderSamples, state.colors, "magazine"
   ) || null;
 }
 function applySalukisDarkHeaderColors(){
+  const api=window.PosterMagazineHeaderColors;
   if(state.template!=="salukis_dark" || !state.images.player?.el){
+    state.salukisDarkHeaderSamples = null;
     state.salukisDarkHeaderColors = null;
     return;
   }
-  state.salukisDarkHeaderColors = window.PosterMagazineHeaderColors?.computeSalukisDark(
-    ensureLayout(), layersOf(), state.images.player.el, state.colors
+  state.salukisDarkHeaderSamples = api?.sample?.(
+    ensureLayout(), layersOf(), state.images.player.el, "salukis_dark"
+  ) || null;
+  state.salukisDarkHeaderColors = api?.resolve?.(
+    state.salukisDarkHeaderSamples, state.colors, "salukis_dark"
   ) || null;
 }
-function applyTemplateHeaderColors(){
-  applyMagazineHeaderColors();
-  applySalukisDarkHeaderColors();
+function applyTemplateHeaderColors(opts={}){
+  const api=window.PosterMagazineHeaderColors;
+  const resample=opts.resample!==false;
+  if(state.template==="magazine" && !resample && state.magazineHeaderSamples && api?.resolve){
+    state.magazineHeaderColors = api.resolve(state.magazineHeaderSamples, state.colors, "magazine") || null;
+  } else applyMagazineHeaderColors();
+  if(state.template==="salukis_dark" && !resample && state.salukisDarkHeaderSamples && api?.resolve){
+    state.salukisDarkHeaderColors = api.resolve(state.salukisDarkHeaderSamples, state.colors, "salukis_dark") || null;
+  } else applySalukisDarkHeaderColors();
 }
 function scheduleTemplateHeaderColors(layerId){
   const activeSet=state.template==="magazine"
@@ -2653,12 +2873,12 @@ function scheduleTemplateHeaderColors(layerId){
   if(layerId && !activeSet.has(layerId)) return;
   clearTimeout(_templateHeaderColorsTimer);
   _templateHeaderColorsTimer = setTimeout(()=>{
-    applyTemplateHeaderColors();
+    applyTemplateHeaderColors({resample:true});
     render();
   }, 150);
 }
 function templateUsesPlayerPalette(templateId){
-  return templateId==="magazine" || templateId==="salukis_dark" || templateId==="vapor_motion";
+  return templateId==="magazine" || templateId==="salukis_dark" || templateId==="vapor_motion" || templateId==="big_sky_leader";
 }
 function shouldUsePlayerPalette(templateId){
   return templateUsesPlayerPalette(templateId) && !!state.images.player?.el;
@@ -2672,20 +2892,25 @@ function updateBrandColorControls(){
   const onMagazine=state.template==="magazine";
   const onSalukisDark=state.template==="salukis_dark";
   const onVapor=state.template==="vapor_motion";
+  const onBigSkyLeader=state.template==="big_sky_leader";
   if(label) label.textContent=onMagazine
     ? "Auto-detect palette from player photo (Magazine)"
     : onSalukisDark
       ? "Auto-detect palette from player photo (Salukis Dark)"
       : onVapor
         ? "Auto-detect palette from player photo (Vapor Motion)"
-      : "Auto-detect palette from team logo";
+        : onBigSkyLeader
+          ? "Auto-detect palette from player photo (Big Sky Leader)"
+          : "Auto-detect palette from team logo";
   if(btn) btn.textContent=onMagazine
     ? "Detect colors from player photo now"
     : onSalukisDark
       ? "Detect colors from player photo now"
       : onVapor
         ? "Detect colors from player photo now"
-      : "Detect colors from logo now";
+        : onBigSkyLeader
+          ? "Detect colors from player photo now"
+          : "Detect colors from logo now";
 }
 function setPalStatus(t){ const e=document.getElementById("palStatus"); if(e) e.textContent=t; }
 
@@ -2795,7 +3020,7 @@ function loadState(){
   let raw; try{ raw=localStorage.getItem(LS_KEY); }catch(e){ return false; }
   if(!raw) return false;
   let d; try{ d=JSON.parse(raw); }catch(e){ return false; }
-  if(d.template && TEMPLATES[d.template]) state.template=ensureEnabledTemplate(d.template);
+  if(d.template && ENABLED_TEMPLATES.includes(d.template)) state.template=ensureEnabledTemplate(d.template);
   if(d.colors) state.colors=Object.assign(state.colors, d.colors);
   if(d.text) state.text=Object.assign({...DEFAULT_TEXT}, d.text);
   if(d.layouts) state.layouts=d.layouts;
@@ -2847,6 +3072,90 @@ function fitImageLayer(key,ratio){
 
 // text fields
 const textFieldsWrap=document.getElementById("textFields");
+const captionColorWrap=document.getElementById("captionColorControls");
+const CAPTION_COLOR_OPTIONS=[
+  ["__default","Template default"],
+  ["primary","Primary"],
+  ["secondary","Secondary"],
+  ["onPrimary","Readable on primary"],
+  ["onPrimaryMuted","Muted on primary"],
+  ["contrast","Contrast surface"],
+  ["onContrast","Readable on contrast"],
+  ["onPhoto","Readable on photo"],
+  ["onPhotoMuted","Muted on photo"],
+  ["onCallout","Readable on callout"],
+  ["light","Light"],
+  ["muted","Muted"],
+  ["white","White"],
+  ["black","Black"],
+];
+const CAPTION_COLOR_LABELS={
+  eyebrow:"Eyebrow",
+  playerName:"Player name",
+  playerMeta:"Position / class",
+  hero:"Hero stat",
+  heroDesc:"Hero caption",
+  callout:"Callout",
+  footer:"Footer",
+  teamName:"Team name",
+  stat1:"Stat 1",
+  stat2:"Stat 2",
+  stat3:"Stat 3",
+};
+const CAPTION_COLOR_BINDS=new Set(["eyebrow","playerName","playerMeta","heroNumber","hero","heroDesc","callout","footer","teamName"]);
+let _textRenderFrame=0;
+function queueTextPreview(){
+  if(_textRenderFrame) cancelAnimationFrame(_textRenderFrame);
+  _textRenderFrame=requestAnimationFrame(()=>{
+    _textRenderFrame=0;
+    render();
+  });
+}
+function buildCaptionColorControls(){
+  if(!captionColorWrap) return;
+  const defs=layersOf();
+  const L=ensureLayout();
+  const rows=Object.entries(defs).filter(([id,def])=>{
+    if(def.type!=="text" || def.hidden || L[id]?.hidden) return false;
+    return CAPTION_COLOR_BINDS.has(def.bind) || def.kind==="stat" || CAPTION_COLOR_LABELS[id];
+  });
+  captionColorWrap.innerHTML="";
+  if(!rows.length){
+    captionColorWrap.innerHTML=`<div class="mini">No editable caption layers in this template.</div>`;
+    return;
+  }
+  rows.forEach(([id,def])=>{
+    const g=L[id] || {};
+    const wrap=document.createElement("div");
+    wrap.style.marginBottom="8px";
+    const label=CAPTION_COLOR_LABELS[id] || CAPTION_COLOR_LABELS[def.bind] || labelFor(def.bind);
+    const current=(g.color==null || g.color===def.color) ? "__default" : g.color;
+    wrap.innerHTML=`<label class="fld">${esc(label)}</label>
+      <select data-caption-color="${esc(id)}">
+        ${CAPTION_COLOR_OPTIONS.map(([value,name])=>`<option value="${value}" ${current===value?'selected':''}>${name}</option>`).join("")}
+      </select>`;
+    captionColorWrap.appendChild(wrap);
+  });
+  captionColorWrap.querySelectorAll("[data-caption-color]").forEach(sel=>{
+    sel.onchange=e=>{
+      const id=e.target.dataset.captionColor;
+      const def=defs[id];
+      const g=L[id];
+      if(!def || !g) return;
+      if(e.target.value==="__default"){
+        g.color=def.color;
+      } else {
+        g.color=e.target.value;
+      }
+      markTextStyleCustom(g);
+      const node=document.querySelector(`.layer[data-id="${id}"]`);
+      if(node) applyGeo(node, def, g);
+      else render();
+      if(state.selected===id) syncInspector();
+      scheduleSave();
+    };
+  });
+}
 function buildTextFields(){
   // show only fields relevant to current template binds
   const binds=new Set();
@@ -2863,7 +3172,8 @@ function buildTextFields(){
     const wrap=document.createElement("div");
     wrap.innerHTML=`<label class="fld">${label}</label>`;
     const i=document.createElement("input"); i.type="text"; i.value=state.text[key]??"";
-    i.oninput=e=>{ state.text[key]=e.target.value; render(); };
+    i.oninput=e=>{ state.text[key]=e.target.value; queueTextPreview(); };
+    i.onchange=()=>scheduleSave();
     wrap.appendChild(i); textFieldsWrap.appendChild(wrap);
   });
 }
@@ -2878,6 +3188,7 @@ function applyStory(s){
   if(mapped.colors.primary){ state.colors.primary=mapped.colors.primary; cP.value=mapped.colors.primary; }
   if(mapped.colors.secondary){ state.colors.secondary=mapped.colors.secondary; cS.value=mapped.colors.secondary; }
   buildTextFields();
+  buildCaptionColorControls();
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
   else { applyTemplateHeaderColors(); render(); }
   updateTestBanner();
@@ -2908,10 +3219,11 @@ async function loadStoriesFromUrl(url, storyIndex=0){
 function buildStorySelect(){
   const wrap=document.getElementById("storyControls"), sel=document.getElementById("storySelect");
   if(!state.stories.length){ wrap.style.display="none"; return; }
+  state.storyIndex=Math.max(0, Math.min(state.storyIndex, state.stories.length-1));
   wrap.style.display="block";
   sel.innerHTML=state.stories.map((s,i)=>
     `<option value="${i}">${i+1}. ${esc(s.player_name||s.slug||"story")}${s.team_name?" — "+esc(s.team_name):""}</option>`).join("");
-  sel.value=String(Math.max(0,state.storyIndex));
+  sel.value=String(state.storyIndex);
   sel.onchange=e=>{ state.storyIndex=+e.target.value; applyStory(state.stories[state.storyIndex]); scheduleSave(); };
   setStoryStatus(`${state.stories.length} stories loaded — ${state.storyIndex+1} selected.`);
 }
@@ -2984,23 +3296,41 @@ document.getElementById("deselectBtn").onclick=()=>select(null);
 document.addEventListener("keydown",(e)=>{
   const t=e.target;
   if(t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
-  if(e.key==="Escape"){ if(state.cropMode){ state.cropMode=null; render(); syncInspector(); } else select(null); return; }
+  if((e.ctrlKey||e.metaKey) && e.key==="z"){
+    e.preventDefault();
+    if(e.shiftKey) redo();
+    else undo();
+    return;
+  }
+  if((e.ctrlKey||e.metaKey) && (e.key==="y" || e.key==="Y")){
+    e.preventDefault();
+    redo();
+    return;
+  }
+  if(e.key==="Escape"){
+    if(state.cropMode){
+      state.cropMode=null;
+      document.querySelectorAll(".layer.cropping").forEach(n=>n.classList.remove("cropping"));
+      syncInspector();
+    } else select(null);
+    return;
+  }
   const id=state.selected; if(!id || !layersOf()[id]) return;
   const def=layersOf()[id], g=geo(id), step=e.shiftKey?10:1;
   let act=true;
   switch(e.key){
-    case "ArrowLeft":  g.x-=step; break;
-    case "ArrowRight": g.x+=step; break;
-    case "ArrowUp":    g.y-=step; break;
-    case "ArrowDown":  g.y+=step; break;
-    case "Delete": case "Backspace": g.hidden=true; select(null); break;
-    case "[": g.z=(g.z ?? def.z ?? 10)-1; break;
-    case "]": g.z=(g.z ?? def.z ?? 10)+1; break;
+    case "ArrowLeft":  pushUndo(); g.x-=step; break;
+    case "ArrowRight": pushUndo(); g.x+=step; break;
+    case "ArrowUp":    pushUndo(); g.y-=step; break;
+    case "ArrowDown":  pushUndo(); g.y-=step; break;
+    case "Delete": case "Backspace": pushUndo(); g.hidden=true; select(null); break;
+    case "[": pushUndo(); g.z=(g.z ?? def.z ?? 10)-1; break;
+    case "]": pushUndo(); g.z=(g.z ?? def.z ?? 10)+1; break;
     case "d": case "D": if(e.metaKey||e.ctrlKey){ duplicateLayer(id); } else act=false; break;
-    case "h": case "H": if(def.type==="image"){ g.flipH=!g.flipH; } else act=false; break;
+    case "h": case "H": if(def.type==="image"){ pushUndo(); g.flipH=!g.flipH; } else act=false; break;
     default: act=false;
   }
-  if(act){ e.preventDefault(); render(); }
+  if(act){ e.preventDefault(); render(); scheduleSave(); }
 });
 document.getElementById("autoPal").onchange=e=>{
   state.autoPalette=e.target.checked;
@@ -3044,7 +3374,13 @@ document.getElementById("zoomIn").onclick=()=>{ state.zoom=(state.zoom??fitScale
 document.getElementById("zoomOut").onclick=()=>{ state.zoom=(state.zoom??fitScale())/1.15; applyZoom(); };
 document.getElementById("frameGuideBtn").onclick=()=>{ state.showFrameGuide=!state.showFrameGuide; syncFrameGuide(); };
 window.addEventListener("resize",()=>{ if(state.zoom==null) applyZoom(); });
-window.addEventListener("pointerup",()=>{ if(drag){ drag=null; clearAlignGuides(); }});
+window.addEventListener("pointerup",()=>{
+  if(drag){
+    drag=null;
+    clearAlignGuides();
+    commitDragUndo();
+  }
+});
 
 /* ============================================================
    EXPORT + HEADLESS RENDER API
@@ -3160,7 +3496,7 @@ async function init(){
   state.template=ensureEnabledTemplate(state.template);
   const qs=new URLSearchParams(location.search);
   const qp=qs.get("tpl");
-  if(qp && TEMPLATES[qp]) state.template=ensureEnabledTemplate(qp);
+  if(qp && ENABLED_TEMPLATES.includes(qp)) state.template=ensureEnabledTemplate(qp);
   const storyParam=+(qs.get("story")||0)||0;
   const surl=qs.get("storiesurl");
   if(surl){
@@ -3182,7 +3518,7 @@ async function init(){
   if(state.template==="magazine") applyMagazineLayoutDefault();
   if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
   else applyTemplateHeaderColors();
-  buildTplChips(); buildSpotlightVariantControls(); buildVaporGlassControls(); buildAssets(); buildLogoControls(); buildTextFields(); buildStorySelect();
+  buildTplChips(); buildSpotlightVariantControls(); buildVaporGlassControls(); buildAssets(); buildLogoControls(); buildTextFields(); buildCaptionColorControls(); buildStorySelect();
   updateBrandColorControls();
   render(); applyZoom(); syncFrameGuide(); updateTestBanner();
   // re-apply zoom after fonts load (metrics shift)

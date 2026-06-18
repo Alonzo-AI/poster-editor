@@ -49,6 +49,7 @@ export function enrichThemeColors(colors) {
   c.onPhoto = c.onPhoto || primary;
   c.onPhotoMuted = c.onPhotoMuted || primary;
   if (!c.contrast) c.contrast = onColor(primary) === "#FFFFFF" ? "#0B111E" : "#F5F5F5";
+  c.onContrast = c.onContrast || pickReadable([secondary, primary, "#FFFFFF", "#111111"], c.contrast, 4.5);
 
   return c;
 }

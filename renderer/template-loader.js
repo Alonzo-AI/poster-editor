@@ -5,7 +5,7 @@
 (function (global) {
   "use strict";
 
-  const JSON_TEMPLATE_IDS = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark"];
+  const JSON_TEMPLATE_IDS = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader"];
   const FONT_KEYS = {
     disp: "'Anton',sans-serif",
     cond: "'Oswald',sans-serif",
@@ -28,6 +28,7 @@
     const contrast = c.contrast || "#0b111e";
     const onPrimary = c.onPrimary || "#FFFFFF";
     const onPrimaryMuted = c.onPrimaryMuted || onPrimary;
+    const onContrast = c.onContrast || "#FFFFFF";
     const calloutBg = c.calloutBg || "#FFFFFF";
     const onCallout = c.onCallout || c.primary || "#9D2235";
     return String(str)
@@ -36,6 +37,7 @@
       .replace(/\{\{contrast\}\}/g, contrast)
       .replace(/\{\{onPrimary\}\}/g, onPrimary)
       .replace(/\{\{onPrimaryMuted\}\}/g, onPrimaryMuted)
+      .replace(/\{\{onContrast\}\}/g, onContrast)
       .replace(/\{\{calloutBg\}\}/g, calloutBg)
       .replace(/\{\{onCallout\}\}/g, onCallout);
   }
@@ -88,26 +90,33 @@
     };
   }
 
+  function assignMissing(target, patch) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (target[key] == null) target[key] = value;
+    }
+    return target;
+  }
+
   function applyVaporMotionLayout(layer, id, slots) {
     const { card, header, statsTop, statsBottom, footer, leftX, midX, rightX, colW, innerW } = slots;
     switch (id) {
       case "glassCard":
-        Object.assign(layer, card);
+        assignMissing(layer, card);
         break;
       case "logo":
-        Object.assign(layer, { x: leftX, y: header.y + 6, w: 88, h: 88 });
+        assignMissing(layer, { x: leftX, y: header.y + 6, w: 88, h: 88 });
         break;
       case "eyebrow":
-        Object.assign(layer, { x: midX, y: header.y + 4, w: colW });
+        assignMissing(layer, { x: midX, y: header.y + 4, w: colW });
         break;
       case "playerName":
-        Object.assign(layer, { x: midX, y: header.y + 30, w: colW, size: 50 });
+        assignMissing(layer, { x: midX, y: header.y + 30, w: colW, size: 50 });
         break;
       case "playerMeta":
-        Object.assign(layer, { x: midX + 4, y: header.y + 80, w: colW, size: 20 });
+        assignMissing(layer, { x: midX + 4, y: header.y + 80, w: colW, size: 20 });
         break;
       case "hero":
-        Object.assign(layer, {
+        assignMissing(layer, {
           x: rightX + 40,
           y: header.y - 2,
           w: card.w - (rightX - card.x) - 40,
@@ -116,7 +125,7 @@
         });
         break;
       case "heroDesc":
-        Object.assign(layer, {
+        assignMissing(layer, {
           x: rightX,
           y: header.y + Math.round(header.h * 0.62),
           w: card.w - (rightX - card.x) - 40,
@@ -125,16 +134,16 @@
         });
         break;
       case "stat1":
-        Object.assign(layer, { x: leftX, y: statsTop.y + 2, w: colW, h: statsTop.h - 4 });
+        assignMissing(layer, { x: leftX, y: statsTop.y + 2, w: colW, h: statsTop.h - 4 });
         break;
       case "stat3":
-        Object.assign(layer, { x: rightX, y: statsTop.y + 2, w: colW, h: statsTop.h - 4 });
+        assignMissing(layer, { x: rightX, y: statsTop.y + 2, w: colW, h: statsTop.h - 4 });
         break;
       case "stat2":
-        Object.assign(layer, { x: leftX, y: statsBottom.y + 2, w: colW, h: statsBottom.h - 4 });
+        assignMissing(layer, { x: leftX, y: statsBottom.y + 2, w: colW, h: statsBottom.h - 4 });
         break;
       case "callout":
-        Object.assign(layer, {
+        assignMissing(layer, {
           x: rightX,
           y: statsBottom.y + 4,
           w: colW,
@@ -143,7 +152,7 @@
         });
         break;
       case "footer":
-        Object.assign(layer, {
+        assignMissing(layer, {
           x: card.x,
           y: footer.y,
           w: innerW + 80,
@@ -271,7 +280,7 @@
     return out;
   }
 
-  function toRuntimeTemplate(json, colors) {
+  function toRuntimeTemplate(json) {
     const layerObj = layersArrayToObject(json.layers, json);
 
     return {
@@ -283,10 +292,10 @@
           return interpolate(global.state.canvasOverride, colors);
         }
         const bg = json.canvas?.background || "#000";
-        return interpolate(bg, colors || global.state?.colors);
+        return interpolate(bg, colors);
       },
       deco() {
-        let html = interpolate(json.deco?.html || "", colors || global.state?.colors);
+        let html = interpolate(json.deco?.html || "", global.state?.colors);
         if (json.id === "salukis_dark" && html.includes("{{panelHeight}}")) {
           const h = json.layoutRules?.salukisDarkPanelSlots?.panelHeight ?? 318;
           html = html.replace(/\{\{panelHeight\}\}/g, String(h));
@@ -351,7 +360,7 @@
 
     for (const id of JSON_TEMPLATE_IDS) {
       const json = await loadTemplate(id, baseUrl, authoringBaseUrl);
-      templates[id] = toRuntimeTemplate(json, global.state?.colors);
+      templates[id] = toRuntimeTemplate(json);
       applyTemplateSettings(json);
     }
     return JSON_TEMPLATE_IDS;

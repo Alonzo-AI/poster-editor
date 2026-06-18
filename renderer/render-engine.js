@@ -100,6 +100,7 @@
 
   function autoFitTextLayer(el, def, g, templateId, getTextRules) {
     if (def.type !== "text" || def.kind === "stat" || !templateAutoFitBinds(templateId, getTextRules).has(def.bind)) return;
+    if (g?.manualSize) return;
     const maxW = g.w;
     const lh = def.lh ?? g.lh ?? 1;
     let maxH = g.h ?? def.h ?? null;
@@ -170,6 +171,7 @@
     c.onPhoto = c.onPhoto || primary;
     c.onPhotoMuted = c.onPhotoMuted || primary;
     if (!c.contrast) c.contrast = themeOnColor(primary) === "#FFFFFF" ? "#0B111E" : "#F5F5F5";
+    c.onContrast = c.onContrast || themePickReadable([secondary, primary, "#FFFFFF", "#111111"], c.contrast, 4.5);
     return c;
   }
 
