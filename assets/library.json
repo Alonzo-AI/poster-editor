@@ -1,0 +1,134 @@
+{
+  "version": 3,
+  "assets": [
+    {
+      "id": "player-evan-otten",
+      "name": "Evan Otten",
+      "slot": "player",
+      "src": "assets/player/evan-otten.jpg",
+      "tags": ["player", "portrait"]
+    },
+    {
+      "id": "bg-ccbg",
+      "name": "Coastal Carolina BG",
+      "slot": "background",
+      "src": "assets/background/ccbg.png",
+      "tags": ["background"]
+    },
+    {
+      "id": "bg-coastal-ref",
+      "name": "Coastal Carolina ref",
+      "slot": "background",
+      "src": "assets/background/coastal-carolina-ref.jpg",
+      "tags": ["background", "reference"]
+    },
+    {
+      "id": "bg-arkansas-ref",
+      "name": "Arkansas ref",
+      "slot": "background",
+      "src": "assets/background/arkansas-ref.jpg",
+      "tags": ["background", "reference"]
+    },
+    {
+      "id": "logo-team-mark",
+      "name": "Team mark",
+      "slot": "logo",
+      "src": "assets/logo/team-mark.png",
+      "tags": ["logo"]
+    },
+    {
+      "id": "conf-app-state",
+      "name": "Appalachian State",
+      "slot": "conference",
+      "src": "assets/conference/Appalachian-St (1).jpg",
+      "tags": ["conference"]
+    },
+    {
+      "id": "shape-circle",
+      "name": "Circle",
+      "slot": "shape",
+      "src": "assets/shape/circle.svg",
+      "tags": ["shape"],
+      "preset": "circle"
+    },
+    {
+      "id": "shape-square",
+      "name": "Square",
+      "slot": "shape",
+      "src": "assets/shape/square.svg",
+      "tags": ["shape"],
+      "preset": "square"
+    },
+    {
+      "id": "shape-rectangle",
+      "name": "Rectangle",
+      "slot": "shape",
+      "src": "assets/shape/rectangle.svg",
+      "tags": ["shape"],
+      "preset": "rectangle"
+    },
+    {
+      "id": "shape-rounded",
+      "name": "Rounded rect",
+      "slot": "shape",
+      "src": "assets/shape/rounded-rectangle.svg",
+      "tags": ["shape"],
+      "preset": "rounded"
+    },
+    {
+      "id": "shape-oval",
+      "name": "Oval",
+      "slot": "shape",
+      "src": "assets/shape/oval.svg",
+      "tags": ["shape"],
+      "preset": "oval"
+    },
+    {
+      "id": "shape-triangle",
+      "name": "Triangle",
+      "slot": "shape",
+      "src": "assets/shape/triangle.svg",
+      "tags": ["shape"],
+      "preset": "triangle"
+    },
+    {
+      "id": "shape-diamond",
+      "name": "Diamond",
+      "slot": "shape",
+      "src": "assets/shape/diamond.svg",
+      "tags": ["shape"],
+      "preset": "diamond"
+    },
+    {
+      "id": "shape-parallelogram",
+      "name": "Parallelogram",
+      "slot": "shape",
+      "src": "assets/shape/parallelogram.svg",
+      "tags": ["shape"],
+      "preset": "parallelogram"
+    },
+    {
+      "id": "shape-pill",
+      "name": "Pill",
+      "slot": "shape",
+      "src": "assets/shape/pill.svg",
+      "tags": ["shape"],
+      "preset": "pill"
+    },
+    {
+      "id": "shape-bar",
+      "name": "Bar",
+      "slot": "shape",
+      "src": "assets/shape/bar.svg",
+      "tags": ["shape"],
+      "preset": "bar"
+    },
+    {
+      "id": "shape-outlook",
+      "name": "Outlook shape",
+      "slot": "shape",
+      "src": "assets/shape/outlook-shape.png",
+      "tags": ["shape"]
+    }
+  ]
+}

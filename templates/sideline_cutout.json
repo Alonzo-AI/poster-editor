@@ -1,0 +1,228 @@
+{
+  "id": "sideline_cutout",
+  "name": "Sideline Cutout",
+  "version": 1,
+  "canvas": {
+    "width": 1080,
+    "height": 1350,
+    "background": "#E6DCCE"
+  },
+  "deco": {
+    "html": "<style>#stage[data-template=\"sideline_cutout\"] .layer[data-id=\"hero\"]{-webkit-text-stroke:3px {{secondary}};paint-order:stroke fill}#stage[data-template=\"sideline_cutout\"] .layer[data-id=\"teamName\"],#stage[data-template=\"sideline_cutout\"] .layer[data-id=\"callout\"],#stage[data-template=\"sideline_cutout\"] .layer[data-id=\"playerMeta\"]{font-style:italic!important}#stage[data-template=\"sideline_cutout\"] .layer[data-id=\"heroDesc\"],#stage[data-template=\"sideline_cutout\"] .layer[data-id=\"hashtag\"],#stage[data-template=\"sideline_cutout\"] .layer[data-id=\"playerName\"]{text-transform:uppercase!important}</style><div style=\"inset:0;z-index:1;background:repeating-linear-gradient(0deg,rgba(40,32,24,.04) 0 1px,transparent 1px 3px),repeating-linear-gradient(90deg,rgba(40,32,24,.03) 0 1px,transparent 1px 4px);pointer-events:none;\"></div><svg viewBox=\"0 0 1080 1350\" preserveAspectRatio=\"none\" style=\"position:absolute;inset:0;width:100%;height:100%;z-index:14;pointer-events:none;\"><path fill=\"{{primary}}\" d=\"M430 1020c90-40 170-10 268-36 86-22 140 8 230-8 52-10 98 18 152 8v358H390c28-110 48-170 40-322z\"/><path fill=\"{{primary}}\" opacity=\".72\" d=\"M620 980c70 18 120-24 210-8 70 12 110-10 250 24v120c-80-8-140 6-210-16-90-28-140-8-210-12-28-2-40-40-40-88z\"/></svg><div style=\"left:40px;top:300px;width:470px;height:66px;background:#111;clip-path:polygon(17% 0,100% 0,83% 100%,0 100%);z-index:18;pointer-events:none;\"></div><div style=\"left:500px;top:1066px;width:580px;height:150px;background:#111;clip-path:polygon(16% 0,100% 0,100% 100%,0 100%);z-index:18;pointer-events:none;\"></div>"
+  },
+  "textRules": {
+    "autoFit": ["heroNumber", "heroDesc", "playerName", "callout", "teamName", "hashtag"],
+    "stats": {
+      "autoFit": false
+    }
+  },
+  "settings": {
+    "logo": {
+      "opacity": 1,
+      "scale": 1
+    },
+    "brandColors": {
+      "fromLogo": false
+    },
+    "playerImage": {
+      "fitToFrame": false,
+      "fit": "contain",
+      "cropX": 0.55,
+      "cropY": 0.4,
+      "zoom": 1
+    }
+  },
+  "layers": [
+    {
+      "id": "bgImage",
+      "type": "image",
+      "bind": "background",
+      "x": 380,
+      "y": 0,
+      "w": 700,
+      "h": 620,
+      "fit": "cover",
+      "opacity": 0.22,
+      "z": 2
+    },
+    {
+      "id": "player",
+      "type": "image",
+      "bind": "player",
+      "x": 430,
+      "y": 36,
+      "w": 650,
+      "h": 1160,
+      "fit": "contain",
+      "zoom": 1,
+      "cropX": 0.55,
+      "cropY": 0.4,
+      "z": 12
+    },
+    {
+      "id": "logoBar",
+      "type": "block",
+      "x": 168,
+      "y": 108,
+      "w": 232,
+      "h": 86,
+      "fill": "primary",
+      "z": 16
+    },
+    {
+      "id": "logo",
+      "type": "image",
+      "bind": "logo",
+      "x": 176,
+      "y": 116,
+      "w": 90,
+      "h": 70,
+      "fit": "contain",
+      "z": 21
+    },
+    {
+      "id": "conference",
+      "type": "image",
+      "bind": "conference",
+      "x": 270,
+      "y": 122,
+      "w": 118,
+      "h": 60,
+      "fit": "contain",
+      "z": 21
+    },
+    {
+      "id": "teamName",
+      "type": "text",
+      "bind": "teamName",
+      "x": 168,
+      "y": 248,
+      "w": 260,
+      "h": 36,
+      "size": 22,
+      "color": "primary",
+      "font": "sans",
+      "weight": 700,
+      "italic": true,
+      "align": "center",
+      "z": 22,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hashtag",
+      "type": "text",
+      "bind": "hashtag",
+      "x": 72,
+      "y": 308,
+      "w": 400,
+      "h": 50,
+      "size": 24,
+      "color": "white",
+      "font": "sans",
+      "weight": 800,
+      "align": "center",
+      "ls": 1,
+      "z": 22,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hero",
+      "type": "text",
+      "bind": "heroNumber",
+      "x": 56,
+      "y": 428,
+      "w": 520,
+      "h": 220,
+      "size": 208,
+      "color": "primary",
+      "font": "cond",
+      "weight": 700,
+      "lh": 0.84,
+      "align": "center",
+      "stroke": "secondary",
+      "strokeW": 3,
+      "z": 22
+    },
+    {
+      "id": "heroDesc",
+      "type": "text",
+      "bind": "heroDesc",
+      "x": 70,
+      "y": 768,
+      "w": 520,
+      "h": 72,
+      "size": 48,
+      "color": "primary",
+      "font": "cond",
+      "weight": 600,
+      "ls": 2,
+      "align": "center",
+      "z": 22,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "callout",
+      "type": "text",
+      "bind": "callout",
+      "x": 70,
+      "y": 968,
+      "w": 460,
+      "h": 40,
+      "size": 20,
+      "color": "black",
+      "font": "sans",
+      "weight": 700,
+      "italic": true,
+      "ls": 1,
+      "align": "center",
+      "z": 22,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerName",
+      "type": "text",
+      "bind": "playerName",
+      "x": 580,
+      "y": 1084,
+      "w": 470,
+      "h": 48,
+      "size": 32,
+      "color": "white",
+      "font": "sans",
+      "weight": 800,
+      "align": "left",
+      "ls": 1,
+      "z": 22,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerMeta",
+      "type": "text",
+      "bind": "playerMeta",
+      "x": 580,
+      "y": 1138,
+      "w": 400,
+      "h": 32,
+      "size": 20,
+      "color": "white",
+      "font": "sans",
+      "weight": 600,
+      "italic": true,
+      "align": "left",
+      "ls": 1,
+      "z": 22,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "sponsor",
+      "type": "image",
+      "bind": "sponsor",
+      "x": 88,
+      "y": 1230,
+      "w": 140,
+      "h": 72,
+      "fit": "contain",
+      "z": 22
+    }
+  ]
+}

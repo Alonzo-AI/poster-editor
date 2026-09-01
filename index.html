@@ -9,7 +9,7 @@
 <title>Poster Lab v3 — Experimental</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@300;400;600;700&family=Archivo:wght@400;600;800;900&family=Bebas+Neue&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Permanent+Marker&family=Special+Elite&family=Bangers&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Oswald:wght@300;400;600;700&family=Archivo:ital,wght@0,400;0,600;0,800;0,900;1,700;1,800;1,900&family=Bebas+Neue&family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400;1,700&family=Permanent+Marker&family=Special+Elite&family=Bangers&display=swap" rel="stylesheet" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="renderer/render-engine.js"></script>
 <script src="renderer/template-loader.js"></script>
@@ -24,9 +24,16 @@
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;font-family:'Archivo',system-ui,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--txt);}
   #app{display:grid;grid-template-columns:340px 1fr;height:100vh;overflow:hidden;}
+  /* Prevent grid items from expanding with content (stops canvas "growing" on zoom/export) */
+  #side,#main{min-width:0;min-height:0;}
 
   /* ---------- Sidebar ---------- */
   #side{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;padding:14px;}
+  .nav{display:flex;gap:6px;margin-bottom:12px;}
+  .nav a{flex:1;text-align:center;text-decoration:none;border-radius:8px;padding:10px;font-weight:800;font-size:13px;}
+  .nav a.editor{background:var(--accent);color:#fff;}
+  .nav a.automate{background:#262b35;color:#cfd3da;}
+  .nav a.automate:hover{background:#303644;}
   #side h1{font-size:15px;margin:0 0 2px;font-weight:900;letter-spacing:.3px;}
   #side .sub{font-size:11px;color:var(--dim);margin-bottom:14px;}
   .group{border:1px solid var(--line);border-radius:10px;margin-bottom:12px;background:var(--panel2);}
@@ -62,6 +69,20 @@
   .tplgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
   .tplchip{font-size:11px;padding:8px 6px;border:1px solid var(--line);border-radius:7px;background:#0d1014;cursor:pointer;text-align:center;color:#cfd3da;}
   .tplchip.active{border-color:var(--accent);background:#16233f;color:#fff;font-weight:700;}
+  .libgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:280px;overflow:auto;}
+  .libcard{border:1px solid var(--line);border-radius:8px;background:#0d1014;cursor:pointer;overflow:hidden;padding:0;text-align:left;color:#cfd3da;font:inherit;}
+  .libcard:hover{border-color:var(--accent);}
+  .libcard .thumb{height:72px;background:#111 center/contain no-repeat;}
+  .libcard .meta{padding:6px 7px;}
+  .libcard .meta b{display:block;font-size:11px;line-height:1.25;}
+  .libcard .meta span{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.3px;}
+  #libSlotFilter button{flex:1;min-width:48px;background:transparent;border:0;color:#9aa0a6;padding:7px 4px;font:inherit;font-size:11px;cursor:pointer;}
+  #libSlotFilter button.on{background:#16233f;color:#fff;font-weight:700;}
+  .shapegrid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;}
+  .shapebtn{aspect-ratio:1;border:1px solid var(--line);border-radius:8px;background:#0d1014;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:8px;color:#cfd3da;}
+  .shapebtn:hover{border-color:var(--accent);background:#16233f;}
+  .shapebtn svg{width:70%;height:70%;display:block;}
+  .shapebtn .lbl{display:none;}
 
   /* ---------- Inspector (selected layer) ---------- */
   #inspector{border:1px solid var(--accent);border-radius:10px;margin-bottom:12px;background:#11203a;}
@@ -72,14 +93,16 @@
   /* ---------- Stage area ---------- */
   #main{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:
     radial-gradient(circle at 30% 20%, #1a1f2b, #0b0d12 70%);}
-  #stageWrap{position:relative;}
+  #stageWrap{position:relative;flex:none;overflow:hidden;}
   #stage{position:relative;width:1080px;height:1350px;transform-origin:top left;overflow:hidden;
     box-shadow:0 24px 80px #000a, 0 0 0 1px #000;}
   .deco{position:absolute;inset:0;pointer-events:none;}
   .deco>*{position:absolute;}
   .layer{position:absolute;cursor:grab;user-select:none;}
+  .layer[contenteditable="true"]{cursor:text;user-select:text;outline:2px solid #ffd34f;outline-offset:1px;}
   .layer img{width:100%;height:100%;display:block;pointer-events:none;}
-  .layer .imgcontent{position:absolute;inset:0;background-position:center;background-repeat:no-repeat;pointer-events:none;}
+  .layer .imgcontent{position:absolute;inset:0;background-position:center;background-repeat:no-repeat;pointer-events:none;overflow:hidden;}
+  .layer .imgcontent img{position:absolute;max-width:none;max-height:none;pointer-events:none;}
   #stage.frameGuide{outline:4px solid #00e5ff;outline-offset:0;}
   #stage.frameGuide::before{content:"";position:absolute;inset:0;z-index:1000;pointer-events:none;
     border:3px dashed #ffe600;box-shadow:inset 0 0 0 2px #000,0 0 0 2px #000;}
@@ -88,6 +111,7 @@
     padding:6px 9px;font:800 18px/1 'Archivo',sans-serif;letter-spacing:1px;}
   .layer.sel{outline:2px solid var(--accent);outline-offset:1px;}
   .layer.glass,.layer.block{cursor:grab;}
+  .layer.block{background-clip:padding-box;}
   #alignGuidesOverlay{position:absolute;inset:0;pointer-events:none;z-index:9999;}
   #alignGuidesOverlay .guide-v{position:absolute;top:0;width:1px;height:100%;background:#00e5ff;box-shadow:0 0 6px #00e5ff99;}
   #alignGuidesOverlay .guide-h{position:absolute;left:0;height:1px;width:100%;background:#00e5ff;box-shadow:0 0 6px #00e5ff99;}
@@ -132,7 +156,11 @@
     color:#cfd3da;border-radius:7px;padding:7px 12px;font-size:11px;line-height:1.45;max-width:340px;pointer-events:none;}
   #testBanner b{color:#fff;font-weight:800;}
   body.headless #side,body.headless #toolbar,body.headless .hint,body.headless #zoomlabel,body.headless #testBanner{display:none!important;}
-  body.headless #app{grid-template-columns:1fr;}
+  body.headless #app{grid-template-columns:1fr;width:100%;height:100%;}
+  body.headless html,body.headless body{width:100%;height:100%;overflow:hidden;}
+  body.headless #main{width:100%;height:100%;padding:0;}
+  body.headless #stageWrap{box-shadow:none;}
+  body.headless #stage{box-shadow:none;}
   #labBanner{margin:0 0 12px;padding:10px 12px;border-radius:8px;border:1px solid #3d5a80;background:#16233f;color:#cfe1ff;font-size:11px;line-height:1.45;}
   #labBanner b{display:block;font-size:12px;margin-bottom:4px;color:#fff;}
 </style>
@@ -143,10 +171,14 @@
   <div id="side">
     <h1>Poster Lab v3</h1>
     <div class="sub">Experimental sandbox · JSON templates · export PNG (4:5)</div>
+    <div class="nav">
+      <a class="editor" href="./index.html" aria-current="page">Editor</a>
+      <a class="automate" href="./automate.html">Automate</a>
+    </div>
     <div id="labBanner">
       <b>Independent from LLM / API pipeline</b>
-      Uses <code>index_3.html</code> only. Saves to <code>posterEditor.v3</code>.
-      Production render still uses <code>index_2.html</code>.
+      Uses <code>index.html</code> only. Saves to <code>posterEditor.v3</code>.
+      Use <a href="./automate.html" style="color:#9ec1ff">Automate</a> to fill a fixed template with new values.
     </div>
 
     <details class="group" open>
@@ -218,6 +250,31 @@
       <div class="mini" style="padding:0 12px 10px">Upload the player photo with its background included. Click an image to select it, then drag any corner/edge dot to resize, the top dot to rotate. <b>Double-click an image to crop</b> (drag to reposition, zoom in the inspector).</div>
     </details>
 
+    <details class="group" open>
+      <summary>Asset library</summary>
+      <div class="body">
+        <div class="seg" id="libSlotFilter" style="margin-bottom:8px;flex-wrap:wrap">
+          <button data-slot="all" class="on">All</button>
+          <button data-slot="player">Player</button>
+          <button data-slot="background">BG</button>
+          <button data-slot="logo">Logo</button>
+          <button data-slot="conference">Conf</button>
+          <button data-slot="sponsor">Sponsor</button>
+          <button data-slot="shape">Shapes</button>
+        </div>
+        <div id="assetLibrary" class="libgrid"></div>
+        <div class="mini" style="margin-top:8px">Click an asset to drop it on the poster. <b>Shapes</b> are placed in the center of the canvas (not the conference logo slot). Add files under <code>assets/</code> and list them in <code>assets/library.json</code>.</div>
+      </div>
+    </details>
+
+    <details class="group" open>
+      <summary>Shapes (Canva-style)</summary>
+      <div class="body">
+        <div id="shapePalette" class="shapegrid"></div>
+        <div class="mini" style="margin-top:8px">Click a shape to place it on the poster. Drag corners to resize, top handle to rotate. Change fill color in the inspector.</div>
+      </div>
+    </details>
+
     <!-- Inspector for selected layer -->
     <div id="inspector" class="empty">
       <div class="ttl" id="inspTitle">Selected</div>
@@ -234,18 +291,28 @@
       <div class="body" id="captionColorControls"></div>
     </details>
 
-    <details class="group">
-      <summary>Layout</summary>
+    <details class="group" open>
+      <summary>Layout &amp; save template</summary>
       <div class="body">
-        <button class="btn sec" id="resetLayout">Reset positions for this template</button>
-        <button class="btn sec" id="exportLayout" style="margin-top:8px">Export layout JSON</button>
+        <div class="row" style="gap:6px">
+          <button class="btn" id="bakeTemplateBtn" style="flex:1">Save</button>
+          <button class="btn sec" id="exportFrozenTemplate" style="flex:1">Download template</button>
+        </div>
+        <div class="mini" style="margin-top:6px"><b>Save</b> → updates Automate with this exact layout (no file). <b>Download template</b> → same save + downloads <code>{id}.json</code>.</div>
+        <label class="fld" style="margin-top:10px">Save as template id</label>
+        <input type="text" id="bakeTemplateId" placeholder="e.g. cc11">
+        <label class="fld">Display name</label>
+        <input type="text" id="bakeTemplateName" placeholder="e.g. Coastal Sideline">
+        <button class="btn sec" id="exportLayout" style="margin-top:8px">⬇ Download layout overrides only</button>
+        <div class="mini" style="margin-top:6px">After Save, open Automate and pick this template (marked ✓). Put a downloaded JSON in <code>templates/</code> only if you need it in git/deploy.</div>
+        <button class="btn sec" id="resetLayout" style="margin-top:10px">Reset positions for this template</button>
         <div class="mini">Resets all layer positions, sizes & fonts to the template defaults. Your text and images are kept.</div>
-        <div class="mini" style="margin-top:6px">Export layout JSON downloads tuned positions for the current template (save to <code>layouts/authoring/</code>).</div>
         <label class="fld" style="margin-top:10px;display:flex;align-items:center;gap:7px;cursor:pointer">
           <input type="checkbox" id="lockFonts" style="width:auto"> Lock template fonts (recommended for testing)
         </label>
         <button class="btn sec" id="clearSaved" style="margin-top:10px">Clear saved data & reset</button>
         <div class="mini">Your uploads, text & edits are auto-saved in <b>this browser</b> and reload automatically. This button wipes them back to the sample poster.</div>
+        <div class="mini" id="bakeStatus" style="margin-top:8px;color:#7fd1ff"></div>
       </div>
     </details>
 
@@ -278,6 +345,8 @@
    STATE
 ============================================================ */
 const SW = 1080, SH = 1350;              // stage coords (4:5)
+/** TEMP: off — do not derive brand colors or dynamic text colors from the player photo */
+const AUTO_PLAYER_PALETTE = false;
 const SALUKIS_CLEAN_STAT_TOP = 230;
 const SALUKIS_CLEAN_STAT_BOTTOM = 1170;    // aligns with player frame bottom (190 + 980)
 function salukisCleanStatSlots(){
@@ -359,6 +428,10 @@ const state = {
     big_sky_leader: { opacity: 1, scale: 1 },
     salukis_clean: { opacity: 1, scale: 1 },
     salukis_dark:  { opacity: 1, scale: 1 },
+    cutout_splat:  { opacity: 1, scale: 1 },
+    sideline_cutout: { opacity: 1, scale: 1 },
+    sideline_text: { opacity: 1, scale: 1 },
+    cc11: { opacity: 1, scale: 1 },
   },
   vaporGlassSettings: { mode:"frosted", preset:"frosted", color:"#ffffff", opacity:0.08, borderOpacity:0.11, blur:24 },
   salukisLayoutMeta: {},  // templateId -> layout schema version (one-time migrations only)
@@ -386,6 +459,10 @@ function ensurePosterTemplatesLoaded() {
       await window.PosterTemplateLoader.loadAll();
     } catch (e) {
       console.warn("Template JSON load:", e);
+    }
+    // Re-apply editor-saved templates (includes shapes) over disk JSON
+    try { restoreBakedTemplates(); } catch (e) {
+      console.warn("Baked template restore:", e);
     }
   })();
   return _posterTemplatesLoadPromise;
@@ -415,6 +492,34 @@ function roleColor(role){
     case "onCallout": return c.onCallout || c.primary;
     default: return role; // raw hex
   }
+}
+function normalizeHex(s){
+  if(s==null || s==="") return null;
+  let h=String(s).trim();
+  if(!h.startsWith("#")) h="#"+h;
+  if(/^#[0-9a-f]{3}$/i.test(h)) h="#"+h.slice(1).split("").map(c=>c+c).join("");
+  return /^#[0-9a-f]{6}$/i.test(h) ? h.toLowerCase() : null;
+}
+function isKnownColorRole(c){
+  return c!=null && ["primary","secondary","white","black","light","muted","cream","darkgreen","contrast","onPrimary","onPrimaryMuted","onContrast","onPhoto","onPhotoMuted","calloutBg","onCallout"].includes(c);
+}
+function resolvedLayerColorHex(g, def){
+  return roleColor(g.color ?? def.color ?? "white");
+}
+function captionColorRoleSelectValue(g, def){
+  const c=g.color ?? def.color ?? "white";
+  if(isKnownColorRole(c)) return c;
+  return "__custom__";
+}
+function resolveTextLayerColor(id, def, g){
+  const hasUserOverride=g.color!=null && g.color!==def.color;
+  const hexOverride=normalizeHex(g.color||"");
+  if(hasUserOverride || hexOverride) return roleColor(g.color);
+  const dynamicHeaderColor=
+    (state.template==="magazine" && state.magazineHeaderColors?.[id]) ||
+    (state.template==="salukis_dark" && state.salukisDarkHeaderColors?.[id]);
+  const vaporDynamicColor=state.template==="vapor_motion" ? vaporMotionTextColorForLayer(id) : null;
+  return dynamicHeaderColor || vaporDynamicColor || roleColor(g.color || def.color);
 }
 function hexToRgb(h){ h=h.replace('#',''); if(h.length===3)h=h.split('').map(x=>x+x).join(''); const n=parseInt(h,16); return [(n>>16)&255,(n>>8)&255,n&255]; }
 function rgbToHex(r,g,b){ return `#${[r,g,b].map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('')}`; }
@@ -890,6 +995,62 @@ salukis_dark: { name: "Salukis Dark",
     callout:    txt({bind:"callout", x:SALUKIS_DARK_PANEL_SLOTS.calloutBox.x, y:SALUKIS_DARK_PANEL_SLOTS.calloutBox.y, w:SALUKIS_DARK_PANEL_SLOTS.calloutBox.w, h:SALUKIS_DARK_PANEL_SLOTS.calloutBox.h, size:26, color:"primary", font:F.bebas, weight:400, align:"center", z:16}),
     footer:     txt({bind:"footer", x:0, y:SALUKIS_DARK_PANEL_SLOTS.footer.y, w:1080, h:SALUKIS_DARK_PANEL_SLOTS.footer.h, size:20, color:"white", font:F.sans, weight:800, align:"center", ls:1, z:15, textTransform:"uppercase"}),
   }},
+
+/* ---------------- CUTOUT SPLAT ---------------- */
+cutout_splat:{ name:"Cutout Splat",
+  stageBg:()=>state.colors.secondary||"#FFFFFF",
+  deco:()=>``,
+  layers:{
+    player:     img({bind:"player", x:390, y:70, w:690, h:1120, fit:"contain", zoom:1, cropX:0.52, cropY:0.42, z:12}),
+    logo:       img({bind:"logo", x:478, y:28, w:124, h:100, fit:"contain", z:22}),
+    hero:       txt({bind:"heroNumber", x:48, y:168, w:540, h:150, size:148, color:"primary", font:F.cond, weight:700, lh:.86, z:22}),
+    heroDesc:   txt({bind:"heroDesc", x:52, y:318, w:500, h:48, size:36, color:"primary", font:F.cond, weight:600, ls:2, textTransform:"uppercase", z:22}),
+    conference: img({bind:"conference", x:52, y:548, w:118, h:118, fit:"contain", z:22}),
+    callout:    txt({bind:"callout", x:186, y:560, w:420, h:44, size:28, color:"black", font:F.sans, weight:800, textTransform:"uppercase", z:22}),
+    eyebrow:    txt({bind:"eyebrow", x:186, y:606, w:420, h:36, size:22, color:"black", font:F.sans, weight:600, ls:1, textTransform:"uppercase", z:22}),
+    footer:     txt({bind:"footer", x:48, y:1184, w:500, h:40, size:22, color:"black", font:F.sans, weight:700, textTransform:"uppercase", z:22}),
+    sponsor:    img({bind:"sponsor", x:48, y:1240, w:210, h:78, fit:"contain", z:22}),
+    playerMeta: txt({bind:"playerMeta", x:560, y:1160, w:470, h:32, size:22, color:"white", font:F.sans, weight:600, ls:2, textTransform:"uppercase", z:22}),
+    playerName: txt({bind:"playerName", x:540, y:1196, w:500, h:72, size:54, color:"white", font:F.sans, weight:800, italic:true, textTransform:"uppercase", z:22}),
+  }},
+
+/* ---------------- SIDELINE CUTOUT ---------------- */
+sideline_cutout:{ name:"Sideline Cutout",
+  stageBg:()=>"#E8E0D4",
+  deco:()=>``,
+  layers:{
+    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1}),
+    player:     img({bind:"player", x:430, y:36, w:650, h:1160, fit:"contain", zoom:1, cropX:0.55, cropY:0.40, z:12}),
+    logo:       img({bind:"logo", x:176, y:116, w:90, h:70, fit:"contain", z:21}),
+    conference: img({bind:"conference", x:270, y:122, w:118, h:60, fit:"contain", z:21}),
+    teamName:   txt({bind:"teamName", placeholder:"VS. OPP | 00-00 |", x:168, y:248, w:260, h:36, size:22, color:"primary", font:F.sans, weight:700, italic:true, align:"center", textTransform:"uppercase", z:22}),
+    hashtag:    txt({bind:"hashtag", placeholder:"MON. DD, YYYY", x:72, y:308, w:400, h:50, size:24, color:"white", font:F.sans, weight:800, align:"center", ls:1, textTransform:"uppercase", z:22}),
+    hero:       txt({bind:"heroNumber", placeholder:"000", x:56, y:428, w:520, h:220, size:208, color:"primary", font:F.cond, weight:700, lh:.84, align:"center", z:22}),
+    heroDesc:   txt({bind:"heroDesc", placeholder:"STAT LABEL", x:70, y:768, w:520, h:72, size:48, color:"primary", font:F.cond, weight:600, ls:2, align:"center", textTransform:"uppercase", z:22}),
+    callout:    txt({bind:"callout", placeholder:"CONTEXT LINE", x:70, y:968, w:460, h:40, size:20, color:"black", font:F.sans, weight:700, italic:true, ls:1, align:"center", textTransform:"uppercase", z:22}),
+    playerName: txt({bind:"playerName", placeholder:"PLAYER NAME", x:580, y:1084, w:470, h:48, size:32, color:"white", font:F.sans, weight:800, italic:true, ls:1, textTransform:"uppercase", z:22}),
+    playerMeta: txt({bind:"playerMeta", placeholder:"CLASS | POS", x:580, y:1138, w:400, h:32, size:20, color:"white", font:F.sans, weight:600, italic:true, ls:1, textTransform:"uppercase", z:22}),
+    sponsor:    img({bind:"sponsor", x:88, y:1230, w:140, h:72, fit:"contain", z:22}),
+  }},
+
+/* ---------------- SIDELINE TEXT (no art) ---------------- */
+sideline_text:{ name:"Sideline Text",
+  stageBg:()=>"#E8E0D4",
+  deco:()=>``,
+  layers:{
+    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1}),
+    player:     img({bind:"player", x:430, y:36, w:650, h:1160, fit:"contain", zoom:1, cropX:0.55, cropY:0.40, z:12}),
+    logo:       img({bind:"logo", x:176, y:116, w:90, h:70, fit:"contain", z:21}),
+    conference: img({bind:"conference", x:270, y:122, w:118, h:60, fit:"contain", z:21}),
+    sponsor:    img({bind:"sponsor", x:88, y:1230, w:140, h:72, fit:"contain", z:22}),
+    teamName:   txt({bind:"teamName", placeholder:"VS. ULM | 23-8 |", x:80, y:248, w:420, h:36, size:22, color:"primary", font:F.sans, weight:700, italic:true, align:"center", textTransform:"uppercase", z:22}),
+    hashtag:    txt({bind:"hashtag", placeholder:"OCT. 11, 2025", x:72, y:308, w:400, h:50, size:24, color:"black", font:F.sans, weight:800, align:"center", ls:1, textTransform:"uppercase", z:22}),
+    hero:       txt({bind:"heroNumber", placeholder:"300", x:40, y:428, w:520, h:220, size:208, color:"primary", font:F.cond, weight:700, lh:.84, align:"center", z:22}),
+    heroDesc:   txt({bind:"heroDesc", placeholder:"FIELD GOALS", x:70, y:768, w:540, h:72, size:48, color:"primary", font:F.cond, weight:600, ls:2, align:"center", textTransform:"uppercase", z:22}),
+    callout:    txt({bind:"callout", placeholder:"MOST IN THE SBC THIS WEEK", x:40, y:968, w:520, h:40, size:20, color:"black", font:F.sans, weight:700, italic:true, ls:1, align:"center", textTransform:"uppercase", z:22}),
+    playerName: txt({bind:"playerName", placeholder:"KIAN AFROOKHTEH", x:560, y:1084, w:480, h:48, size:32, color:"black", font:F.sans, weight:800, italic:true, ls:1, textTransform:"uppercase", z:22}),
+    playerMeta: txt({bind:"playerMeta", placeholder:"JUNIOR | K", x:560, y:1138, w:400, h:32, size:20, color:"black", font:F.sans, weight:600, italic:true, ls:1, textTransform:"uppercase", z:22}),
+  }},
 };
 
 window.state=state;
@@ -1048,7 +1209,16 @@ function applyGlassStyle(el, def, g){
 function applyBlockStyle(el, def, g){
   const fill=roleColor(g.fill || g.color || def.fill || def.color || "white");
   el.style.background=fill;
-  el.style.borderRadius=(g.radius??def.radius??0)+"px";
+  const clip=g.clip ?? def.clip ?? null;
+  if(clip){
+    el.style.clipPath=clip;
+    el.style.webkitClipPath=clip;
+    el.style.borderRadius="0px";
+  } else {
+    el.style.clipPath="";
+    el.style.webkitClipPath="";
+    el.style.borderRadius=(g.radius??def.radius??0)+"px";
+  }
   el.style.height=(g.h??g.w)+"px";
 }
 function migrateVaporGlassCardLayout(d){
@@ -1068,7 +1238,7 @@ function migrateVaporGlassCardLayout(d){
 
 /* Focus sprint — only these appear in the template picker */
 /* v3 lab — JSON-backed templates only (same defs as index_2, narrower picker) */
-const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader"];
+const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11"];
 const BUNDLED_STORIES_URL = "./stories.players.json";
 function spotlightDecoBase(opts={}){
   const s=state.colors.secondary;
@@ -1183,7 +1353,62 @@ const SPOTLIGHT_VARIANTS = {
   }
 };
 function ensureEnabledTemplate(id){
-  return ENABLED_TEMPLATES.includes(id) ? id : ENABLED_TEMPLATES[0];
+  if(!id) return ENABLED_TEMPLATES[0];
+  if(ENABLED_TEMPLATES.includes(id)) return id;
+  // Custom / baked templates may exist in TEMPLATES before being listed
+  if(TEMPLATES[id]){
+    ENABLED_TEMPLATES.push(id);
+    return id;
+  }
+  return ENABLED_TEMPLATES[0];
+}
+function isFrozenTemplate(id){
+  const j=TEMPLATES[id]?._json;
+  return !!(j?.settings?.freezeLayout || j?._bakeMeta || j?.automation?.freezeLayout);
+}
+/** Wipe runtime layout and rebuild exactly from template layer x/y/size (used by Automate). */
+function resetLayoutFromTemplate(templateId, opts={}){
+  const tid=templateId||state.template;
+  if(!TEMPLATES[tid]) return;
+  state.layouts[tid]={};
+  // Keep extras only when they are not already baked into template.layers
+  if(opts.clearExtras) state.extraLayers[tid]={};
+  const L=ensureLayout();
+  const defs=layersOf();
+  const freeze=isFrozenTemplate(tid) || !!opts.freeze;
+  for(const [id,def] of Object.entries(defs)){
+    if(!def || !L[id]) continue;
+    // Force geometry from the frozen layer definition (ignore any stale editor drag)
+    if(def.x!=null) L[id].x=def.x;
+    if(def.y!=null) L[id].y=def.y;
+    if(def.w!=null) L[id].w=def.w;
+    if(def.h!=null) L[id].h=def.h;
+    if(def.size!=null) L[id].size=def.size;
+    if(def.weight!=null) L[id].weight=def.weight;
+    if(def.align!=null) L[id].align=def.align;
+    if(def.ls!=null) L[id].ls=def.ls;
+    if(def.lh!=null) L[id].lh=def.lh;
+    if(def.color!=null) L[id].color=def.color;
+    if(def.fill!=null) L[id].fill=def.fill;
+    if(def.clip!=null) L[id].clip=def.clip;
+    if(def.shape!=null) L[id].shape=def.shape;
+    if(def.radius!=null) L[id].radius=def.radius;
+    if(def.z!=null) L[id].z=def.z;
+    if(def.fit!=null) L[id].fit=def.fit;
+    if(def.zoom!=null) L[id].zoom=def.zoom;
+    if(def.cropX!=null) L[id].cropX=def.cropX;
+    if(def.cropY!=null) L[id].cropY=def.cropY;
+    if(def.font!=null) L[id].font=def.font;
+    if(def.textTransform!=null) L[id].textTransform=def.textTransform;
+    L[id].italic=!!def.italic;
+    L[id].underline=!!def.underline;
+    L[id].hollow=!!def.hollow;
+    L[id].hidden=!!def.hidden;
+    L[id].opacity=def.opacity!=null?def.opacity:1;
+    // Locked templates must not auto-resize text (keeps placeholder positions identical)
+    if(freeze && def.type==="text") L[id].manualSize=true;
+  }
+  return L;
 }
 function logoSettingsOf(t){
   if(!state.logoSettings[t]) state.logoSettings[t]={opacity:1,scale:1};
@@ -1384,10 +1609,21 @@ function ensureLayout(){
                          labelColor:null, textStyle:null, manualSize:false, hidden:false,
                          // image transform / crop controls
                          fit:def.fit ?? null, zoom:def.zoom ?? 1, cropX:def.cropX ?? 0.5, cropY:def.cropY ?? 0.5, flipH:false, flipV:false,
-                         opacity:(def.opacity!=null?def.opacity:1), radius:def.type==="glass"?(def.radius??24):(def.type==="block"?(def.radius??0):0),
+                         opacity:(def.opacity!=null?def.opacity:1), radius:def.type==="glass"?(def.radius??24):(def.type==="block"||def.shape||/^shape_/.test(id)?(def.radius??0):0),
                          borderOn:!!def.border, borderW:6, borderColor:def.borderColor||"primary",
-                         lockAspect:def.type==="image", z:def.z ?? null };
-    else if(def.type==="text" && L[id].underline==null && def.underline) L[id].underline=true;
+                         lockAspect:def.type==="image", z:def.z ?? null,
+                         fill:def.fill ?? null, clip:def.clip ?? null, shape:def.shape ?? null };
+    else {
+      if(def.type==="text" && L[id].underline==null && def.underline) L[id].underline=true;
+      // Keep shape clip/fill/radius in sync when layer came from a baked template
+      if(def.type==="block" || def.shape || /^shape_/.test(id)){
+        if(L[id].clip==null && def.clip!=null) L[id].clip=def.clip;
+        if(L[id].fill==null && def.fill!=null) L[id].fill=def.fill;
+        if(L[id].shape==null && def.shape!=null) L[id].shape=def.shape;
+        if(L[id].radius==null && def.radius!=null) L[id].radius=def.radius;
+        if(L[id].z==null && def.z!=null) L[id].z=def.z;
+      }
+    }
   }
   return L;
 }
@@ -1838,6 +2074,94 @@ function duplicateLayer(id){
   buildTextFields(); buildCaptionColorControls(); select(nid); render(); scheduleSave();
 }
 
+/* Canva-style shape presets (editable block layers) */
+const SHAPE_PRESETS = {
+  circle:         { label:"Circle",         w:220, h:220, radius:9999, clip:null, icon:'<circle cx="12" cy="12" r="9" fill="currentColor"/>' },
+  square:         { label:"Square",         w:200, h:200, radius:0,    clip:null, icon:'<rect x="4" y="4" width="16" height="16" fill="currentColor"/>' },
+  rectangle:      { label:"Rectangle",      w:320, h:150, radius:0,    clip:null, icon:'<rect x="2" y="6" width="20" height="12" fill="currentColor"/>' },
+  rounded:        { label:"Rounded",        w:300, h:150, radius:28,   clip:null, icon:'<rect x="2" y="6" width="20" height="12" rx="3" fill="currentColor"/>' },
+  oval:           { label:"Oval",           w:300, h:160, radius:9999, clip:null, icon:'<ellipse cx="12" cy="12" rx="10" ry="7" fill="currentColor"/>' },
+  triangle:       { label:"Triangle",       w:240, h:210, radius:0,    clip:"polygon(50% 0%, 0% 100%, 100% 100%)", icon:'<polygon points="12,3 22,21 2,21" fill="currentColor"/>' },
+  diamond:        { label:"Diamond",        w:200, h:200, radius:0,    clip:"polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)", icon:'<polygon points="12,2 22,12 12,22 2,12" fill="currentColor"/>' },
+  parallelogram:  { label:"Parallelogram",  w:360, h:80,  radius:0,    clip:"polygon(14% 0%, 100% 0%, 86% 100%, 0% 100%)", icon:'<polygon points="6,4 22,4 18,20 2,20" fill="currentColor"/>' },
+  pill:           { label:"Pill",           w:320, h:72,  radius:9999, clip:null, icon:'<rect x="2" y="8" width="20" height="8" rx="4" fill="currentColor"/>' },
+  bar:            { label:"Bar",            w:420, h:28,  radius:0,    clip:null, icon:'<rect x="1" y="10" width="22" height="4" fill="currentColor"/>' },
+};
+function addShapeLayer(presetId, opts={}){
+  const p=SHAPE_PRESETS[presetId];
+  if(!p) return null;
+  pushUndo();
+  const t=state.template;
+  if(!state.extraLayers[t]) state.extraLayers[t]={};
+  let n=1, nid; do{ nid="shape_"+presetId+"_"+n++; }while(layersOf()[nid]);
+  const w=opts.w??p.w, h=opts.h??p.h;
+  const x=opts.x!=null?opts.x:Math.round((SW-w)/2);
+  const y=opts.y!=null?opts.y:Math.round((SH-h)/2);
+  const fill=opts.fill||"primary";
+  // Keep shapes above player / text so they are always visible
+  const z=opts.z??28;
+  state.extraLayers[t][nid]=block({
+    x, y, w, h,
+    fill,
+    radius:p.radius||0,
+    clip:p.clip,
+    shape:presetId,
+    z,
+  });
+  const L=ensureLayout();
+  Object.assign(L[nid], {
+    x, y, w, h, radius:p.radius||0, clip:p.clip, shape:presetId,
+    fill, color:fill, z, hidden:false, opacity:1,
+    lockAspect:presetId==="circle"||presetId==="square"||presetId==="diamond",
+  });
+  select(nid); render(); scheduleSave();
+  return nid;
+}
+/** Drop a library shape onto the canvas (not into conference/logo slots). */
+async function placeLibraryShapeAsset(asset){
+  const preset=asset.preset
+    || String(asset.id||"").replace(/^shape-/,"").replace(/-shape$/,"")
+    || String(asset.name||"").toLowerCase().replace(/\s+/g,"");
+  const presetKey=preset==="rounded-rectangle"||preset==="rounded rect"?"rounded":preset;
+  if(SHAPE_PRESETS[presetKey]){
+    addShapeLayer(presetKey);
+    return "shape:"+presetKey;
+  }
+  // Custom shape image (e.g. outlook PNG) → free floating image layer
+  pushUndo();
+  const t=state.template;
+  if(!state.extraLayers[t]) state.extraLayers[t]={};
+  let n=1, nid; do{ nid="shape_img_"+n++; }while(layersOf()[nid]);
+  const bind="deco_"+nid;
+  const w=280, h=280;
+  const x=Math.round((SW-w)/2), y=Math.round((SH-h)/2);
+  state.extraLayers[t][nid]={
+    type:"image", bind, x, y, w, h, fit:"contain", zoom:1, cropX:0.5, cropY:0.5, z:28,
+  };
+  const L=ensureLayout();
+  Object.assign(L[nid], {
+    x, y, w, h, fit:"contain", zoom:1, cropX:0.5, cropY:0.5, z:28,
+    hidden:false, opacity:1, lockAspect:true,
+  });
+  await loadImageFromUrl(bind, asset.src);
+  select(nid); render(); scheduleSave();
+  return "image:"+nid;
+}
+function buildShapePalette(){
+  const wrap=document.getElementById("shapePalette");
+  if(!wrap) return;
+  wrap.innerHTML="";
+  Object.entries(SHAPE_PRESETS).forEach(([id,p])=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="shapebtn";
+    b.title=p.label;
+    b.innerHTML=`<svg viewBox="0 0 24 24" aria-hidden="true">${p.icon}</svg><span class="lbl">${p.label}</span>`;
+    b.onclick=()=>addShapeLayer(id);
+    wrap.appendChild(b);
+  });
+}
+
 /* ============================================================
    RENDER
 ============================================================ */
@@ -1852,16 +2176,38 @@ function bindContent(def){
     if(state.template==="salukis_clean"||state.template==="salukis_dark"){
       return esc((state.text.teamName||"").toUpperCase());
     }
+    if(state.template==="cutout_splat"){
+      const loc=esc((state.text.teamName||"").toUpperCase());
+      const meta=esc(String(state.text.hashtag||"").replace(/^#/,"").toUpperCase());
+      if(!meta) return `<span class="game-loc">${loc}</span>`;
+      return `<span class="game-loc">${loc}</span><span class="game-meta">&nbsp;|&nbsp;${meta}</span>`;
+    }
     return `${esc(state.text.hashtag||"")}&nbsp;&nbsp;&nbsp;${esc(state.text.teamName||"")} ${esc(state.text.sport||"")}`;
   }
-  if(def.bind==="playerMeta"){
-    const parts=[state.text.position,state.text.playerClass].filter(s=>s&&s.trim());
-    if(state.template==="salukis_clean"||state.template==="salukis_dark"){
-      return parts.map(s=>esc(s.toUpperCase())).join(' &nbsp;. &nbsp; ');
-    }
-    return parts.map(esc).join(' &nbsp;·&nbsp; ');
+  if(def.bind==="hashtag" && (state.template==="sideline_cutout"||state.template==="sideline_text")){
+    const v=String(state.text.hashtag||"").replace(/^#/,"").trim();
+    return esc((v||def.placeholder||"OCT. 11, 2025").toUpperCase());
   }
-  return esc(state.text[def.bind] ?? "");
+  if(def.bind==="playerMeta"){
+    const parts=[state.text.playerClass,state.text.position].filter(s=>s&&s.trim());
+    if(state.template==="sideline_cutout"||state.template==="sideline_text"){
+      if(!parts.length) return esc(def.placeholder||"JUNIOR | K");
+      return parts.map(s=>esc(s.toUpperCase())).join(' &nbsp;|&nbsp; ');
+    }
+    if(state.template==="cutout_splat"){
+      return parts.map(s=>esc(s.toUpperCase())).join(' &nbsp;|&nbsp; ');
+    }
+    const posFirst=[state.text.position,state.text.playerClass].filter(s=>s&&s.trim());
+    if(state.template==="salukis_clean"||state.template==="salukis_dark"){
+      return posFirst.map(s=>esc(s.toUpperCase())).join(' &nbsp;. &nbsp; ');
+    }
+    return posFirst.map(esc).join(' &nbsp;·&nbsp; ');
+  }
+  const raw=state.text[def.bind];
+  if(raw==null || String(raw).trim()===""){
+    if(def.placeholder) return esc(def.placeholder);
+  }
+  return esc(raw ?? "");
 }
 
 const RE = window.PosterRenderEngine;
@@ -1908,13 +2254,17 @@ function switchTemplate(id){
   if(next!=="magazine") state.magazineHeaderSamples=null;
   if(next!=="salukis_dark") state.salukisDarkHeaderColors=null;
   if(next!=="salukis_dark") state.salukisDarkHeaderSamples=null;
-  ensureLayout();
-  applyBroadcastPhotoDefault();
-  applyHypeLowerThirdDefault();
-  if(next==="magazine") applyMagazineLayoutDefault();
-  if(next==="neo_brutalist") applyNeoBrutalistLayoutDefault();
-  if(next==="vapor_motion") applyVaporMotionLayoutDefault();
-  if(next==="salukis_clean"||next==="salukis_dark") applySalukisLayoutDefault();
+  if(isFrozenTemplate(next)){
+    resetLayoutFromTemplate(next, { freeze:true });
+  } else {
+    ensureLayout();
+    applyBroadcastPhotoDefault();
+    applyHypeLowerThirdDefault();
+    if(next==="magazine") applyMagazineLayoutDefault();
+    if(next==="neo_brutalist") applyNeoBrutalistLayoutDefault();
+    if(next==="vapor_motion") applyVaporMotionLayoutDefault();
+    if(next==="salukis_clean"||next==="salukis_dark") applySalukisLayoutDefault();
+  }
   if(shouldUsePlayerPalette(next)) applyPaletteFromPlayer();
   else applyTemplateHeaderColors();
   if(next==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
@@ -1926,6 +2276,10 @@ function switchTemplate(id){
   buildCaptionColorControls();
   buildLogoControls();
   updateBrandColorControls();
+  const idInput=document.getElementById("bakeTemplateId");
+  const nameInput=document.getElementById("bakeTemplateName");
+  if(idInput) idInput.value=next;
+  if(nameInput) nameInput.value=TEMPLATES[next]?.name||next;
   render();
   updateTestBanner();
   scheduleSave();
@@ -1958,6 +2312,23 @@ function applyTextUnderline(el, def, g){
     el.style.textDecorationThickness="";
     el.style.textUnderlineOffset="";
   }
+}
+
+/** Keep manual text sizing from clipping inside a fixed template height. */
+function syncTextLayerHeight(el, g, def){
+  if(!el || def.type!=="text" || def.kind==="stat") return;
+  el.style.height="auto";
+  el.style.overflow="visible";
+  const needed=Math.max(12, Math.ceil(el.scrollHeight));
+  const floor=g.h ?? def.h ?? 0;
+  if(g.manualSize || needed > floor){
+    if(needed > floor) g.h=needed;
+    else if(g.h==null && def.h!=null) g.h=def.h;
+    else if(g.h==null) g.h=needed;
+  }
+  const outH=g.h ?? def.h ?? needed;
+  el.style.height=outH+"px";
+  el.style.overflow="visible";
 }
 
 /** Soft opposite-value halo on Magazine header glyphs for busy photo backgrounds. */
@@ -2006,10 +2377,11 @@ function render(){
   // layers
   for(const [id,def] of Object.entries(layersOf())){
     const g = L[id];
-    if(g.hidden) continue;
-    if(def.type==="image" && def.bind==="background" && !state.images.background) continue; // no full-stage placeholder
+    if(!g || g.hidden) continue;
+    if(def.type==="image" && ["background","sponsor","conference"].includes(def.bind) && !state.images[def.bind]) continue;
+    const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(id);
     const el = document.createElement("div");
-    el.className = "layer " + (def.type==="text"?"txt": def.type==="glass"?"glass": def.type==="block"?"block":"img");
+    el.className = "layer " + (def.type==="text"&&!isBlock?"txt": def.type==="glass"?"glass": isBlock?"block":"img");
     el.dataset.id = id;
     el.style.left = g.x+"px"; el.style.top = g.y+"px";
     let displayW = g.w;
@@ -2029,7 +2401,7 @@ function render(){
     const rot = g.rotate||0;
     el.style.transform = rot? `rotate(${rot}deg)`:"";
 
-    if(def.type==="image"){
+    if(def.type==="image" && !isBlock){
       const im = state.images[def.bind];
       el.style.height = displayH+"px";
       if(im){
@@ -2049,9 +2421,9 @@ function render(){
     } else if(def.type==="glass"){
       el.style.height = displayH+"px";
       applyGlassStyle(el, def, g);
-    } else if(def.type==="block"){
+    } else if(isBlock){
       el.style.height = displayH+"px";
-      applyBlockStyle(el, def, g);
+      applyBlockStyle(el, Object.assign({}, def, {type:"block"}), g);
     } else {
       el.innerHTML = bindContent(def);
       const size = g.size ?? def.size ?? 30;
@@ -2062,11 +2434,7 @@ function render(){
       applyTextUnderline(el, def, g);
       const hollow=!!(g.hollow ?? def.hollow);
       const strokeW=g.strokeW ?? def.strokeW ?? 2;
-      const dynamicHeaderColor=
-        (state.template==="magazine" && state.magazineHeaderColors?.[id]) ||
-        (state.template==="salukis_dark" && state.salukisDarkHeaderColors?.[id]);
-      const vaporDynamicColor=state.template==="vapor_motion" ? vaporMotionTextColorForLayer(id) : null;
-      const textColor=dynamicHeaderColor || vaporDynamicColor || roleColor(g.color || def.color);
+      const textColor=resolveTextLayerColor(id, def, g);
       if(hollow){
         el.style.color="transparent";
         el.style.webkitTextStroke=`${strokeW}px ${textColor}`;
@@ -2080,13 +2448,24 @@ function render(){
         } else {
           el.style.textShadow="";
         }
+        const strokeRole=g.stroke || def.stroke;
+        if(strokeRole){
+          el.style.webkitTextStroke=`${strokeW}px ${roleColor(strokeRole)}`;
+          el.style.paintOrder="stroke fill";
+        }
       }
       el.style.textAlign = g.align ?? def.align ?? "left";
       el.style.lineHeight = def.lh ?? 1.0;
       el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
       el.style.textTransform = g.textTransform ?? def.textTransform ?? "none";
-      el.style.height = (g.h? g.h+"px":"auto");
-      if(def.type==="text" && (g.h || def.h)) el.style.overflow = "hidden";
+      const textH = g.h ?? def.h ?? null;
+      if(textH && !g.manualSize){
+        el.style.height = textH + "px";
+        el.style.overflow = "hidden";
+      } else {
+        el.style.height = textH ? textH + "px" : "auto";
+        el.style.overflow = "visible";
+      }
       if(def.bg){ el.style.background = vaporMotionBgColorForLayer(id) || roleColor(def.bg); }
       if(def.pad){ el.style.padding = def.pad; }
       if(def.radius){ el.style.borderRadius = def.radius+"px"; }
@@ -2142,6 +2521,7 @@ function render(){
     deco.after(el); // keep order; appended to stage
     stage.appendChild(el);
     if(def.type==="text") autoFitTextLayer(el, def, g);
+    if(def.type==="text" && g.manualSize && def.kind!=="stat") syncTextLayerHeight(el, g, def);
     if(def.kind==="stat"&&templateStatAutoFit()){
       if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
       else autoFitGenericStat(el, g, def);
@@ -2149,11 +2529,18 @@ function render(){
     attachLayerEvents(el, def, g);
   }
   updateTestBanner();
-  syncInspector();
+  if(!render._skipInspector) syncInspector();
+  render._skipInspector=false;
 }
 
 function labelFor(bind){
-  return ({player:"Player image",background:"Background",logo:"Team logo",sponsor:"Sponsor logo",calloutBox:"Callout box"})[bind] || bind;
+  return ({
+    player:"Player image", background:"Background", logo:"Team logo",
+    conference:"Conference logo", sponsor:"Sponsor logo", calloutBox:"Callout box",
+    teamName:"Team / match line", playerName:"Player name", playerMeta:"Class | Position",
+    hashtag:"Date / hashtag", heroNumber:"Hero number", heroDesc:"Hero description",
+    callout:"Callout", eyebrow:"Eyebrow", footer:"Footer",
+  })[bind] || bind;
 }
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
 function imgFit(def,g){ return g.fit || def.fit || "contain"; }
@@ -2171,20 +2558,40 @@ function computeDisp(def,g,im){
 }
 /* paint the image content div: fit, crop (zoom+pan), flip, radius, border */
 function applyImageStyle(content, def, g, im){
-  content.style.backgroundImage = `url("${im.src}")`;
+  const src=im.src;
+  content.style.backgroundImage = `url("${src}")`;
   const fit=imgFit(def,g);
+  const bw=g.w, bh=g.h??g.w;
+  let imgEl=content.querySelector("img");
+  if(!imgEl){
+    imgEl=document.createElement("img");
+    imgEl.alt="";
+    imgEl.draggable=false;
+    content.appendChild(imgEl);
+  }
+  if(imgEl.getAttribute("src")!==src) imgEl.src=src;
   if(fit==="fill"){
     content.style.backgroundSize="100% 100%";
     content.style.backgroundPosition="center";
+    imgEl.style.left="0"; imgEl.style.top="0";
+    imgEl.style.width="100%"; imgEl.style.height="100%";
+    imgEl.style.objectFit="fill";
   } else {
     const {dispW,dispH}=computeDisp(def,g,im);
+    const cx=clamp01(g.cropX??0.5), cy=clamp01(g.cropY??0.5);
     content.style.backgroundSize=`${dispW}px ${dispH}px`;
-    content.style.backgroundPosition=`${clamp01(g.cropX??0.5)*100}% ${clamp01(g.cropY??0.5)*100}%`;
+    content.style.backgroundPosition=`${cx*100}% ${cy*100}%`;
+    imgEl.style.left=((bw-dispW)*cx)+"px";
+    imgEl.style.top=((bh-dispH)*cy)+"px";
+    imgEl.style.width=dispW+"px";
+    imgEl.style.height=dispH+"px";
+    imgEl.style.objectFit="fill";
   }
   let tf="";
   if(g.flipH) tf+="scaleX(-1) ";
   if(g.flipV) tf+="scaleY(-1) ";
-  content.style.transform=tf.trim();
+  imgEl.style.transform=tf.trim();
+  content.style.transform="";
   content.style.borderRadius=(g.radius||0)+"px";
   content.style.overflow="hidden";
   content.style.border = g.borderOn ? `${g.borderW||6}px solid ${roleColor(g.borderColor||"primary")}` : "";
@@ -2309,7 +2716,7 @@ function attachLayerEvents(el, def, g){
       nw=Math.max(24,nw); nh=Math.max(12,nh);
       const corner = dir.length===2;
       if(def.type==="image" || def.type==="glass" || def.type==="block"){
-        const lock = def.type==="image" && ((gg.lockAspect && !e.altKey) || (!gg.lockAspect && e.shiftKey));
+        const lock = (def.type==="image" || def.type==="block") && ((gg.lockAspect && !e.altKey) || (!gg.lockAspect && e.shiftKey));
         if(lock){
           if(corner){ nh=nw*d.ratio; }       // width drives height on corners
           else if(dir==="n"||dir==="s"){ nw=nh/d.ratio; } else { nh=nw*d.ratio; }
@@ -2346,33 +2753,109 @@ function attachLayerEvents(el, def, g){
     if(def.type==="glass") return;
     if(def.type==="block") return;
     if(def.kind==="stat"||def.bind==="footer") return;
-    el.contentEditable="true"; el.focus();
-    document.execCommand("selectAll",false,null);
-    el.addEventListener("blur",function h(){
-      el.contentEditable="false";
-      state.text[def.bind] = el.innerText.trim();
-      el.removeEventListener("blur",h); render(); buildTextFields(); buildCaptionColorControls(); scheduleSave();
-    });
+    beginInlineTextEdit(el, def);
   });
+}
+function commitInlineTextEdit(def, raw){
+  const v=String(raw||"").trim();
+  if(def.bind==="playerMeta"){
+    const parts=v.split("|").map(s=>s.trim()).filter(Boolean);
+    if(parts.length>=2){
+      state.text.playerClass=parts[0];
+      state.text.position=parts.slice(1).join(" | ");
+    } else if(parts.length===1){
+      state.text.playerClass=parts[0];
+    }
+  } else if(def.bind==="hashtag" && (state.template==="sideline_cutout"||state.template==="sideline_text")){
+    state.text.hashtag=v.replace(/^#/,"");
+  } else if(def.bind){
+    state.text[def.bind]=v;
+  }
+}
+function beginInlineTextEdit(el, def){
+  if(!el || el.isContentEditable) return;
+  el.contentEditable="true";
+  el.focus();
+  try{ document.execCommand("selectAll",false,null); }catch(_){}
+  el.addEventListener("blur",function h(){
+    el.contentEditable="false";
+    commitInlineTextEdit(def, el.innerText);
+    el.removeEventListener("blur",h);
+    render(); buildTextFields(); buildCaptionColorControls(); syncInspector(); scheduleSave();
+  },{once:true});
+  el.addEventListener("keydown",function kd(e){
+    if(e.key==="Escape"){ e.preventDefault(); el.blur(); }
+    if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); el.blur(); }
+  },{once:true});
+}
+function applyTextLayerVisuals(el, def, g, layerId){
+  if(!el || def.type!=="text") return;
+  const id=layerId || el.dataset.id;
+  const size=g.size ?? def.size ?? 30;
+  el.style.fontFamily=state.lockTemplateFonts ? (def.font||F.sans) : (g.font||def.font||F.sans);
+  el.style.fontSize=size+"px";
+  el.style.fontWeight=g.weight ?? def.weight ?? 700;
+  el.style.fontStyle=(g.italic ?? def.italic) ? "italic" : "normal";
+  applyTextUnderline(el, def, g);
+  const hollow=!!(g.hollow ?? def.hollow);
+  const strokeW=g.strokeW ?? def.strokeW ?? 2;
+  const textColor=resolveTextLayerColor(id, def, g);
+  if(def.kind==="stat"){
+    const n=el.querySelector(".s-n"), l=el.querySelector(".s-l");
+    const vaporStatColor=state.template==="vapor_motion" ? vaporMotionTextColorForLayer(id) : null;
+    const vaporStatLabelColor=state.template==="vapor_motion" ? vaporMotionLayerTokens().muted : null;
+    if(n) n.style.color=vaporStatColor || textColor;
+    if(l) l.style.color=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
+    if(g.manualSize) syncTextLayerHeight(el, g, def);
+    return;
+  }
+  if(hollow){
+    el.style.color="transparent";
+    el.style.webkitTextStroke=`${strokeW}px ${textColor}`;
+    el.style.textShadow="";
+  } else {
+    el.style.color=textColor;
+    if(state.template==="magazine" && ["playerName","playerMeta","eyebrow"].includes(id)){
+      el.style.textShadow=magazineHeaderTextShadow(size, textColor);
+    } else if(state.template==="salukis_dark" && ["playerName","playerMeta"].includes(id)){
+      el.style.textShadow=salukisDarkHeaderTextShadow(size, textColor);
+    } else {
+      el.style.textShadow="";
+    }
+    const strokeRole=g.stroke || def.stroke;
+    if(strokeRole){
+      el.style.webkitTextStroke=`${strokeW}px ${roleColor(strokeRole)}`;
+      el.style.paintOrder="stroke fill";
+    } else {
+      el.style.webkitTextStroke="";
+    }
+  }
+  el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
+  el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
+  if(g.manualSize) syncTextLayerHeight(el, g, def);
 }
 function applyGeo(el, def, g){
   el.style.left=g.x+"px"; el.style.top=g.y+"px"; el.style.width=g.w+"px";
   el.style.transform = (g.rotate? `rotate(${g.rotate}deg)`:"");
   el.style.opacity = (g.opacity!=null?g.opacity:1);
-  if(def.type==="image"){
+  const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(el.dataset.id||"");
+  if(def.type==="image" && !isBlock){
     el.style.height=(g.h ?? g.w)+"px";
     const c=el.querySelector(".imgcontent");
     const im=state.images[def.bind];
     if(c && im) applyImageStyle(c, def, g, im);
   } else if(def.type==="glass"){
     applyGlassStyle(el, def, g);
-  } else if(def.type==="block"){
-    applyBlockStyle(el, def, g);
+  } else if(isBlock){
+    applyBlockStyle(el, Object.assign({}, def, {type:"block"}), g);
   } else if(def.kind==="stat"&&templateStatAutoFit()){
     if(g.h) el.style.height=g.h+"px";
     if(g.size) el.style.fontSize=g.size+"px";
     if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
     else autoFitGenericStat(el, g, def);
+    applyTextLayerVisuals(el, def, g);
+  } else if(def.type==="text"){
+    applyTextLayerVisuals(el, def, g);
   } else if(g.size){ el.style.fontSize=g.size+"px"; }
   scheduleSave();
 }
@@ -2398,6 +2881,11 @@ function select(id){
   state.selected=id;
   document.querySelectorAll(".layer").forEach(l=>l.classList.toggle("sel", l.dataset.id===id));
   syncInspector();
+  const def=id && layersOf()[id];
+  if(def && def.type==="text" && def.kind!=="stat" && def.bind!=="footer"){
+    const focusEl=document.getElementById("iTxt")||document.getElementById("iTxtClass");
+    if(focusEl) setTimeout(()=>{ try{ focusEl.focus(); focusEl.select?.(); }catch(_){} }, 0);
+  }
 }
 stage.addEventListener("pointerdown",(e)=>{ if(e.target===stage||e.target.classList.contains("deco")) select(null); });
 
@@ -2415,7 +2903,7 @@ function syncInspector(){
   const cropping = state.cropMode===id;
   const isLogo=def.type==="image" && def.bind==="logo";
   const isGlass=def.type==="glass";
-  const isBlock=def.type==="block";
+  const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(id);
   inspTitle.textContent = isGlass ? "Glass card — " + id
     : isBlock ? "Shape — " + id
     : (def.type==="image"? labelFor(def.bind):"Text") + " — " + id;
@@ -2476,9 +2964,10 @@ function syncInspector(){
         <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
     h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??24}</b></label>
         <input type="range" id="iRad" min="0" max="80" value="${g.radius??def.radius??24}">`;
-  } else if(def.type==="block"){
+  } else if(isBlock){
     h+=`<label class="fld">Fill color</label>
         <select id="iCol">${["white","primary","secondary","black"].map(c=>`<option value="${c}" ${(g.fill||g.color||def.fill||def.color||"white")===c?'selected':''}>${c}</option>`).join('')}</select>`;
+    if(g.shape||def.shape) h+=`<div class="mini" style="margin:4px 0 8px">Shape: <b>${esc(g.shape||def.shape)}</b></div>`;
     h+=`<label class="fld" style="margin-top:10px">Position & size</label>`;
     h+=`<div class="row" style="margin-top:8px">
           <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
@@ -2490,11 +2979,34 @@ function syncInspector(){
         </div>`;
     h+=`<label class="fld">Rotation: <b id="ivr">${g.rotate||0}°</b></label>
         <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
-    h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??0}</b></label>
-        <input type="range" id="iRad" min="0" max="80" value="${g.radius??def.radius??0}">`;
+    const hasClip=!!(g.clip||def.clip);
+    if(!hasClip){
+      h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??0}</b></label>
+          <input type="range" id="iRad" min="0" max="500" value="${Math.min(500, g.radius??def.radius??0)}">`;
+    } else {
+      h+=`<div class="mini" style="margin-top:6px">This shape uses a clip path (corners are fixed).</div>`;
+    }
+    h+=`<label class="fld" style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-top:8px">
+          <input type="checkbox" id="iLock" ${g.lockAspect?'checked':''} style="width:auto"> Lock aspect ratio</label>`;
   } else {
     const activeStyle=detectTextStylePreset(g,def);
     const styleCustom=activeStyle==="custom";
+    const canEditWords=def.kind!=="stat" && def.bind!=="footer";
+    if(canEditWords){
+      if(def.bind==="playerMeta"){
+        h+=`<label class="fld">Class / Year</label>
+            <input type="text" id="iTxtClass" value="${esc(state.text.playerClass||"")}" placeholder="${esc(def.placeholder||"JUNIOR")}">`;
+        h+=`<label class="fld">Position</label>
+            <input type="text" id="iTxtPos" value="${esc(state.text.position||"")}" placeholder="K">`;
+      } else {
+        const sidelineDate=def.bind==="hashtag" && (state.template==="sideline_cutout"||state.template==="sideline_text");
+        const label=sidelineDate?"Date / hashtag":(labelFor(def.bind)||"Text");
+        const val=state.text[def.bind]??"";
+        h+=`<label class="fld">${esc(label)}</label>
+            <textarea id="iTxt" rows="2" placeholder="${esc(def.placeholder||"")}">${esc(val)}</textarea>`;
+      }
+      h+=`<div class="mini" style="margin:4px 0 10px">Edit here, or <b>double-click</b> the text on the poster.</div>`;
+    }
     h+=`<label class="fld">Text style <span style="font-weight:400;color:var(--dim)">(same font)</span></label>`;
     h+=`<div id="iStyleCurrent" style="margin-bottom:6px;padding:6px 8px;border-radius:7px;border:1px solid ${styleCustom?"#5a4a18":"#24344f"};background:${styleCustom?"#2a2410":"#11203a"};font-size:11px;color:#cfd3da">Active: <b style="color:${styleCustom?"#ffd34f":"#cfe1ff"}">${esc(textStyleSummary(activeStyle,g,def))}</b></div>`;
     h+=`<div class="tplgrid" id="iStyleGrid" style="margin-bottom:6px">`;
@@ -2510,8 +3022,17 @@ function syncInspector(){
         <input type="range" id="iFs" min="10" max="380" value="${g.size ?? def.size}">`;
     h+=`<label class="fld">Weight</label>
         <select id="iFw">${[300,400,600,700,800,900].map(w=>`<option ${(g.weight ?? def.weight)==w?'selected':''}>${w}</option>`).join('')}</select>`;
+    const colorRole=captionColorRoleSelectValue(g, def);
+    const colorHex=resolvedLayerColorHex(g, def);
     h+=`<label class="fld">Color</label>
-        <select id="iCol">${CAPTION_COLOR_OPTIONS.filter(([v])=>v!=="__default").map(([c,name])=>`<option value="${c}" ${(g.color||def.color)===c?'selected':''}>${name}</option>`).join('')}</select>`;
+        <select id="iCol">
+          ${CAPTION_COLOR_OPTIONS.filter(([v])=>v!=="__default").map(([c,name])=>`<option value="${c}" ${colorRole===c?'selected':''}>${name}</option>`).join('')}
+          <option value="__custom__" ${colorRole==="__custom__"?'selected':''}>Custom hex</option>
+        </select>
+        <div class="row" style="margin-top:6px;align-items:flex-end">
+          <div style="flex:1.2"><label class="fld">Hex</label><input type="text" id="iColHex" class="num" value="${esc(colorHex)}" placeholder="#RRGGBB" spellcheck="false" autocomplete="off"></div>
+          <div style="flex:0.7"><label class="fld">Swatch</label><input type="color" id="iColPick" value="${esc(colorHex)}" style="width:100%;height:34px;padding:2px;cursor:pointer"></div>
+        </div>`;
     h+=`<div class="row"><div><label class="fld">Letter spacing</label><input type="range" id="iLs" min="0" max="14" value="${(g.ls ?? def.ls)||0}"></div>
         <div><label class="fld">Rotation: <b id="ivr2">${g.rotate||0}°</b></label><input type="range" id="iRot" min="-90" max="90" value="${g.rotate||0}"></div></div>`;
     h+=`<label class="fld"><input type="checkbox" id="iIt" ${(g.italic ?? def.italic)?'checked':''} style="width:auto"> Italic</label>`;
@@ -2564,15 +3085,42 @@ function syncInspector(){
     $("iH").oninput=e=>{ g.h=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
     $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
     $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
-  } else if(def.type==="block"){
+  } else if(isBlock){
     $("iCol").onchange=e=>{ g.fill=e.target.value; g.color=e.target.value; applyGeo(el(),def,g); };
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
-    $("iW").oninput=e=>{ g.w=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
-    $("iH").oninput=e=>{ g.h=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
+    $("iW").oninput=e=>{
+      const v=Math.max(12,+e.target.value||12);
+      if(g.lockAspect){ const r=(g.h??g.w)/g.w; g.h=Math.round(v*r); if($("iH")) $("iH").value=g.h; }
+      g.w=v; applyGeo(el(),def,g);
+    };
+    $("iH").oninput=e=>{
+      const v=Math.max(12,+e.target.value||12);
+      if(g.lockAspect){ const r=g.w/(g.h??g.w); g.w=Math.round(v*r); if($("iW")) $("iW").value=g.w; }
+      g.h=v; applyGeo(el(),def,g);
+    };
     $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
-    $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
+    if($("iRad")) $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
+    if($("iLock")) $("iLock").onchange=e=>{ g.lockAspect=e.target.checked; };
   } else {
+    const iTxt=$("iTxt");
+    if(iTxt){
+      iTxt.oninput=e=>{
+        state.text[def.bind]=e.target.value;
+        queueTextPreview();
+      };
+      iTxt.onchange=()=>{ buildTextFields(); scheduleSave(); };
+    }
+    const iTxtClass=$("iTxtClass");
+    if(iTxtClass){
+      iTxtClass.oninput=e=>{ state.text.playerClass=e.target.value; queueTextPreview(); };
+      iTxtClass.onchange=()=>{ buildTextFields(); scheduleSave(); };
+    }
+    const iTxtPos=$("iTxtPos");
+    if(iTxtPos){
+      iTxtPos.oninput=e=>{ state.text.position=e.target.value; queueTextPreview(); };
+      iTxtPos.onchange=()=>{ buildTextFields(); scheduleSave(); };
+    }
     $("iStyleGrid")?.querySelectorAll("[data-style]").forEach(c=>{
       c.onclick=()=>withUndo(()=>{ applyTextStylePreset(g, def, c.dataset.style); render(); scheduleSave(); });
     });
@@ -2583,10 +3131,60 @@ function syncInspector(){
       g.manualSize=true;
       $("ivs").textContent=g.size;
       if(def.kind==="stat"&&templateStatAutoFit()){ render(); scheduleSave(); }
-      else applyGeo(el(),def,g);
+      else {
+        const layerEl=el();
+        if(layerEl) layerEl.style.fontSize=g.size+"px";
+        syncTextLayerHeight(layerEl, g, def);
+        scheduleSave();
+      }
     };
     $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
-    $("iCol").onchange=e=>{ g.color=e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); buildCaptionColorControls(); };
+    const commitInspectorTextColor=()=>{
+      const layerEl=el();
+      if(layerEl) applyTextLayerVisuals(layerEl, def, g, id);
+      scheduleSave();
+    };
+    const syncInspectorColorFields=()=>{
+      const hex=resolvedLayerColorHex(g, def);
+      const pick=$("iColPick"), hexIn=$("iColHex");
+      if(pick) pick.value=hex;
+      if(hexIn && document.activeElement!==hexIn) hexIn.value=hex;
+    };
+    $("iCol").onchange=e=>{
+      const v=e.target.value;
+      if(v==="__custom__") return;
+      g.color=v;
+      markTextStyleCustom(g);
+      syncInspectorColorFields();
+      commitInspectorTextColor();
+      buildCaptionColorControls();
+    };
+    const iColPick=$("iColPick");
+    if(iColPick){
+      iColPick.oninput=e=>{
+        g.color=e.target.value;
+        markTextStyleCustom(g);
+        if($("iCol")) $("iCol").value="__custom__";
+        if($("iColHex")) $("iColHex").value=g.color;
+        commitInspectorTextColor();
+        buildCaptionColorControls();
+      };
+    }
+    const iColHex=$("iColHex");
+    if(iColHex){
+      iColHex.onchange=e=>{
+        const hex=normalizeHex(e.target.value);
+        if(!hex){ syncInspectorColorFields(); return; }
+        g.color=hex;
+        markTextStyleCustom(g);
+        if($("iCol")) $("iCol").value="__custom__";
+        if($("iColPick")) $("iColPick").value=hex;
+        e.target.value=hex;
+        commitInspectorTextColor();
+        buildCaptionColorControls();
+      };
+      iColHex.onkeydown=e=>{ if(e.key==="Enter") e.target.blur(); };
+    }
     $("iLs").oninput=e=>{ g.ls=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); };
     $("iRot").oninput=e=>{ g.rotate=+e.target.value; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
     $("iIt").onchange=e=>{ g.italic=e.target.checked; markTextStyleCustom(g); applyGeo(el(),def,g); };
@@ -2686,7 +3284,7 @@ COLOR_PRESETS.forEach(([p,s])=>{
 
 // asset uploads
 const CUTOUT_FEATURE_ENABLED = false; // keep background-removal code restorable, but disabled for this workflow
-const ASSETS=[["player","Player image"],["background","Background"],["logo","Team logo"],["sponsor","Sponsor logo"]];
+const ASSETS=[["player","Player image"],["background","Background"],["logo","Team logo"],["conference","Conference logo"],["sponsor","Sponsor logo"]];
 const assetList=document.getElementById("assetList");
 function buildAssets(){
   assetList.innerHTML="";
@@ -2711,51 +3309,76 @@ function buildAssets(){
     assetList.querySelectorAll("[data-cutbg]").forEach(x=>x.onchange=e=>setCutBg(x.dataset.cutbg, e.target.checked));
   }
 }
+function revealImageLayers(key){
+  const L=ensureLayout();
+  for(const [id,def] of Object.entries(layersOf())){
+    if(def.type!=="image" || def.bind!==key) continue;
+    const g=L[id]; if(!g) continue;
+    g.hidden=false;
+    if(g.opacity===0 || g.opacity==null) g.opacity=1;
+    const w=g.w||0, h=g.h||w;
+    const off=g.x>SW || g.y>SH || g.x+w<0 || g.y+h<0 || w<8 || h<8;
+    if(off){
+      g.x=def.x; g.y=def.y; g.w=def.w; g.h=def.h??null;
+      g.fit=def.fit??g.fit; g.zoom=def.zoom??1;
+      g.cropX=def.cropX??0.5; g.cropY=def.cropY??0.5;
+    }
+  }
+}
 function applyImageSrc(key, url, stored){
   const slot=state.images[key]; if(!slot) return;
   const img=new Image();
   img.onload=()=>{
     slot.src=url; slot.natW=img.naturalWidth; slot.natH=img.naturalHeight; slot.el=img;
     if(stored) slot.stored=stored;
+    revealImageLayers(key);
     fitImageLayer(key, img.naturalWidth/img.naturalHeight);
     if(key==="player") applyTemplateHeaderColors();
     buildAssets(); buildLogoControls(); render(); scheduleSave();
   };
+  img.onerror=()=>scheduleSave();
   img.src=url;
 }
 function loadImage(key,file){
   if(!file) return;
-  const r=new FileReader();
-  r.onload=()=>{
-    const im=new Image();
-    im.onload=()=>{
-      if(key==="player" && im.naturalWidth > im.naturalHeight){
-        alert("Please upload a vertical (portrait) player image. Landscape images are not supported for these templates.");
-        return;
-      }
-      state.images[key]={
-        src:r.result, original:r.result, cutout:null, cutBg:false,
-        natW:im.naturalWidth, natH:im.naturalHeight, el:im,
-      };
-      if(key==="player"){
-        applyBroadcastPhotoDefault(true);
-        applyHypeLowerThirdDefault();
-        if(state.template==="magazine") applyMagazineLayoutDefault();
-      }
-      fitImageLayer(key,im.naturalWidth/im.naturalHeight);
-      if(key==="player" && shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
-      else if(key==="player"){
-        applyTemplateHeaderColors();
-      }
-      else if(key==="logo" && state.autoPalette && shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
-      buildAssets(); buildLogoControls(); render();
-      const isLogo=(key==="logo"||key==="sponsor");
-      compressImage(r.result, isLogo?760:1800, isLogo?"image/png":"image/jpeg", 0.88)
-        .then(d=>{ if(state.images[key]){ state.images[key].stored=d; scheduleSave(); } });
+  const blobUrl=URL.createObjectURL(file);
+  const im=new Image();
+  im.onload=()=>{
+    const prev=state.images[key];
+    if(prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl);
+    state.images[key]={
+      src:blobUrl, blobUrl, original:blobUrl, cutout:null, cutBg:false,
+      natW:im.naturalWidth, natH:im.naturalHeight, el:im,
     };
-    im.src=r.result;
+    if(key==="player"){
+      applyBroadcastPhotoDefault(true);
+      applyHypeLowerThirdDefault();
+      if(state.template==="magazine" && !isFrozenTemplate(state.template)) applyMagazineLayoutDefault();
+    }
+    revealImageLayers(key);
+    fitImageLayer(key,im.naturalWidth/im.naturalHeight);
+    if(key==="player" && shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
+    else if(key==="player"){
+      applyTemplateHeaderColors();
+    }
+    else if(key==="logo" && state.autoPalette && shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
+    buildAssets(); buildLogoControls(); render();
+    const keepAlpha =
+      key==="logo" || key==="sponsor" || key==="conference" || key==="player" ||
+      file.type==="image/png" || imageHasAlpha(im);
+    const maxDim = (key==="logo"||key==="sponsor"||key==="conference") ? 760 : 1800;
+    compressImage(blobUrl, maxDim, keepAlpha?"image/png":"image/jpeg", keepAlpha?0.92:0.88)
+      .then(d=>{
+        if(!state.images[key]) return;
+        state.images[key].stored=d;
+        scheduleSave();
+      });
   };
-  r.readAsDataURL(file);
+  im.onerror=()=>{
+    URL.revokeObjectURL(blobUrl);
+    alert("Could not read that image. Try another PNG or JPG.");
+  };
+  im.src=blobUrl;
 }
 
 /* ---- palette extraction from the team logo ---- */
@@ -2805,6 +3428,7 @@ function applyPaletteFromLogo(){
   return true;
 }
 async function applyPaletteFromPlayer(){
+  if(!AUTO_PLAYER_PALETTE) return false;
   const im=state.images.player;
   if(!im||!im.el){ setPalStatus("Upload a player photo first."); return false; }
   const pal=await window.PosterPhotoPalette?.applyFromPlayer(im.el);
@@ -2826,6 +3450,11 @@ const MAGAZINE_HEADER_AFFECT_LAYERS = new Set(["player","playerName","playerMeta
 const SALUKIS_DARK_HEADER_AFFECT_LAYERS = new Set(["player","playerName","playerMeta"]);
 let _templateHeaderColorsTimer = null;
 function applyMagazineHeaderColors(){
+  if(!AUTO_PLAYER_PALETTE){
+    state.magazineHeaderSamples = null;
+    state.magazineHeaderColors = null;
+    return;
+  }
   const api=window.PosterMagazineHeaderColors;
   if(state.template!=="magazine" || !state.images.player?.el){
     state.magazineHeaderSamples = null;
@@ -2840,6 +3469,11 @@ function applyMagazineHeaderColors(){
   ) || null;
 }
 function applySalukisDarkHeaderColors(){
+  if(!AUTO_PLAYER_PALETTE){
+    state.salukisDarkHeaderSamples = null;
+    state.salukisDarkHeaderColors = null;
+    return;
+  }
   const api=window.PosterMagazineHeaderColors;
   if(state.template!=="salukis_dark" || !state.images.player?.el){
     state.salukisDarkHeaderSamples = null;
@@ -2854,6 +3488,13 @@ function applySalukisDarkHeaderColors(){
   ) || null;
 }
 function applyTemplateHeaderColors(opts={}){
+  if(!AUTO_PLAYER_PALETTE){
+    state.magazineHeaderSamples = null;
+    state.magazineHeaderColors = null;
+    state.salukisDarkHeaderSamples = null;
+    state.salukisDarkHeaderColors = null;
+    return;
+  }
   const api=window.PosterMagazineHeaderColors;
   const resample=opts.resample!==false;
   if(state.template==="magazine" && !resample && state.magazineHeaderSamples && api?.resolve){
@@ -2864,6 +3505,7 @@ function applyTemplateHeaderColors(opts={}){
   } else applySalukisDarkHeaderColors();
 }
 function scheduleTemplateHeaderColors(layerId){
+  if(!AUTO_PLAYER_PALETTE) return;
   const activeSet=state.template==="magazine"
     ? MAGAZINE_HEADER_AFFECT_LAYERS
     : state.template==="salukis_dark"
@@ -2881,6 +3523,7 @@ function templateUsesPlayerPalette(templateId){
   return templateId==="magazine" || templateId==="salukis_dark" || templateId==="vapor_motion" || templateId==="big_sky_leader";
 }
 function shouldUsePlayerPalette(templateId){
+  if(!AUTO_PLAYER_PALETTE) return false;
   return templateUsesPlayerPalette(templateId) && !!state.images.player?.el;
 }
 function shouldUseLogoPaletteForTemplate(templateId){
@@ -2893,6 +3536,12 @@ function updateBrandColorControls(){
   const onSalukisDark=state.template==="salukis_dark";
   const onVapor=state.template==="vapor_motion";
   const onBigSkyLeader=state.template==="big_sky_leader";
+  const playerPalTemplate=onMagazine||onSalukisDark||onVapor||onBigSkyLeader;
+  if(!AUTO_PLAYER_PALETTE && playerPalTemplate){
+    if(label) label.textContent="Player-photo color detection is off (using template / manual colors)";
+    if(btn) btn.textContent="Detect colors from logo now";
+    return;
+  }
   if(label) label.textContent=onMagazine
     ? "Auto-detect palette from player photo (Magazine)"
     : onSalukisDark
@@ -3046,7 +3695,22 @@ function loadState(){
   migrateSpotlightState(d);
   return true;
 }
-/* downscale + re-encode so uploads fit in localStorage; logos keep PNG alpha */
+/* downscale + re-encode so uploads fit in localStorage; preserve PNG alpha for cutouts */
+function imageHasAlpha(img){
+  try{
+    const S=Math.min(64, img.naturalWidth||0, img.naturalHeight||0);
+    if(S<2) return false;
+    const c=document.createElement("canvas"); c.width=S; c.height=S;
+    const ctx=c.getContext("2d",{willReadFrequently:true});
+    ctx.clearRect(0,0,S,S);
+    ctx.drawImage(img,0,0,S,S);
+    const data=ctx.getImageData(0,0,S,S).data;
+    for(let i=3;i<data.length;i+=4){
+      if(data[i]<250) return true;
+    }
+  }catch(_){ /* tainted / empty */ }
+  return false;
+}
 function compressImage(src, maxDim, mime, quality){
   return new Promise(res=>{
     const im=new Image();
@@ -3054,18 +3718,26 @@ function compressImage(src, maxDim, mime, quality){
       let w=im.naturalWidth, h=im.naturalHeight;
       const s=Math.min(1, maxDim/Math.max(w,h)); w=Math.round(w*s); h=Math.round(h*s);
       const c=document.createElement("canvas"); c.width=w; c.height=h;
-      c.getContext("2d").drawImage(im,0,0,w,h);
-      try{ res(c.toDataURL(mime,quality)); }catch(e){ res(src); }
+      const ctx=c.getContext("2d");
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(im,0,0,w,h);
+      let outMime=mime||"image/jpeg";
+      if(outMime!=="image/png" && imageHasAlpha(im)) outMime="image/png";
+      try{ res(c.toDataURL(outMime, quality)); }catch(e){ res(src); }
     };
     im.onerror=()=>res(src);
     im.src=src;
   });
 }
 function fitImageLayer(key,ratio){
+  if(!ratio || !isFinite(ratio) || ratio<=0) return;
+  if(isFrozenTemplate(state.template)) return;
+  if((state.template==="sideline_text"||state.template==="sideline_cutout"||state.template==="cutout_splat"||state.template==="cc11") && key==="player") return;
   const t=tpl(); const L=ensureLayout();
-  for(const [id,def] of Object.entries(t.layers)){
-    if(def.type==="image"&&def.bind===key&&def.fit==="contain"){
-      const g=L[id]; g.h=Math.round(g.w/ratio);
+  for(const [id,def] of Object.entries(t.layers||{})){
+    if(def.type==="image"&&def.bind===key&&(def.fit||"contain")==="contain"){
+      const g=L[id]; if(!g) continue;
+      g.h=Math.round(g.w/ratio);
     }
   }
 }
@@ -3108,6 +3780,7 @@ function queueTextPreview(){
   if(_textRenderFrame) cancelAnimationFrame(_textRenderFrame);
   _textRenderFrame=requestAnimationFrame(()=>{
     _textRenderFrame=0;
+    render._skipInspector=true;
     render();
   });
 }
@@ -3129,31 +3802,86 @@ function buildCaptionColorControls(){
     const wrap=document.createElement("div");
     wrap.style.marginBottom="8px";
     const label=CAPTION_COLOR_LABELS[id] || CAPTION_COLOR_LABELS[def.bind] || labelFor(def.bind);
-    const current=(g.color==null || g.color===def.color) ? "__default" : g.color;
+    const current=(g.color==null || g.color===def.color) ? "__default" : (isKnownColorRole(g.color) ? g.color : "__custom__");
+    const hexVal=resolvedLayerColorHex(g, def);
     wrap.innerHTML=`<label class="fld">${esc(label)}</label>
       <select data-caption-color="${esc(id)}">
         ${CAPTION_COLOR_OPTIONS.map(([value,name])=>`<option value="${value}" ${current===value?'selected':''}>${name}</option>`).join("")}
-      </select>`;
+        <option value="__custom__" ${current==="__custom__"?'selected':''}>Custom hex</option>
+      </select>
+      <div class="row" style="margin-top:4px;align-items:flex-end">
+        <div style="flex:1.2"><input type="text" class="num" data-caption-hex="${esc(id)}" value="${esc(hexVal)}" placeholder="#RRGGBB" spellcheck="false" autocomplete="off"></div>
+        <div style="flex:0.55"><input type="color" data-caption-pick="${esc(id)}" value="${esc(hexVal)}" style="width:100%;height:32px;padding:2px;cursor:pointer"></div>
+      </div>`;
     captionColorWrap.appendChild(wrap);
   });
+  function commitCaptionColor(layerId, colorVal){
+    const def=defs[layerId];
+    const g=L[layerId];
+    if(!def || !g) return;
+    if(colorVal==="__default"){
+      g.color=def.color;
+    } else if(colorVal!=="__custom__"){
+      g.color=colorVal;
+    }
+    markTextStyleCustom(g);
+    const node=document.querySelector(`.layer[data-id="${layerId}"]`);
+    if(node) applyTextLayerVisuals(node, def, g, layerId);
+    else render();
+    if(state.selected===layerId) syncInspector();
+    scheduleSave();
+  }
   captionColorWrap.querySelectorAll("[data-caption-color]").forEach(sel=>{
     sel.onchange=e=>{
-      const id=e.target.dataset.captionColor;
-      const def=defs[id];
-      const g=L[id];
-      if(!def || !g) return;
-      if(e.target.value==="__default"){
-        g.color=def.color;
-      } else {
-        g.color=e.target.value;
-      }
+      const layerId=e.target.dataset.captionColor;
+      if(e.target.value==="__custom__") return;
+      commitCaptionColor(layerId, e.target.value);
+    };
+  });
+  captionColorWrap.querySelectorAll("[data-caption-pick]").forEach(pick=>{
+    pick.oninput=e=>{
+      const layerId=e.target.dataset.captionPick;
+      const g=L[layerId];
+      const def=defs[layerId];
+      if(!g || !def) return;
+      g.color=e.target.value;
       markTextStyleCustom(g);
-      const node=document.querySelector(`.layer[data-id="${id}"]`);
-      if(node) applyGeo(node, def, g);
+      const sel=captionColorWrap.querySelector(`[data-caption-color="${layerId}"]`);
+      if(sel) sel.value="__custom__";
+      const hexIn=captionColorWrap.querySelector(`[data-caption-hex="${layerId}"]`);
+      if(hexIn) hexIn.value=g.color;
+      const node=document.querySelector(`.layer[data-id="${layerId}"]`);
+      if(node) applyTextLayerVisuals(node, def, g, layerId);
       else render();
-      if(state.selected===id) syncInspector();
+      if(state.selected===layerId) syncInspector();
       scheduleSave();
     };
+  });
+  captionColorWrap.querySelectorAll("[data-caption-hex]").forEach(hexIn=>{
+    hexIn.onchange=e=>{
+      const layerId=e.target.dataset.captionHex;
+      const g=L[layerId];
+      const def=defs[layerId];
+      if(!g || !def) return;
+      const hex=normalizeHex(e.target.value);
+      if(!hex){
+        e.target.value=resolvedLayerColorHex(g, def);
+        return;
+      }
+      g.color=hex;
+      markTextStyleCustom(g);
+      const sel=captionColorWrap.querySelector(`[data-caption-color="${layerId}"]`);
+      if(sel) sel.value="__custom__";
+      const pick=captionColorWrap.querySelector(`[data-caption-pick="${layerId}"]`);
+      if(pick) pick.value=hex;
+      e.target.value=hex;
+      const node=document.querySelector(`.layer[data-id="${layerId}"]`);
+      if(node) applyTextLayerVisuals(node, def, g, layerId);
+      else render();
+      if(state.selected===layerId) syncInspector();
+      scheduleSave();
+    };
+    hexIn.onkeydown=e=>{ if(e.key==="Enter") e.target.blur(); };
   });
 }
 function buildTextFields(){
@@ -3161,7 +3889,10 @@ function buildTextFields(){
   const binds=new Set();
   Object.values(layersOf()).forEach(d=>{
     if(d.kind==="stat"){ binds.add(d.bind+"num"); binds.add(d.bind+"label"); }
-    else if(d.bind==="footer"){ binds.add("hashtag"); binds.add("sport"); binds.add("teamName"); }
+    else if(d.bind==="footer"){
+      binds.add("teamName"); binds.add("hashtag");
+      if(state.template!=="cutout_splat") binds.add("sport");
+    }
     else if(d.bind==="playerMeta"){ binds.add("position"); binds.add("playerClass"); }
     else binds.add(d.bind);
   });
@@ -3264,6 +3995,7 @@ function exportLayoutJSON(){
     exportedAt:new Date().toISOString(),
     layoutVersion:state.salukisLayoutMeta?.[t]??1,
     layers:JSON.parse(JSON.stringify(L)),
+    extraLayers:JSON.parse(JSON.stringify(state.extraLayers[t]||{})),
     settings:{
       logo:logoSettingsOf(t),
       ...(t==="vapor_motion"?{vaporGlass:vaporGlassSettingsOf()}:{}),
@@ -3271,23 +4003,348 @@ function exportLayoutJSON(){
     colors:{...state.colors},
     text:{...state.text},
   };
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  downloadJSON(payload, `layout-${t}.json`);
+  setBakeStatus(`Downloaded layout overrides for “${t}”.`);
+}
+
+function fontKeyFromValue(font){
+  if(!font) return undefined;
+  for(const [k,v] of Object.entries(F)){
+    if(v===font) return k;
+  }
+  const s=String(font).toLowerCase();
+  if(s.includes("anton")) return "disp";
+  if(s.includes("oswald")) return "cond";
+  if(s.includes("archivo")) return "sans";
+  if(s.includes("bebas")) return "bebas";
+  if(s.includes("playfair")) return "serif";
+  if(s.includes("permanent")) return "chalk";
+  if(s.includes("special elite")) return "type";
+  if(s.includes("bangers")) return "comic";
+  return undefined;
+}
+
+function layerDefToJson(id, def, g){
+  const out={ id, type:def.type||"text" };
+  if(def.bind) out.bind=def.bind;
+  if(def.kind) out.kind=def.kind;
+  if(def.placeholder) out.placeholder=def.placeholder;
+  out.x=Math.round(g.x??def.x??0);
+  out.y=Math.round(g.y??def.y??0);
+  out.w=Math.round(g.w??def.w??100);
+  const h=g.h??def.h;
+  if(h!=null) out.h=Math.round(h);
+  const z=g.z??def.z;
+  if(z!=null) out.z=z;
+  const opacity=g.opacity!=null?g.opacity:(def.opacity!=null?def.opacity:null);
+  if(opacity!=null && opacity!==1) out.opacity=opacity;
+  if(g.hidden||def.hidden) out.hidden=true;
+
+  if(def.type==="text"){
+    const size=g.size??def.size;
+    if(size!=null) out.size=size;
+    const color=g.color||def.color;
+    if(color) out.color=color;
+    const fontKey=fontKeyFromValue(g.font||def.font)||undefined;
+    if(fontKey) out.font=fontKey;
+    else if(def.font && typeof def.font==="string" && !def.font.includes(",")) out.font=def.font;
+    const weight=g.weight??def.weight;
+    if(weight!=null) out.weight=weight;
+    const align=g.align??def.align;
+    if(align) out.align=align;
+    const ls=g.ls??def.ls;
+    if(ls) out.ls=ls;
+    const lh=g.lh??def.lh;
+    if(lh!=null && lh!==1) out.lh=lh;
+    if(g.italic??def.italic) out.italic=true;
+    if(g.underline??def.underline){
+      out.underline=true;
+      if(def.underlineW!=null) out.underlineW=def.underlineW;
+      if(def.underlineOffset!=null) out.underlineOffset=def.underlineOffset;
+    }
+    const tt=g.textTransform??def.textTransform;
+    if(tt) out.textTransform=tt;
+    if(def.bg) out.bg=def.bg;
+    if(def.pad) out.pad=def.pad;
+    if(def.stroke||g.stroke) out.stroke=g.stroke||def.stroke;
+    if(def.strokeW!=null||g.strokeW!=null) out.strokeW=g.strokeW??def.strokeW;
+    if(def.hollow||g.hollow) out.hollow=true;
+    if(!out.placeholder && def.bind && state.text[def.bind]) out.placeholder=String(state.text[def.bind]);
+  } else if(def.type==="image"){
+    const fit=g.fit||def.fit;
+    if(fit) out.fit=fit;
+    const zoom=g.zoom??def.zoom;
+    if(zoom!=null && zoom!==1) out.zoom=zoom;
+    if(g.cropX!=null||def.cropX!=null) out.cropX=g.cropX??def.cropX;
+    if(g.cropY!=null||def.cropY!=null) out.cropY=g.cropY??def.cropY;
+  } else if(def.type==="block"){
+    const fill=g.fill||g.color||def.fill||def.color||"primary";
+    out.fill=fill;
+    const radius=g.radius??def.radius??0;
+    out.radius=radius;
+    const clip=g.clip??def.clip;
+    if(clip) out.clip=clip;
+    const shape=g.shape||def.shape;
+    if(shape) out.shape=shape;
+  } else if(def.type==="glass"){
+    const radius=g.radius??def.radius;
+    if(radius!=null) out.radius=radius;
+  }
+  return out;
+}
+
+function collectEditorLayerDefs(templateId){
+  ensureLayout();
+  const L=state.layouts[templateId]||{};
+  const extras=state.extraLayers[templateId]||{};
+  // Base template layers + any editor-added shapes/duplicates
+  const merged=Object.assign({}, TEMPLATES[templateId]?.layers||{}, extras);
+  // layersOf() uses current template only — when baking, force this id's extras
+  const defs={};
+  try{
+    Object.assign(defs, TEMPLATES[templateId]?.layers||{});
+  }catch(_){}
+  Object.assign(defs, extras);
+  // Also include anything currently visible via layersOf when baking the active template
+  if(templateId===state.template){
+    Object.assign(defs, layersOf());
+  }
+  return { defs, L };
+}
+
+function buildFrozenTemplateJSON(opts={}){
+  const srcId=state.template;
+  const id=(opts.id||srcId||"custom_template").trim().replace(/[^\w-]+/g,"_");
+  const name=(opts.name||TEMPLATES[srcId]?.name||id).trim()||id;
+  const base=TEMPLATES[srcId]?._json ? JSON.parse(JSON.stringify(TEMPLATES[srcId]._json)) : {
+    id, name, version:1,
+    canvas:{ width:SW, height:SH, background:"#E8E0D4" },
+    deco:{ html:"" },
+    textRules:{ autoFit:["heroNumber","heroDesc","playerName","callout","teamName","hashtag"], stats:{ autoFit:false } },
+    settings:{ logo:{ opacity:1, scale:1 }, brandColors:{ fromLogo:false } },
+    layers:[],
+  };
+  delete base.authoring;
+  const { defs, L }=collectEditorLayerDefs(srcId);
+  // When saving under a new id, still pull geos from the source template layouts
+  const geoL=state.layouts[srcId]||L||{};
+  const layers=[];
+  let shapeCount=0;
+  for(const [lid,def] of Object.entries(defs)){
+    if(!def) continue;
+    const g=geoL[lid]||{};
+    if(g.hidden) continue;
+    // Ensure shape extras always have type block
+    const normalized=Object.assign({}, def);
+    if((normalized.shape||g.shape||/^shape_/.test(lid)) && !normalized.type){
+      normalized.type="block";
+    }
+    if(normalized.type==="block"||normalized.shape||g.shape||/^shape_/.test(lid)){
+      normalized.type="block";
+      shapeCount++;
+    }
+    layers.push(layerDefToJson(lid, normalized, Object.assign({}, normalized, g)));
+  }
+  layers.sort((a,b)=>(a.z||0)-(b.z||0));
+
+  const playerLayer=layers.find(l=>l.bind==="player");
+  const settings={
+    ...(base.settings||{}),
+    logo:Object.assign({}, base.settings?.logo||{}, logoSettingsOf(srcId)),
+    brandColors:{ fromLogo:false, ...(base.settings?.brandColors||{}) },
+    // Lock positions/sizes so Automate cannot reflow this layout
+    freezeLayout:true,
+  };
+  if(playerLayer){
+    settings.playerImage={
+      fitToFrame:false,
+      fit:playerLayer.fit||"contain",
+      cropX:playerLayer.cropX??0.5,
+      cropY:playerLayer.cropY??0.4,
+      zoom:playerLayer.zoom??1,
+    };
+  }
+
+  return {
+    ...base,
+    id,
+    name,
+    version:(base.version||1)+1,
+    canvas:base.canvas||{ width:SW, height:SH, background:"#E8E0D4" },
+    deco:base.deco||{ html:"" },
+    // No autofit — keeps exact font sizes/positions from the editor
+    textRules:{ autoFit:[], stats:{ autoFit:false } },
+    settings,
+    layers,
+    automation:{
+      freezeLayout:true,
+      swapFields:["playerName","playerMeta","teamName","hashtag","heroNumber","heroDesc","callout","eyebrow"],
+      swapImages:["player","logo","conference","sponsor","background"],
+      note:"Frozen layout from editor. Automate only swaps text + images — positions stay exact.",
+    },
+    _bakeMeta:{
+      bakedAt:new Date().toISOString(),
+      sourceTemplate:srcId,
+      layerCount:layers.length,
+      shapeCount,
+    },
+  };
+}
+
+function downloadJSON(obj, filename){
+  const blob=new Blob([JSON.stringify(obj,null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download=`layout-${t}.json`;
+  a.download=filename;
   a.click();
   URL.revokeObjectURL(a.href);
 }
+function setBakeStatus(msg){
+  const el=document.getElementById("bakeStatus");
+  if(el) el.textContent=msg||"";
+}
+
+const LS_BAKED_KEY="posterEditor.v3.bakedTemplates";
+function loadBakedTemplatesMap(){
+  try{
+    const raw=localStorage.getItem(LS_BAKED_KEY);
+    if(!raw) return {};
+    const d=JSON.parse(raw);
+    return d && typeof d==="object" ? d : {};
+  }catch(_){ return {}; }
+}
+function saveBakedTemplateJson(json){
+  if(!json?.id) return;
+  const map=loadBakedTemplatesMap();
+  map[json.id]=json;
+  try{
+    localStorage.setItem(LS_BAKED_KEY, JSON.stringify(map));
+    localStorage.setItem(LS_BAKED_KEY+".lastId", json.id);
+  }catch(e){ console.warn("Could not persist baked template", e); }
+}
+function getLastBakedTemplateId(){
+  try{ return localStorage.getItem(LS_BAKED_KEY+".lastId")||null; }catch(_){ return null; }
+}
+function restoreBakedTemplates(){
+  const map=loadBakedTemplatesMap();
+  const loader=window.PosterTemplateLoader;
+  let n=0;
+  for(const [id, json] of Object.entries(map)){
+    if(!json?.layers) continue;
+    if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
+    else if(window.TEMPLATES){
+      TEMPLATES[id]={
+        name:json.name,
+        _json:json,
+        stageBg:()=>json.canvas?.background||"#000",
+        deco:()=>json.deco?.html||"",
+        layers:Object.fromEntries((json.layers||[]).map(l=>{
+          const {id:lid, font, ...rest}=l;
+          return [lid, { ...rest, font:F[font]||font }];
+        })),
+      };
+    }
+    if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
+    if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
+    n++;
+  }
+  return n;
+}
+
+function bakeEditorIntoTemplate(download=true){
+  const idInput=document.getElementById("bakeTemplateId");
+  const nameInput=document.getElementById("bakeTemplateName");
+  const id=(idInput?.value||state.template).trim().replace(/[^\w-]+/g,"_")||state.template;
+  const name=(nameInput?.value||TEMPLATES[state.template]?.name||id).trim()||id;
+  if(idInput && !idInput.value) idInput.value=id;
+  if(nameInput && !nameInput.value) nameInput.value=name;
+
+  const json=buildFrozenTemplateJSON({ id, name });
+  const shapeCount=json._bakeMeta?.shapeCount||0;
+  const loader=window.PosterTemplateLoader;
+
+  if(loader?.rebuildFromJson){
+    loader.rebuildFromJson(json);
+  } else {
+    TEMPLATES[id]={
+      name:json.name,
+      _json:json,
+      stageBg:()=>json.canvas?.background||"#000",
+      deco:()=>json.deco?.html||"",
+      layers:Object.fromEntries((json.layers||[]).map(l=>{
+        const {id:lid, font, ...rest}=l;
+        return [lid, { ...rest, font:F[font]||font }];
+      })),
+    };
+  }
+
+  if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
+  if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
+
+  // Persist full template (including shapes) in this browser + download file
+  saveBakedTemplateJson(json);
+
+  // Clear extras only after shapes are confirmed present on the runtime template
+  const runtimeLayers=(()=>{ try{ return TEMPLATES[id]?.layers||{}; }catch(_){ return {}; }})();
+  const bakedShapes=(json.layers||[]).filter(l=>l && (l.type==="block"||l.shape||/^shape_/.test(l.id||"")));
+  const missingShapes=bakedShapes.filter(l=>!runtimeLayers[l.id]);
+  if(missingShapes.length){
+    // Fallback: keep missing shapes as extras so they still render
+    if(!state.extraLayers[id]) state.extraLayers[id]={};
+    missingShapes.forEach(l=>{
+      const {id:lid, font, ...rest}=l;
+      state.extraLayers[id][lid]={...rest, font:F[font]||font};
+    });
+  } else {
+    state.extraLayers[id]={};
+  }
+  // Also clear source extras when overwriting same template
+  if(state.template===id) state.extraLayers[state.template]=state.extraLayers[id];
+  state.template=id;
+  // Rebuild layout EXACTLY from frozen layer positions (text + images + shapes)
+  resetLayoutFromTemplate(id, { freeze:true, clearExtras:missingShapes.length===0 });
+
+  buildTplChips();
+  buildTextFields();
+  buildCaptionColorControls();
+  buildLogoControls();
+  updateBrandColorControls();
+  select(null);
+  render();
+  scheduleSave();
+
+  if(download) downloadJSON(json, `${id}.json`);
+  setBakeStatus(
+    download
+      ? `Downloaded “${name}” (${id}.json) and saved for Automate — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+"."
+      : `Saved “${name}” for Automate (${id}) — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+`. Open Automate → “${name} ✓”.`
+  );
+  return json;
+}
+
 document.getElementById("resetLayout").onclick=resetLayout;
 document.getElementById("exportLayout").onclick=exportLayoutJSON;
+// Save → freeze into Automate (no file download)
+document.getElementById("bakeTemplateBtn").onclick=()=>bakeEditorIntoTemplate(false);
+// Download template → freeze for Automate + download JSON file
+document.getElementById("exportFrozenTemplate").onclick=()=>bakeEditorIntoTemplate(true);
+(()=>{
+  const idInput=document.getElementById("bakeTemplateId");
+  const nameInput=document.getElementById("bakeTemplateName");
+  if(idInput && !idInput.value) idInput.value=state.template||"";
+  if(nameInput && !nameInput.value) nameInput.value=TEMPLATES[state.template]?.name||"";
+})();
 document.getElementById("lockFonts").onchange=e=>{
   state.lockTemplateFonts=e.target.checked;
   render();
   scheduleSave();
 };
 document.getElementById("clearSaved").onclick=()=>{
-  if(!confirm("Clear all saved images, text and layout from this browser and reset to the sample poster?")) return;
-  try{ localStorage.removeItem(LS_KEY); }catch(e){}
+  if(!confirm("Clear all saved images, text, layout, and saved templates (including shapes) from this browser and reset?")) return;
+  try{
+    localStorage.removeItem(LS_KEY);
+    localStorage.removeItem(LS_BAKED_KEY);
+  }catch(e){}
   location.reload();
 };
 document.getElementById("deselectBtn").onclick=()=>select(null);
@@ -3348,17 +4405,35 @@ document.getElementById("detectPal").onclick=()=>{
 ============================================================ */
 const main=document.getElementById("main"), wrap=document.getElementById("stageWrap"), zlabel=document.getElementById("zoomlabel");
 let _scale=1;
+let _zoomRaf=0;
+function isHeadless(){ return document.body.classList.contains("headless"); }
 function currentScale(){ return _scale; }
 function fitScale(){
-  const pad=60;
-  const sw=(main.clientWidth-pad)/SW, sh=(main.clientHeight-pad)/SH;
-  return Math.min(sw,sh);
+  // Measure the viewport panel only — never let #stageWrap size feed back into this.
+  const pad=isHeadless()?0:48;
+  const w=Math.max(0, main.clientWidth-pad);
+  const h=Math.max(0, main.clientHeight-pad);
+  if(w<8 || h<8) return 0.2;
+  const s=Math.min(w/SW, h/SH);
+  // Clamp so a bad measurement / export flash can't blow up the canvas
+  return Math.min(Math.max(s, 0.08), isHeadless()?1:1.25);
 }
 function applyZoom(){
-  _scale = state.zoom ?? fitScale();
+  const next=isHeadless() ? fitScale() : (state.zoom ?? fitScale());
+  // Ignore tiny float noise so resize/export loops don't "creep" the size
+  if(Math.abs(next-_scale)<0.0005 && wrap.style.width===(SW*_scale)+"px"){
+    if(zlabel) zlabel.textContent=Math.round(_scale*100)+"%";
+    return;
+  }
+  _scale=next;
   stage.style.transform=`scale(${_scale})`;
-  wrap.style.width=(SW*_scale)+"px"; wrap.style.height=(SH*_scale)+"px";
-  zlabel.textContent=Math.round(_scale*100)+"%";
+  wrap.style.width=(SW*_scale)+"px";
+  wrap.style.height=(SH*_scale)+"px";
+  if(zlabel) zlabel.textContent=Math.round(_scale*100)+"%";
+}
+function scheduleZoom(){
+  if(_zoomRaf) cancelAnimationFrame(_zoomRaf);
+  _zoomRaf=requestAnimationFrame(()=>{ _zoomRaf=0; applyZoom(); });
 }
 function syncFrameGuide(){
   const on=!!state.showFrameGuide;
@@ -3370,10 +4445,18 @@ function syncFrameGuide(){
   }
 }
 document.getElementById("zoomFit").onclick=()=>{ state.zoom=null; applyZoom(); };
-document.getElementById("zoomIn").onclick=()=>{ state.zoom=(state.zoom??fitScale())*1.15; applyZoom(); };
-document.getElementById("zoomOut").onclick=()=>{ state.zoom=(state.zoom??fitScale())/1.15; applyZoom(); };
+document.getElementById("zoomIn").onclick=()=>{
+  if(isHeadless()) return;
+  state.zoom=Math.min(1.25, (state.zoom??fitScale())*1.15);
+  applyZoom();
+};
+document.getElementById("zoomOut").onclick=()=>{
+  if(isHeadless()) return;
+  state.zoom=Math.max(0.08, (state.zoom??fitScale())/1.15);
+  applyZoom();
+};
 document.getElementById("frameGuideBtn").onclick=()=>{ state.showFrameGuide=!state.showFrameGuide; syncFrameGuide(); };
-window.addEventListener("resize",()=>{ if(state.zoom==null) applyZoom(); });
+window.addEventListener("resize",()=>{ if(state.zoom==null || isHeadless()) scheduleZoom(); });
 window.addEventListener("pointerup",()=>{
   if(drag){
     drag=null;
@@ -3390,29 +4473,136 @@ function loadImageFromUrl(key, url){
     const im=new Image();
     im.crossOrigin="anonymous";
     im.onload=()=>{
+      const prev=state.images[key];
+      if(prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl);
       state.images[key]={src:url, stored:url, natW:im.naturalWidth, natH:im.naturalHeight, el:im};
+      if(key==="player"){
+        applyBroadcastPhotoDefault(true);
+        applyHypeLowerThirdDefault();
+        if(state.template==="magazine" && !isFrozenTemplate(state.template)) applyMagazineLayoutDefault();
+      }
+      revealImageLayers(key);
+      fitImageLayer(key, im.naturalWidth/im.naturalHeight);
+      if(key==="player" && shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
+      else if(key==="player") applyTemplateHeaderColors();
+      else if(key==="logo" && state.autoPalette && shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
+      buildAssets(); buildLogoControls(); render(); scheduleSave();
       resolve();
     };
     im.onerror=()=>reject(new Error("Failed to load image: "+url));
     im.src=url;
   });
 }
+
+/* ---- Asset library (assets/library.json) ---- */
+let _assetLibrary=[];
+let _libSlotFilter="all";
+const assetLibraryEl=document.getElementById("assetLibrary");
+async function loadAssetLibrary(){
+  try{
+    const r=await fetch("./assets/library.json",{cache:"no-store"});
+    if(!r.ok) throw new Error(r.statusText);
+    const data=await r.json();
+    _assetLibrary=Array.isArray(data.assets)?data.assets:[];
+  }catch(e){
+    console.warn("Asset library:", e);
+    _assetLibrary=[];
+  }
+  buildAssetLibrary();
+}
+function buildAssetLibrary(){
+  if(!assetLibraryEl) return;
+  const items=_assetLibrary.filter(a=>{
+    if(_libSlotFilter==="all") return true;
+    if(_libSlotFilter==="shape") return a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-");
+    return a.slot===_libSlotFilter;
+  });
+  if(!items.length){
+    assetLibraryEl.innerHTML=`<div class="mini" style="grid-column:1/-1">No assets yet. Drop files into <code>assets/</code> and update <code>library.json</code>.</div>`;
+    return;
+  }
+  assetLibraryEl.innerHTML="";
+  items.forEach(a=>{
+    const btn=document.createElement("button");
+    btn.type="button";
+    btn.className="libcard";
+    const isShape=a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-");
+    btn.title=isShape ? `Add shape: ${a.name}` : `Use as ${a.slot}`;
+    btn.innerHTML=`<div class="thumb" style="background-image:url('${esc(a.src).replace(/'/g,"%27")}');background-color:#e8eaed"></div>
+      <div class="meta"><b>${esc(a.name||a.id)}</b><span>${esc(isShape?"shape":(a.slot||""))}</span></div>`;
+    btn.onclick=async ()=>{
+      btn.disabled=true;
+      try{
+        if(isShape){
+          await placeLibraryShapeAsset(a);
+          const status=document.getElementById("bgStatus");
+          if(status) status.textContent=`Added shape “${a.name}” on canvas`;
+        } else {
+          const slot=a.slot||"player";
+          if(!ASSETS.some(([k])=>k===slot)){
+            alert("Unknown slot: "+slot);
+            return;
+          }
+          await loadImageFromUrl(slot, a.src);
+          const status=document.getElementById("bgStatus");
+          if(status) status.textContent=`Loaded “${a.name}” → ${slot}`;
+        }
+      }catch(err){
+        alert("Could not load asset: "+(err.message||err));
+      }finally{
+        btn.disabled=false;
+      }
+    };
+    assetLibraryEl.appendChild(btn);
+  });
+}
+document.getElementById("libSlotFilter")?.querySelectorAll("[data-slot]").forEach(b=>{
+  b.onclick=()=>{
+    _libSlotFilter=b.dataset.slot;
+    document.getElementById("libSlotFilter").querySelectorAll("[data-slot]").forEach(x=>x.classList.toggle("on", x===b));
+    buildAssetLibrary();
+  };
+});
 async function captureStagePng(){
   const prevSel=state.selected; select(null);
-  const prevTransform=stage.style.transform;
   const guideWasOn=state.showFrameGuide;
   stage.classList.remove("frameGuide");
-  stage.style.transform="scale(1)";
-  wrap.style.width=SW+"px"; wrap.style.height=SH+"px";
+  // Park the stage off-screen at native size so export never expands #main / iframe layout
+  const prev={
+    transform:stage.style.transform,
+    w:wrap.style.width,
+    h:wrap.style.height,
+    pos:wrap.style.position,
+    left:wrap.style.left,
+    top:wrap.style.top,
+    z:wrap.style.zIndex,
+  };
+  wrap.style.position="fixed";
+  wrap.style.left="-12000px";
+  wrap.style.top="0";
+  wrap.style.zIndex="-1";
+  wrap.style.width=SW+"px";
+  wrap.style.height=SH+"px";
+  stage.style.transform="none";
   if(document.fonts?.ready) await document.fonts.ready;
   render();
   await new Promise(r=>setTimeout(r,120));
-  const canvas=await html2canvas(stage,{scale:2,backgroundColor:null,useCORS:true,logging:false,width:SW,height:SH});
-  if(guideWasOn) stage.classList.add("frameGuide");
-  stage.style.transform=prevTransform;
-  applyZoom();
-  syncFrameGuide();
-  select(prevSel);
+  let canvas;
+  try{
+    canvas=await html2canvas(stage,{scale:2,backgroundColor:null,useCORS:true,logging:false,width:SW,height:SH});
+  }finally{
+    wrap.style.position=prev.pos;
+    wrap.style.left=prev.left;
+    wrap.style.top=prev.top;
+    wrap.style.zIndex=prev.z;
+    wrap.style.width=prev.w;
+    wrap.style.height=prev.h;
+    stage.style.transform=prev.transform;
+    if(guideWasOn) stage.classList.add("frameGuide");
+    applyZoom();
+    syncFrameGuide();
+    select(prevSel);
+  }
   return canvas;
 }
 const exportBtn=document.getElementById("exportBtn");
@@ -3443,33 +4633,111 @@ window.__RENDER_API_V3__={
   async setPayload(payload){
     const styleId=payload.style||payload.template;
     await ensurePosterTemplatesLoaded();
-    if(styleId && TEMPLATES[styleId]) state.template=ensureEnabledTemplate(styleId);
+    const prevTpl=state.template;
+    if(styleId && (TEMPLATES[styleId] || ENABLED_TEMPLATES.includes(styleId))){
+      state.template=ensureEnabledTemplate(styleId);
+    }
     if(payload.auto_palette===false) state.autoPalette=false;
     else if(payload.auto_palette===true) state.autoPalette=true;
     if(payload.story) applyStory(payload.story);
+    if(payload.text && typeof payload.text==="object"){
+      Object.assign(state.text, payload.text);
+      buildTextFields();
+      buildCaptionColorControls();
+    }
     if(payload.colors) Object.assign(state.colors, PosterRenderEngine.enrichThemeColors({ ...state.colors, ...payload.colors }));
     else state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
-    if(payload.canvas_background) state.canvasOverride=payload.canvas_background;
-    const pUrl=payload.player_image||payload.playerImageUrl;
-    const lUrl=payload.logo_url||payload.logoUrl;
-    if(pUrl) await loadImageFromUrl("player", pUrl);
-    if(lUrl){
-      await loadImageFromUrl("logo", lUrl);
-      if(shouldUseLogoPalette(payload, state.template)) applyPaletteFromLogo();
-    } else if(shouldUseLogoPalette(payload, state.template) && state.images.logo) {
-      applyPaletteFromLogo();
+    if(payload.primary_color||payload.secondary_color){
+      if(payload.primary_color) state.colors.primary=payload.primary_color;
+      if(payload.secondary_color) state.colors.secondary=payload.secondary_color;
+      state.colors=PosterRenderEngine.enrichThemeColors(state.colors);
     }
+    if(payload.canvas_background) state.canvasOverride=payload.canvas_background;
+    const imageMap={
+      player: payload.player_image||payload.playerImageUrl||payload.player,
+      background: payload.background_image||payload.backgroundImageUrl||payload.background,
+      logo: payload.logo_url||payload.logoUrl||payload.logo,
+      conference: payload.conference_logo||payload.conferenceLogoUrl||payload.conference,
+      sponsor: payload.sponsor_logo||payload.sponsorLogoUrl||payload.sponsor,
+    };
+    for(const [key,url] of Object.entries(imageMap)){
+      if(url) await loadImageFromUrl(key, url);
+    }
+    if(imageMap.logo && shouldUseLogoPalette(payload, state.template)) applyPaletteFromLogo();
+    else if(shouldUseLogoPalette(payload, state.template) && state.images.logo) applyPaletteFromLogo();
     if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
-    ensureLayout();
+    // Always re-apply frozen layer positions when Automate selects a template
+    // or when payload asks to keep layout locked (default for Automate).
+    const wantFreeze=payload.freeze_layout!==false && (
+      payload.freeze_layout===true || isFrozenTemplate(state.template) || state.template!==prevTpl
+    );
+    if(wantFreeze || isFrozenTemplate(state.template) || state.template!==prevTpl){
+      resetLayoutFromTemplate(state.template, {
+        freeze: payload.freeze_layout===true || isFrozenTemplate(state.template),
+      });
+    } else {
+      ensureLayout();
+    }
     if(payload.layout_overrides) applyLayoutOverrides(state.template, payload.layout_overrides);
     if(payload.settings) applySettingsOverrides(state.template, payload.settings);
-    if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
-    if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
-    if(state.template==="vapor_motion") buildVaporGlassControls();
+    // Never run stock layout migrations on frozen / editor-saved templates
+    if(!isFrozenTemplate(state.template) && payload.freeze_layout!==true){
+      if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
+      if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
+      if(state.template==="vapor_motion") buildVaporGlassControls();
+      if(state.template==="magazine") applyMagazineLayoutDefault();
+    }
     applyTemplateHeaderColors();
+    if(cP) cP.value=state.colors.primary;
+    if(cS) cS.value=state.colors.secondary;
     render();
     if(document.fonts?.ready) await document.fonts.ready;
+    // Re-freeze after fonts/images settle so positions cannot drift
+    if(payload.freeze_layout===true || isFrozenTemplate(state.template)){
+      resetLayoutFromTemplate(state.template, { freeze:true });
+      render();
+    } else {
+      render();
+    }
+  },
+  freezeCurrentLayout(){
+    resetLayoutFromTemplate(state.template, { freeze:true });
     render();
+    return { id:state.template, frozen:true };
+  },
+  listTemplates(){
+    // Baked / last-saved templates first so Automate shows what you just froze
+    const last=getLastBakedTemplateId();
+    const ids=[...ENABLED_TEMPLATES];
+    if(last && TEMPLATES[last] && !ids.includes(last)) ids.unshift(last);
+    ids.sort((a,b)=>{
+      const af=isFrozenTemplate(a)?0:1;
+      const bf=isFrozenTemplate(b)?0:1;
+      if(af!==bf) return af-bf;
+      if(a===last) return -1;
+      if(b===last) return 1;
+      return 0;
+    });
+    return ids.map(id=>({
+      id,
+      name:TEMPLATES[id]?.name||id,
+      frozen:isFrozenTemplate(id),
+      fields:templateInputFields(id),
+      images:templateImageSlots(id),
+      automation:TEMPLATES[id]?._json?.automation||null,
+    }));
+  },
+  getLastBakedTemplateId,
+  getTemplateFields(id){
+    const tid=ensureEnabledTemplate(id||state.template);
+    return {
+      id:tid,
+      name:TEMPLATES[tid]?.name||tid,
+      fields:templateInputFields(tid),
+      images:templateImageSlots(tid),
+      text:{...state.text},
+      colors:{...state.colors},
+    };
   },
   async exportPng(){
     const canvas=await captureStagePng();
@@ -3487,14 +4755,74 @@ window.__RENDER_API_V3__={
   loadImageFromUrl,
 };
 
+function templateImageSlots(templateId){
+  const t=TEMPLATES[templateId];
+  if(!t) return [];
+  let layers;
+  try{ layers=t.layers||{}; }catch(_){ layers={}; }
+  const slots=[];
+  const seen=new Set();
+  for(const def of Object.values(layers)){
+    if(!def || def.type!=="image"||!def.bind||seen.has(def.bind)) continue;
+    seen.add(def.bind);
+    slots.push({ key:def.bind, label:labelFor(def.bind) });
+  }
+  return slots;
+}
+function templateInputFields(templateId){
+  const t=TEMPLATES[templateId];
+  if(!t) return [];
+  let layers;
+  try{ layers=t.layers||{}; }catch(_){ layers={}; }
+  const binds=new Set();
+  for(const def of Object.values(layers)){
+    if(!def || def.type!=="text") continue;
+    if(def.kind==="stat"){
+      binds.add(def.bind+"num");
+      binds.add(def.bind+"label");
+    } else if(def.bind==="footer"){
+      binds.add("teamName"); binds.add("hashtag"); binds.add("sport");
+    } else if(def.bind==="playerMeta"){
+      binds.add("position"); binds.add("playerClass");
+    } else if(def.bind){
+      binds.add(def.bind);
+    }
+  }
+  const auto=t._json?.automation?.swapFields||[];
+  auto.forEach(k=>{
+    if(k==="playerMeta"){ binds.add("position"); binds.add("playerClass"); }
+    else binds.add(k);
+  });
+  const labelMap=Object.fromEntries(TEXT_FIELDS);
+  labelMap.teamName=labelMap.teamName||"Team / match line";
+  labelMap.hashtag=labelMap.hashtag||"Date / score line";
+  labelMap.heroNumber=labelMap.heroNumber||"Hero / score number";
+  labelMap.heroDesc=labelMap.heroDesc||"Hero description";
+  return [...binds].filter(Boolean).map(key=>({
+    key,
+    label:labelMap[key]||key,
+    placeholder:(()=>{
+      for(const def of Object.values(layers)){
+        if(def && def.bind===key && def.placeholder) return def.placeholder;
+      }
+      return "";
+    })(),
+  }));
+}
+
 /* ============================================================
    INIT
 ============================================================ */
 async function init(){
-  if(new URLSearchParams(location.search).get("headless")==="1") document.body.classList.add("headless");
-  loadState();                       // restore this browser's saved work, if any
-  state.template=ensureEnabledTemplate(state.template);
   const qs=new URLSearchParams(location.search);
+  const headless=qs.get("headless")==="1";
+  if(headless) document.body.classList.add("headless");
+  // Never persist / restore canvas zoom — always start from fit (stops growth across navigations)
+  state.zoom=null;
+  // Headless / automate preview should start clean (no editor localStorage)
+  if(!headless) loadState();
+  state.zoom=null;
+  state.template=ensureEnabledTemplate(state.template);
   const qp=qs.get("tpl");
   if(qp && ENABLED_TEMPLATES.includes(qp)) state.template=ensureEnabledTemplate(qp);
   const storyParam=+(qs.get("story")||0)||0;
@@ -3509,17 +4837,25 @@ async function init(){
   const lf=document.getElementById("lockFonts"); if(lf) lf.checked=state.lockTemplateFonts;
   if(window.PosterTemplateLoader){
     await ensurePosterTemplatesLoaded();
+  } else {
+    try { restoreBakedTemplates(); } catch (_) {}
   }
   ensureLayout();
-  if(state.template==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
-  if(state.template==="neo_brutalist") applyNeoBrutalistLayoutDefault();
-  if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
-  if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
-  if(state.template==="magazine") applyMagazineLayoutDefault();
+  if(isFrozenTemplate(state.template)){
+    resetLayoutFromTemplate(state.template, { freeze:true });
+  } else {
+    if(state.template==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
+    if(state.template==="neo_brutalist") applyNeoBrutalistLayoutDefault();
+    if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
+    if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
+    if(state.template==="magazine") applyMagazineLayoutDefault();
+  }
   if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
   else applyTemplateHeaderColors();
   buildTplChips(); buildSpotlightVariantControls(); buildVaporGlassControls(); buildAssets(); buildLogoControls(); buildTextFields(); buildCaptionColorControls(); buildStorySelect();
   updateBrandColorControls();
+  buildShapePalette();
+  loadAssetLibrary();
   render(); applyZoom(); syncFrameGuide(); updateTestBanner();
   // re-apply zoom after fonts load (metrics shift)
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ render(); applyZoom(); updateTestBanner(); });

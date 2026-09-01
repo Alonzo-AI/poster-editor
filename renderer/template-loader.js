@@ -5,7 +5,7 @@
 (function (global) {
   "use strict";
 
-  const JSON_TEMPLATE_IDS = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader"];
+  const JSON_TEMPLATE_IDS = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11"];
   const FONT_KEYS = {
     disp: "'Anton',sans-serif",
     cond: "'Oswald',sans-serif",
@@ -335,6 +335,13 @@
         Object.assign(global.state.layouts[json.id], JSON.parse(JSON.stringify(authLayers)));
       }
     }
+    if (json.authoring?.extraLayers && global.state?.extraLayers) {
+      if (!global.state.extraLayers[json.id]) global.state.extraLayers[json.id] = {};
+      Object.assign(
+        global.state.extraLayers[json.id],
+        JSON.parse(JSON.stringify(json.authoring.extraLayers))
+      );
+    }
   }
 
   async function loadTemplate(id, baseUrl, authoringBaseUrl) {
@@ -386,5 +393,13 @@
     salukisCleanStatSlots,
     salukisDarkPanelSlots,
     vaporMotionCardSlots,
+    toRuntimeTemplate,
+    rebuildFromJson(json) {
+      if (!json?.id || !global.TEMPLATES) return null;
+      if (!JSON_TEMPLATE_IDS.includes(json.id)) JSON_TEMPLATE_IDS.push(json.id);
+      global.TEMPLATES[json.id] = toRuntimeTemplate(json);
+      applyTemplateSettings(json);
+      return json.id;
+    },
   };
 })(typeof window !== "undefined" ? window : globalThis);
