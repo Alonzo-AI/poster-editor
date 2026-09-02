@@ -1,0 +1,9 @@
+{
+  "templates": [
+    "magazine.json",
+    "richmond.json",
+    "mag_updated.json",
+    "coastal carolina.json",
+    "cc11.json"
+  ]
+}

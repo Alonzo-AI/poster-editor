@@ -356,13 +356,10 @@ document.getElementById("exportBtn").onclick=exportPng;
     try{ frame.contentWindow?.dispatchEvent(new Event("resize")); }catch(_){}
     autoState.templates=a.listTemplates()||[];
     if(!autoState.templates.length) throw new Error("No templates available");
-    const lastId=(typeof a.getLastBakedTemplateId==="function" && a.getLastBakedTemplateId()) || null;
     const preferred=
-      (lastId && autoState.templates.find(t=>t.id===lastId)) ||
       autoState.templates.find(t=>t.frozen) ||
-      autoState.templates.find(t=>t.id==="cc11") ||
-      autoState.templates.find(t=>t.id==="sideline_text") ||
-      autoState.templates.find(t=>t.id==="sideline_cutout") ||
+      autoState.templates.find(t=>t.id==="richmond") ||
+      autoState.templates.find(t=>t.id==="magazine") ||
       autoState.templates[0];
     loadingEl.classList.add("hide");
     autoState.ready=true;

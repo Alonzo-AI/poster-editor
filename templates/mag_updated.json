@@ -1,6 +1,6 @@
 {
-  "id": "magazine",
-  "name": "Magazine",
+  "id": "mag_updated",
+  "name": "mag_updated",
   "version": 39,
   "canvas": {
     "width": 1080,
@@ -273,7 +273,7 @@
   },
   "_bakeMeta": {
     "bakedAt": "2026-09-02T11:40:58.764Z",
-    "sourceTemplate": "magazine",
+    "sourceTemplate": "mag_updated",
     "layerCount": 12,
     "shapeCount": 1,
     "imageSlots": [

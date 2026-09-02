@@ -57,6 +57,11 @@
   .btn.sec{background:#262b35;color:#cfd3da;}
   .btn.sec:hover{background:#303644;}
   .mini{font-size:10px;color:var(--dim);margin-top:4px;line-height:1.4;}
+  .text-field-hdr{display:flex;align-items:center;gap:4px;margin:8px 0 3px;}
+  .text-field-hdr .fld-label{flex:1;margin:0;}
+  .fld-rename{background:transparent;border:1px solid transparent;color:var(--dim);cursor:pointer;font-size:10px;padding:2px 5px;border-radius:4px;line-height:1;font-family:inherit;}
+  .fld-rename:hover{color:var(--accent);border-color:var(--line);background:#16233f;}
+  .fld-rename-input{width:100%;background:#0d1014;border:1px solid var(--accent);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:11px;font-family:inherit;margin:8px 0 3px;}
   .assetrow{display:flex;align-items:center;gap:8px;margin:6px 0;}
   .assetrow .thumb{width:42px;height:42px;border-radius:6px;border:1px solid var(--line);background:#0d1014 center/contain no-repeat;flex:none;}
   .assetrow .meta{flex:1;min-width:0;}
@@ -185,9 +190,9 @@
       <a class="automate" href="./automate.html">Automate</a>
     </div>
     <div id="labBanner">
-      <b>Independent from LLM / API pipeline</b>
-      Uses <code>index.html</code> only. Saves to <code>posterEditor.v3</code>.
-      Use <a href="./automate.html" style="color:#9ec1ff">Automate</a> to fill a fixed template with new values.
+      <b>JSON templates only</b>
+      Templates load from <code>templates/manifest.json</code> + listed <code>*.json</code> files only.
+      Editor text/layout edits save in this browser; use <b>Download template</b> to update repo JSON.
     </div>
     <div id="templateLoadBanner" style="display:none;margin:0 0 12px;padding:10px 12px;border-radius:8px;border:1px solid #7a4a20;background:#2a1a0f;color:#ffd9a8;font-size:11px;line-height:1.45;"></div>
 
@@ -294,7 +299,7 @@
     <details class="group" open>
       <summary>Text content</summary>
       <div class="body" id="textFields"></div>
-      <div class="mini" style="padding:0 12px 10px;margin-top:-4px">Ordinals like <b>1st</b>, <b>2nd</b>, <b>3rd</b> render as superscript. Or wrap text in <code>&lt;sup&gt;…&lt;/sup&gt;</code>.</div>
+      <div class="mini" style="padding:0 12px 10px;margin-top:-4px">Ordinals like <b>1st</b>, <b>2nd</b>, <b>3rd</b> render as superscript. Or wrap text in <code>&lt;sup&gt;…&lt;/sup&gt;</code>. Click <b>✎</b> next to a field name to rename it (saved in template JSON + Automate).</div>
     </details>
 
     <details class="group" open>
@@ -309,13 +314,13 @@
           <button class="btn" id="bakeTemplateBtn" style="flex:1">Save</button>
           <button class="btn sec" id="exportFrozenTemplate" style="flex:1">Download template</button>
         </div>
-        <div class="mini" style="margin-top:6px"><b>Save</b> → freezes layout <b>and permanently stores player + background</b> for this template (survives restart). Automate can still override images via API. <b>Download template</b> → same + downloads <code>{id}.json</code> (includes embedded images).</div>
+        <div class="mini" style="margin-top:6px"><b>Save</b> → updates this session + in-memory template. <b>Download template</b> → get <code>{id}.json</code> to place in <code>templates/</code> and list in <code>manifest.json</code>.</div>
         <label class="fld" style="margin-top:10px">Save as template id</label>
         <input type="text" id="bakeTemplateId" placeholder="e.g. cc11">
         <label class="fld">Display name</label>
         <input type="text" id="bakeTemplateName" placeholder="e.g. Coastal Sideline">
         <button class="btn sec" id="exportLayout" style="margin-top:8px">⬇ Download layout overrides only</button>
-        <div class="mini" style="margin-top:6px">After Save, open Automate and pick this template (marked ✓). Put a downloaded JSON in <code>templates/</code> only if you need it in git/deploy.</div>
+        <div class="mini" style="margin-top:6px">After download, replace the file under <code>templates/</code> and add its filename to <code>templates/manifest.json</code>, then refresh. Automate loads the same JSON list.</div>
         <button class="btn sec" id="resetLayout" style="margin-top:10px">Reset positions for this template</button>
         <div class="mini">Resets all layer positions, sizes & fonts to the template defaults. Your text and images are kept.</div>
         <label class="fld" style="margin-top:10px;display:flex;align-items:center;gap:7px;cursor:pointer">
@@ -410,7 +415,7 @@ const DEFAULT_TEXT = {
 };
 
 const state = {
-  template: "magazine",
+  template: null,
   colors: { primary:"#9D2235", secondary:"#FFFFFF" },
   text: { ...DEFAULT_TEXT },
   templateImages: {}, // templateId -> slotKey -> {src, natW, natH, stored?, el?}
@@ -452,6 +457,7 @@ const state = {
   magazineHeaderColors: null,
   salukisDarkHeaderSamples: null,
   salukisDarkHeaderColors: null,
+  fieldLabels: {}, // templateId -> bindKey -> display label
 };
 
 function imagesOf(templateId){
@@ -560,12 +566,15 @@ function blockFillRoleSelectValue(g, def){
   return "__custom__";
 }
 
-// In headless usage, __RENDER_API_V3__.setPayload can run before init() finishes
-// PosterTemplateLoader.loadAll(). That would make us render with the inline
-// (older) template definitions. This promise ensures JSON templates are
-// fully loaded and patched into TEMPLATES before we render anything.
+// Templates load only from templates/manifest.json + JSON files (no inline / localStorage templates).
 let _posterTemplatesLoadPromise = null;
 let _posterTemplatesLoadError = null;
+/** Populated after JSON load — only templates listed in templates/manifest.json. */
+let ENABLED_TEMPLATES = [];
+function syncEnabledTemplateList(ids){
+  ENABLED_TEMPLATES.length=0;
+  for(const id of ids||[]) ENABLED_TEMPLATES.push(id);
+}
 function ensurePosterTemplatesLoaded() {
   if (_posterTemplatesLoadPromise) return _posterTemplatesLoadPromise;
   if (!window.PosterTemplateLoader) {
@@ -576,17 +585,15 @@ function ensurePosterTemplatesLoaded() {
     let loaded = [];
     try {
       loaded = await window.PosterTemplateLoader.loadAll();
+      syncEnabledTemplateList(loaded);
     } catch (e) {
       _posterTemplatesLoadError = e;
       console.warn("Template JSON load:", e);
+      syncEnabledTemplateList([]);
     }
-    // Re-apply editor-saved templates (includes shapes) over disk JSON
-    try { restoreBakedTemplates(); } catch (e) {
-      console.warn("Baked template restore:", e);
-    }
-    // Seed default images from any loaded template JSON (disk or baked)
+    // Seed default images embedded in template JSON
     try {
-      for(const id of Object.keys(TEMPLATES||{})){
+      for(const id of loaded){
         const defs=getTemplateDefaultImages(id);
         if(defs) seedTemplateImagesFromDefaults(id, defs, { onlyMissing:true });
       }
@@ -602,18 +609,18 @@ function ensurePosterTemplatesLoaded() {
 function updateTemplateLoadBanner(loadedIds){
   const el=document.getElementById("templateLoadBanner");
   if(!el) return;
-  const missing=ENABLED_TEMPLATES.filter(id=>!TEMPLATES[id]);
-  if(!missing.length && !_posterTemplatesLoadError){
-    el.style.display="none";
-    el.textContent="";
+  if(_posterTemplatesLoadError){
+    el.style.display="block";
+    el.textContent="Could not load templates/manifest.json — serve via a local server (not file://).";
     return;
   }
-  el.style.display="block";
-  const parts=[];
-  if(_posterTemplatesLoadError) parts.push("Some templates failed to load from disk.");
-  if(missing.length) parts.push(`Missing: ${missing.join(", ")}. Serve via a local server (not file://) or re-save the template.`);
-  if(loadedIds?.length) parts.push(`Loaded ${loadedIds.length} JSON template(s).`);
-  el.textContent=parts.join(" ");
+  if(!loadedIds?.length){
+    el.style.display="block";
+    el.textContent="No templates loaded. Add JSON files to templates/ and list them in templates/manifest.json.";
+    return;
+  }
+  el.style.display="none";
+  el.textContent="";
 }
 
 /* ============================================================
@@ -733,501 +740,9 @@ function txt(o){ return Object.assign({type:"text",weight:700,align:"left",color
 function glass(o){ return Object.assign({type:"glass",z:10,radius:24},o); }
 function block(o){ return Object.assign({type:"block",fill:"white",z:11,radius:3},o); }
 
-const TEMPLATES = {
+/** Runtime templates — loaded only from templates/*.json (see templates/manifest.json). */
+const TEMPLATES = {};
 
-/* ---------------- BROADCAST ---------------- */
-broadcast:{ name:"Broadcast",
-  stageBg:()=>`linear-gradient(135deg, ${shade(state.colors.primary,-55)} 0%, #0a0a0c 70%)`,
-  deco:()=>`
-    <div style="left:-200px;top:0;width:900px;height:1700px;transform:rotate(18deg);
-      background:linear-gradient(90deg,transparent,${rgba(state.colors.secondary,.16)},transparent);"></div>
-    <div style="left:-250px;top:-260px;width:300px;height:1900px;z-index:4;transform:rotate(-35deg);
-      background:${rgba(state.colors.secondary,.18)};filter:blur(18px);"></div>
-    <div style="left:0;top:0;width:54%;height:100%;z-index:7;
-      background:linear-gradient(90deg, ${rgba('#000000',.78)} 0%, ${rgba('#000000',.50)} 68%, transparent 100%);"></div>
-    <div style="left:60px;top:615px;width:430px;height:3px;background:${state.colors.secondary};opacity:.85"></div>`,
-  layers:{
-    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    logo:    img({bind:"logo",x:60,y:55,w:120,h:120,z:20}),
-    player:  img({bind:"player",x:0,y:0,w:1080,h:1350,fit:"cover",z:2}),
-    eyebrow: txt({bind:"eyebrow",x:60,y:252,w:440,size:28,color:"secondary",font:F.cond,ls:5,weight:600}),
-    hero:    txt({bind:"heroNumber",x:54,y:318,w:470,size:268,color:"white",font:F.disp,lh:.92}),
-    heroDesc:txt({bind:"heroDesc",x:60,y:636,w:440,size:33,color:"secondary",font:F.cond,weight:600,lh:1.05}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:60,y:782,w:440,size:50,color:"white",font:F.cond}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:60,y:892,w:440,size:50,color:"white",font:F.cond}),
-    callout: txt({bind:"callout",x:60,y:1024,w:500,size:25,color:"black",bg:"secondary",pad:"14px 22px",radius:40,font:F.cond,weight:700,ls:1,align:"center"}),
-    playerName:txt({bind:"playerName",x:420,y:1146,w:600,size:44,color:"white",font:F.disp,align:"right"}),
-    playerMeta:txt({bind:"playerMeta",x:420,y:1202,w:600,size:24,color:"secondary",font:F.cond,weight:600,ls:2,align:"right"}),
-    footer:  txt({bind:"footer",x:60,y:1300,w:960,size:20,color:"muted",font:F.sans,weight:600,ls:2}),
-  }},
-
-/* ---------------- MAGAZINE ---------------- */
-magazine:{ name:"Magazine",
-  stageBg:()=>`#0b0b0d`,
-  deco:()=>`
-    <div style="left:0;bottom:0;width:100%;height:66%;z-index:10;
-      background:linear-gradient(to top, #000 0%, rgba(0,0,0,.88) 38%, transparent 100%);"></div>
-    <div style="inset:0;width:100%;height:100%;z-index:9;
-      background:radial-gradient(ellipse at 58% 36%, transparent 0 46%, ${rgba('#000000',.18)} 78%, ${rgba('#000000',.42)} 100%);"></div>`,
-  layers:{
-    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    player:  img({bind:"player",x:0,y:0,w:1080,h:1350,fit:"cover",zoom:1,cropX:0.5,cropY:0.36,z:2}),
-    logoPlate:block({x:770,y:26,w:250,h:96,fill:"#f8f6f1",radius:8,z:20}),
-    logo:    img({bind:"logo",x:790,y:40,w:210,h:68,fit:"contain",z:21}),
-    playerName:txt({bind:"playerName",x:80,y:68,w:460,size:72,color:"onPhoto",font:F.disp,ls:1,underline:true,underlineW:5,underlineOffset:8,z:22}),
-    playerMeta:txt({bind:"playerMeta",x:80,y:152,w:760,size:30,color:"secondary",font:F.cond,weight:600,ls:2,z:22}),
-    eyebrow: txt({bind:"eyebrow",x:80,y:196,w:760,size:34,color:"secondary",font:F.cond,ls:6,weight:600,z:22}),
-    hero:    txt({bind:"heroNumber",x:70,y:702,w:760,size:300,color:"onPhoto",font:F.disp,lh:.95,z:20}),
-    heroDesc:txt({bind:"heroDesc",x:80,y:1028,w:860,h:80,size:37,color:"onPhoto",font:F.cond,weight:600,ls:2,lh:1.05,z:20}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:80,y:1130,w:440,size:40,color:"onPhoto",font:F.cond,z:20}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:540,y:1130,w:440,size:40,color:"onPhoto",font:F.cond,z:20}),
-    callout: txt({bind:"callout",x:0,y:1288,w:1080,size:30,color:"onCallout",bg:"primary",pad:"16px 0",font:F.cond,weight:700,ls:3,align:"center",z:20}),
-  }},
-
-/* ---------------- HYPE ---------------- */
-hype:{ name:"Hype",
-  stageBg:()=>`radial-gradient(circle at 50% 35%, ${shade(state.colors.primary,-40)} 0%, #050507 65%)`,
-  deco:()=>`
-    <div style="left:50%;top:-60px;width:520px;height:900px;transform:translateX(-50%);
-      background:radial-gradient(ellipse at top, ${rgba(state.colors.secondary,.30)}, transparent 70%);"></div>
-    <div style="left:0;top:0;width:100%;height:100%;z-index:6;
-      background:linear-gradient(90deg, ${rgba('#000000',.42)} 0%, transparent 28%, transparent 72%, ${rgba('#000000',.42)} 100%);"></div>
-    <div style="left:0;bottom:96px;width:100%;height:184px;z-index:10;
-      background:${rgba('#000000',.55)};backdrop-filter:blur(2px);border-top:2px solid ${rgba(state.colors.secondary,.6)};"></div>
-    <div style="left:540px;top:1130px;width:2px;height:74px;z-index:22;background:${rgba(state.colors.secondary,.7)};"></div>`,
-  layers:{
-    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    logo:    img({bind:"logo",x:55,y:55,w:100,h:100,z:20}),
-    player:  img({bind:"player",x:130,y:230,w:760,h:1000,fit:"contain",z:5}),
-    eyebrow: txt({bind:"eyebrow",x:0,y:80,w:1080,size:30,color:"secondary",font:F.cond,ls:8,weight:600,align:"center",z:20}),
-    hero:    txt({bind:"heroNumber",x:70,y:560,w:520,size:300,color:"white",font:F.disp,opacity:.85,z:6}),
-    heroDesc:txt({bind:"heroDesc",x:80,y:840,w:560,size:38,color:"white",font:F.cond,weight:700,lh:1,z:7}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:70,y:1134,w:430,size:42,color:"white",font:F.cond,align:"center",z:21}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:580,y:1134,w:430,size:42,color:"white",font:F.cond,align:"center",z:21}),
-    playerName:txt({bind:"playerName",x:0,y:1000,w:1080,size:40,color:"white",font:F.disp,align:"center",z:21}),
-    playerMeta:txt({bind:"playerMeta",x:0,y:1050,w:1080,size:22,color:"secondary",font:F.cond,weight:600,ls:2,align:"center",z:21}),
-    callout: txt({bind:"callout",x:0,y:1234,w:1080,size:22,color:"secondary",font:F.cond,ls:3,align:"center",z:21,opacity:.85}),
-    footer:  txt({bind:"footer",x:0,y:1312,w:1080,size:18,color:"muted",font:F.sans,ls:2,align:"center",z:21}),
-  }},
-
-/* ---------------- RETRO (disabled for focus sprint) ---------------- */
-retro:{ name:"Retro Card",
-  stageBg:()=>`#f4ecd8`,
-  deco:()=>`
-    <div style="left:0;top:0;width:100%;height:56%;
-      background:radial-gradient(circle at 50% 35%, ${shade(state.colors.primary,25)}, ${state.colors.primary});"></div>
-    <div style="left:24px;top:24px;right:24px;bottom:24px;width:auto;height:auto;border:14px solid ${state.colors.secondary};border-radius:26px;z-index:30;box-shadow:inset 0 0 0 3px #0003;"></div>
-    <div style="left:6%;top:46%;width:88%;height:78px;background:${shade(state.colors.primary,-15)};border-top:3px solid ${state.colors.secondary};border-bottom:3px solid ${state.colors.secondary};transform:rotate(-2deg);z-index:15;box-shadow:0 6px 16px #0005;"></div>`,
-  layers:{
-    logo:    img({bind:"logo",x:70,y:75,w:120,h:120,z:32}),
-    teamName:txt({bind:"teamName",x:90,y:90,w:900,size:46,color:"secondary",font:F.bebas,ls:5,align:"center",weight:400}),
-    player:  img({bind:"player",x:300,y:150,w:480,h:470,fit:"contain"}),
-    playerName:txt({bind:"playerName",x:90,y:625,w:900,size:46,color:"white",font:F.bebas,align:"center",ls:2,z:16,transform:"rotate(-2deg)"}),
-    playerMeta:txt({bind:"playerMeta",x:90,y:706,w:900,size:24,color:"secondary",font:F.bebas,ls:2,align:"center",z:14}),
-    eyebrow: txt({bind:"eyebrow",x:90,y:772,w:900,size:26,color:"primary",font:F.serif,italic:true,align:"center"}),
-    hero:    txt({bind:"heroNumber",x:90,y:808,w:900,size:150,color:"primary",font:F.serif,weight:900,align:"center",lh:.9}),
-    heroDesc:txt({bind:"heroDesc",x:140,y:968,w:800,size:30,color:"#5a3a1a",font:F.serif,weight:700,align:"center",lh:1.1}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:150,y:1068,w:360,size:38,color:"#3a2a14",font:F.serif,align:"center"}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:570,y:1068,w:360,size:38,color:"#3a2a14",font:F.serif,align:"center"}),
-    callout: txt({bind:"callout",x:720,y:1150,w:220,size:17,color:"white",bg:"primary",pad:"22px 10px",radius:200,font:F.bebas,ls:1,align:"center",transform:"rotate(13deg)",z:25}),
-    footer:  txt({bind:"footer",x:90,y:1262,w:900,size:18,color:"primary",font:F.serif,align:"center"}),
-  }},
-
-/* ---------------- COMIC (disabled for focus sprint) ---------------- */
-comic:{ name:"Comic",
-  stageBg:()=>`${state.colors.primary} radial-gradient(${rgba('#ffffff',.18)} 2px, transparent 2.5px) 0 0/16px 16px`,
-  deco:()=>`
-    <div style="left:0;top:0;width:100%;height:100%;
-      background:repeating-linear-gradient(58deg, ${rgba(state.colors.secondary,.10)} 0 6px, transparent 6px 38px);"></div>
-    <div style="left:24px;top:24px;right:24px;bottom:24px;width:auto;height:auto;border:12px solid ${state.colors.secondary};box-shadow:inset 0 0 0 5px #000,0 0 0 5px #000;z-index:30;"></div>
-    <div class="starburst" style="left:560px;top:300px;width:460px;height:460px;z-index:4;
-      background:${state.colors.secondary};
-      clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 91%,50% 70%,21% 91%,32% 57%,2% 35%,39% 35%);
-      filter:drop-shadow(0 0 0 #000);"></div>`,
-  layers:{
-    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    player:  img({bind:"player",x:60,y:330,w:620,h:980,fit:"contain",z:6}),
-    logo:    img({bind:"logo",x:890,y:80,w:120,h:120,z:31}),
-    eyebrow: txt({bind:"eyebrow",x:80,y:80,w:560,size:34,color:"black",bg:"secondary",pad:"12px 18px",font:F.comic,ls:1,z:20}),
-    hero:    txt({bind:"heroNumber",x:560,y:430,w:460,size:230,color:"black",font:F.comic,align:"center",z:21,lh:.9}),
-    heroDesc:txt({bind:"heroDesc",x:600,y:790,w:420,size:30,color:"black",bg:"white",pad:"14px 16px",font:F.comic,align:"center",radius:14,z:21,lh:1}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:600,y:930,w:420,size:36,color:"white",bg:"primary",pad:"10px 16px",font:F.comic,z:21}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:600,y:1010,w:420,size:36,color:"black",bg:"secondary",pad:"10px 16px",font:F.comic,z:21}),
-    callout: txt({bind:"callout",x:90,y:1190,w:900,size:42,color:"black",bg:"secondary",pad:"16px 0",font:F.comic,align:"center",ls:2,z:22,transform:"rotate(-4deg)"}),
-    playerName:txt({bind:"playerName",x:80,y:1120,w:560,size:40,color:"white",font:F.comic,z:22}),
-    playerMeta:txt({bind:"playerMeta",x:84,y:1088,w:520,size:22,color:"secondary",font:F.cond,weight:600,ls:2,z:22}),
-  }},
-
-/* ---------------- CHALKBOARD (disabled for focus sprint) ---------------- */
-chalkboard:{ name:"Chalkboard",
-  stageBg:()=>`linear-gradient(${rgba(state.colors.primary,.35)},${rgba(state.colors.primary,.35)}), #15321f`,
-  deco:()=>{
-    const s=state.colors.secondary;
-    return `
-    <svg viewBox="0 0 1080 1350" style="left:0;top:0;width:100%;height:100%;opacity:.5">
-      <g stroke="#fff" stroke-width="3" fill="none" opacity=".55" stroke-linecap="round">
-        <path d="M120 1000 q140 -120 260 -30" stroke-dasharray="2 0"/>
-        <path d="M380 970 l30 -28 m0 28 l-30 -28"/>
-        <circle cx="180" cy="1080" r="22"/><circle cx="250" cy="1090" r="22"/>
-        <path d="M520 1120 l60 -40 m0 40 l-60 -40"/>
-        <path d="M820 240 q60 80 140 60" stroke="${s}"/>
-      </g>
-    </svg>
-    <div style="left:60px;top:430px;width:430px;height:4px;background:${s};opacity:.8"></div>`;
-  },
-  layers:{
-    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    logo:    img({bind:"logo",x:900,y:60,w:120,h:120,z:20}),
-    player:  img({bind:"player",x:560,y:300,w:520,h:1020,fit:"contain",z:5}),
-    eyebrow: txt({bind:"eyebrow",x:60,y:130,w:500,size:34,color:"secondary",font:F.chalk,ls:1,weight:400}),
-    hero:    txt({bind:"heroNumber",x:55,y:180,w:480,size:240,color:"white",font:F.chalk,lh:.9,weight:400}),
-    heroDesc:txt({bind:"heroDesc",x:60,y:450,w:470,size:34,color:"white",font:F.chalk,weight:400,lh:1.1}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:60,y:980,w:440,size:42,color:"white",font:F.chalk,weight:400}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:60,y:1080,w:440,size:42,color:"white",font:F.chalk,weight:400}),
-    callout: txt({bind:"callout",x:560,y:160,w:430,size:30,color:"secondary",font:F.chalk,align:"center",weight:400,pad:"24px 18px",radius:200,z:22,outline:true}),
-    playerName:txt({bind:"playerName",x:560,y:1190,w:480,size:48,color:"white",font:F.chalk,align:"center",weight:400,z:21}),
-    playerMeta:txt({bind:"playerMeta",x:560,y:1268,w:480,size:26,color:"secondary",font:F.chalk,align:"center",weight:400,z:21}),
-    footer:  txt({bind:"footer",x:60,y:1310,w:520,size:22,color:"white",font:F.chalk,weight:400}),
-  }},
-
-/* ---------------- SPOTLIGHT ---------------- */
-spotlight:{ name:"Spotlight",
-  stageBg:()=>`#000`,
-  deco:()=>spotlightDeco(),
-  layers:{
-    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    player:  img({bind:"player",x:195,y:35,w:690,h:1000,fit:"cover",z:5,zoom:1,cropX:0.5,cropY:0.40}),
-    logo:    img({bind:"logo",x:56,y:52,w:96,h:96,z:21}),
-    eyebrow: txt({bind:"eyebrow",x:-68,y:395,w:340,size:25,color:"secondary",font:F.cond,ls:8,weight:600,transform:"rotate(-90deg)",align:"center",z:22}),
-    hero:    txt({bind:"heroNumber",x:58,y:500,w:250,size:168,color:"white",font:F.disp,lh:.85,z:22}),
-    heroDesc:txt({bind:"heroDesc",x:64,y:690,w:250,size:22,color:"secondary",font:F.cond,weight:600,lh:1.05,z:22}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:788,y:505,w:250,size:40,color:"white",font:F.cond,align:"right",z:22}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:788,y:655,w:250,size:40,color:"white",font:F.cond,align:"right",z:22}),
-    playerName:txt({bind:"playerName",x:0,y:1105,w:1080,size:42,color:"white",font:F.disp,align:"center",z:22}),
-    playerMeta:txt({bind:"playerMeta",x:0,y:1160,w:1080,size:21,color:"secondary",font:F.cond,weight:600,ls:3,align:"center",z:22}),
-    callout: txt({bind:"callout",x:0,y:1240,w:1080,size:23,color:"black",bg:"secondary",pad:"14px 0",font:F.cond,ls:3,align:"center",z:23}),
-    footer:  txt({bind:"footer",x:0,y:1308,w:1080,size:17,color:"secondary",font:F.sans,ls:2,align:"center",opacity:.72,z:22}),
-  }},
-
-/* ---------------- COLLAGE (disabled for focus sprint) ---------------- */
-collage:{ name:"Collage",
-  stageBg:()=>`linear-gradient(${rgba(state.colors.primary,.85)},${rgba(state.colors.primary,.85)}),
-     repeating-linear-gradient(0deg,#cabfa6 0 3px,#c2b69b 3px 6px)`,
-  deco:()=>`
-    <div style="left:-40px;top:240px;width:1160px;height:120px;background:${state.colors.secondary};transform:rotate(-4deg);opacity:.9;"></div>
-    <div style="left:120px;top:760px;width:520px;height:200px;background:#f7f4ec;transform:rotate(2deg);box-shadow:0 8px 20px #0006;"></div>`,
-  layers:{
-    bgImage: img({bind:"background",x:0,y:0,w:1080,h:1350,fit:"cover",z:1}),
-    player:  img({bind:"player",x:120,y:330,w:560,h:840,fit:"contain",z:6,transform:"rotate(-4deg)"}),
-    logo:    img({bind:"logo",x:880,y:95,w:130,h:130,z:23,transform:"rotate(6deg)"}),
-    eyebrow: txt({bind:"eyebrow",x:90,y:120,w:520,size:26,color:"black",bg:"white",pad:"8px 14px",font:F.type,transform:"rotate(-3deg)",z:20}),
-    hero:    txt({bind:"heroNumber",x:600,y:300,w:430,size:230,color:"black",bg:"white",pad:"4px 22px",font:F.serif,weight:900,align:"center",z:20,transform:"rotate(3deg)",lh:.9}),
-    heroDesc:txt({bind:"heroDesc",x:610,y:600,w:400,size:26,color:"white",bg:"primary",pad:"10px 14px",font:F.type,z:20,transform:"rotate(-2deg)",lh:1.1}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:640,y:760,w:330,size:32,color:"#222",bg:"#f7f4ec",pad:"14px 16px",font:F.type,z:21,transform:"rotate(4deg)"}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:660,y:920,w:330,size:32,color:"#222",bg:"#f7f4ec",pad:"14px 16px",font:F.type,z:21,transform:"rotate(-3deg)"}),
-    callout: txt({bind:"callout",x:120,y:1180,w:520,size:34,color:"secondary",font:F.comic,ls:1,z:22,transform:"rotate(-8deg)",outline:false}),
-    playerName:txt({bind:"playerName",x:120,y:1090,w:600,size:38,color:"white",bg:"black",pad:"6px 14px",font:F.type,z:22}),
-    playerMeta:txt({bind:"playerMeta",x:128,y:1162,w:520,size:22,color:"secondary",font:F.type,z:22,transform:"rotate(-2deg)"}),
-    footer:  txt({bind:"footer",x:620,y:1300,w:400,size:18,color:"#fff",font:F.type,align:"right"}),
-  }},
-
-/* ---------------- EFFICIENCY (disabled for focus sprint) ---------------- */
-efficiency:{ name:"Efficiency",
-  stageBg:()=>`${shade(state.colors.primary,-60)}`,
-  deco:()=>{
-    const p=state.colors.primary;
-    return `
-    <div style="right:0;top:0;width:65%;height:100%;background:#fbfbfb;z-index:2;"></div>
-    <div style="left:430px;top:560px;width:560px;height:46px;background:${p};border-radius:6px;z-index:3;"></div>
-    <div style="left:430px;top:630px;width:230px;height:46px;background:#d7d7d7;border-radius:6px;z-index:3;"></div>`;
-  },
-  layers:{
-    player:  img({bind:"player",x:0,y:180,w:430,h:1000,fit:"cover",z:4}),
-    logo:    img({bind:"logo",x:900,y:80,w:110,h:110,z:21}),
-    playerName:txt({bind:"playerName",x:20,y:1066,w:400,size:34,color:"white",font:F.cond,weight:700,z:20}),
-    playerMeta:txt({bind:"playerMeta",x:20,y:1116,w:400,size:22,color:"secondary",font:F.cond,weight:600,ls:1,z:20}),
-    eyebrow: txt({bind:"eyebrow",x:460,y:90,w:560,size:26,color:"primary",font:F.cond,ls:5,weight:600,z:20}),
-    hero:    txt({bind:"heroNumber",x:455,y:150,w:560,size:300,color:"primary",font:F.disp,lh:.8,z:20}),
-    heroDesc:txt({bind:"heroDesc",x:460,y:470,w:560,size:30,color:"#333",font:F.cond,weight:600,lh:1.05,z:20}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:460,y:760,w:540,size:42,color:"#111",font:F.cond,z:20}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:460,y:870,w:540,size:42,color:"#111",font:F.cond,z:20}),
-    callout: txt({bind:"callout",x:460,y:1010,w:520,size:26,color:"white",bg:"primary",pad:"14px 22px",radius:40,font:F.cond,align:"center",z:20}),
-    footer:  txt({bind:"footer",x:460,y:1290,w:560,size:18,color:"#999",font:F.sans,ls:2,z:20}),
-  }},
-
-/* ---------------- EFFICIENCY GAUGE (disabled for focus sprint) ---------------- */
-efficiency_gauge:{ name:"Eff. Gauge",
-  stageBg:()=>`radial-gradient(circle at 50% 40%, #20242c, #0a0b0e 70%)`,
-  deco:()=>{
-    const p=state.colors.primary, s=state.colors.secondary;
-    return `
-    <svg viewBox="0 0 1080 700" style="left:0;top:200px;width:100%;height:700px;z-index:3;">
-      <path d="M180 520 A360 360 0 0 1 900 520" fill="none" stroke="#333" stroke-width="40" stroke-linecap="round"/>
-      <path d="M180 520 A360 360 0 0 1 760 250" fill="none" stroke="${p}" stroke-width="40" stroke-linecap="round"/>
-      <line x1="540" y1="520" x2="760" y2="250" stroke="#fff" stroke-width="6"/>
-      <circle cx="540" cy="520" r="16" fill="#fff"/>
-      <text x="510" y="200" fill="${s}" font-size="22" font-family="Oswald">AVG</text>
-    </svg>`;
-  },
-  layers:{
-    player:  img({bind:"player",x:330,y:640,w:420,h:700,fit:"contain",z:6}),
-    logo:    img({bind:"logo",x:60,y:70,w:110,h:110,z:21}),
-    eyebrow: txt({bind:"eyebrow",x:0,y:90,w:1080,size:28,color:"secondary",font:F.cond,ls:6,weight:600,align:"center",z:20}),
-    hero:    txt({bind:"heroNumber",x:340,y:410,w:400,size:190,color:"white",font:F.disp,align:"center",lh:.85,z:20}),
-    heroDesc:txt({bind:"heroDesc",x:300,y:600,w:480,size:22,color:"secondary",font:F.cond,weight:600,align:"center",z:20}),
-    playerName:txt({bind:"playerName",x:0,y:1108,w:1080,size:38,color:"white",font:F.disp,align:"center",z:21}),
-    playerMeta:txt({bind:"playerMeta",x:0,y:1158,w:1080,size:22,color:"secondary",font:F.cond,weight:600,ls:2,align:"center",z:21}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:70,y:1210,w:430,size:38,color:"white",font:F.cond,align:"center",z:21}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:580,y:1210,w:430,size:38,color:"white",font:F.cond,align:"center",z:21}),
-    callout: txt({bind:"callout",x:340,y:1305,w:400,size:20,color:"black",bg:"secondary",pad:"9px 0",radius:30,font:F.cond,align:"center",z:21}),
-  }},
-
-/* ---------------- EFFICIENCY REPORT CARD (disabled for focus sprint) ---------------- */
-efficiency_report_card:{ name:"Report Card",
-  stageBg:()=>`#f6f3ec`,
-  deco:()=>{
-    const p=state.colors.primary;
-    return `
-    <div style="left:0;top:0;width:100%;height:120px;background:${p};z-index:5;"></div>
-    <div style="left:60px;top:920px;width:960px;height:2px;background:#ccc;z-index:5;"></div>
-    <div style="left:60px;top:1040px;width:960px;height:2px;background:#ccc;z-index:5;"></div>`;
-  },
-  layers:{
-    teamName:txt({bind:"teamName",x:40,y:42,w:520,size:34,color:"white",font:F.cond,weight:700,ls:1,z:20}),
-    reportTitle:txt({bind:"reportTitle",x:440,y:48,w:480,size:24,color:"white",font:F.cond,ls:3,align:"right",weight:600,z:20}),
-    logo:    img({bind:"logo",x:930,y:18,w:84,h:84,z:21}),
-    player:  img({bind:"player",x:60,y:170,w:280,h:340,fit:"cover",z:6,border:true}),
-    playerName:txt({bind:"playerName",x:370,y:196,w:640,size:52,color:"primary",font:F.disp,z:20}),
-    playerMeta:txt({bind:"playerMeta",x:372,y:262,w:560,size:24,color:"muted",font:F.cond,weight:600,ls:2,z:20}),
-    eyebrow: txt({bind:"eyebrow",x:372,y:312,w:560,size:22,color:"muted",font:F.cond,ls:4,weight:600,z:20}),
-    hero:    txt({bind:"heroNumber",x:700,y:540,w:300,size:150,color:"white",bg:"primary",pad:"30px 0",radius:300,font:F.disp,align:"center",z:20,lh:.9}),
-    heroDesc:txt({bind:"heroDesc",x:60,y:640,w:600,size:32,color:"primary",font:F.cond,weight:700,lh:1.1,z:20}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:80,y:945,w:900,size:44,color:"#222",font:F.cond,z:20}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:80,y:1065,w:900,size:44,color:"#222",font:F.cond,z:20}),
-    callout: txt({bind:"callout",x:300,y:1180,w:480,size:26,color:"white",bg:"primary",pad:"14px 0",radius:40,font:F.cond,align:"center",z:20}),
-    footer:  txt({bind:"footer",x:60,y:1290,w:960,size:18,color:"#999",font:F.sans,ls:2,align:"center",z:20}),
-  }},
-
-/* ---------------- EFFICIENCY SPLIT (disabled for focus sprint) ---------------- */
-efficiency_split:{ name:"Eff. Split",
-  stageBg:()=>`#222`,
-  deco:()=>{
-    const p=state.colors.primary, s=state.colors.secondary;
-    return `
-    <div style="left:0;top:0;width:50%;height:100%;background:${p};"></div>
-    <div style="right:0;top:0;width:50%;height:100%;background:#5a5d63;"></div>
-    <div style="left:50%;top:0;width:6px;height:100%;transform:translateX(-50%);background:${s};z-index:15;"></div>
-    <div style="left:0;bottom:0;width:100%;height:160px;background:#101216;z-index:12;"></div>
-    <div style="left:50%;top:520px;width:170px;height:170px;transform:translate(-50%,-50%);border-radius:50%;
-       background:${s};z-index:20;box-shadow:0 8px 24px #0008;"></div>`;
-  },
-  layers:{
-    eyebrow: txt({bind:"eyebrow",x:0,y:60,w:1080,size:26,color:"secondary",font:F.cond,ls:6,weight:600,align:"center",z:25}),
-    logo:    img({bind:"logo",x:900,y:70,w:120,h:120,z:26}),
-    player:  img({bind:"player",x:20,y:200,w:540,h:920,fit:"contain",z:6}),
-    playerName:txt({bind:"playerName",x:40,y:130,w:480,size:38,color:"white",font:F.disp,z:25}),
-    playerMeta:txt({bind:"playerMeta",x:42,y:184,w:460,size:22,color:"secondary",font:F.cond,weight:600,ls:2,z:25}),
-    heroNum: txt({bind:"stat1num",x:40,y:760,w:480,size:200,color:"white",font:F.disp,align:"center",z:25,lh:.85}),
-    hero:    txt({bind:"heroNumber",x:455,y:435,w:170,size:78,color:"black",font:F.disp,align:"center",z:26,lh:1}),
-    avgLabel:txt({bind:"avgLabel",x:560,y:520,w:520,size:26,color:"#ddd",font:F.cond,ls:3,align:"center",weight:600,z:25}),
-    avgValue:txt({bind:"avgValue",x:560,y:560,w:520,size:200,color:"#c9ccd1",font:F.disp,align:"center",z:25,lh:.85}),
-    stat1:   txt({bind:"stat1",kind:"stat",x:60,y:1215,w:300,size:34,color:"white",font:F.cond,align:"center",z:25}),
-    stat2:   txt({bind:"stat2",kind:"stat",x:390,y:1215,w:300,size:34,color:"white",font:F.cond,align:"center",z:25}),
-    stat3:   txt({bind:"stat3",kind:"stat",x:720,y:1215,w:300,size:34,color:"white",font:F.cond,align:"center",z:25}),
-    footer:  txt({bind:"footer",x:0,y:1315,w:1080,size:16,color:"#888",font:F.sans,ls:2,align:"center",z:25}),
-  }},
-
-/* ---------------- CYBER PULSE ---------------- */
-cyber_pulse:{ name: "Cyber Pulse",
-  stageBg: () => `linear-gradient(180deg, #060814 0%, ${shade(state.colors.primary, -75)} 100%)`,
-  deco: () => `
-    <div style="inset:0; background: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 40px 40px, linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 40px 40px; opacity: 0.6;"></div>
-    <div style="left: -100px; top: 410px; width: 1300px; height: 12px; background: ${state.colors.primary}; transform: rotate(-12deg); box-shadow: 0 0 25px ${state.colors.primary}; z-index: 3;"></div>
-    <div style="right: 60px; top: 75px; font-family: monospace; font-size: 13px; color: ${state.colors.secondary}; opacity: 0.35; letter-spacing: 3px; z-index:4;">SYS_DATA // CORE_ENG_v2.0</div>
-    <div style="left: 60px; top: 1195px; width: 16px; height: 16px; border-left: 3px solid ${state.colors.secondary}; border-top: 3px solid ${state.colors.secondary}; z-index: 10;"></div>
-    <div style="right: 60px; top: 1245px; width: 16px; height: 16px; border-right: 3px solid ${state.colors.secondary}; border-bottom: 3px solid ${state.colors.secondary}; z-index: 10;"></div>`,
-  layers: {
-    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1, opacity: 0.35}),
-    player:     img({bind:"player", x:240, y:120, w:780, h:1080, fit:"cover", z:4, zoom:1, cropX:0.5, cropY:0.40}),
-    logo:       img({bind:"logo", x:75, y:70, w:110, h:110, z:20}),
-    eyebrow:    txt({bind:"eyebrow", x:75, y:225, w:600, size:24, color:"secondary", font:F.bebas, ls:5}),
-    playerName: txt({bind:"playerName", x:75, y:265, w:850, size:86, color:"white", font:F.disp, lh:0.95, ls:1}),
-    playerMeta: txt({bind:"playerMeta", x:80, y:360, w:600, size:22, color:"secondary", font:F.cond, weight:600, ls:3}),
-    hero:       txt({bind:"heroNumber", x:75, y:900, w:400, size:240, color:"primary", font:F.bebas, lh:0.8, z:10}),
-    heroDesc:   txt({bind:"heroDesc", x:75, y:1105, w:380, size:24, color:"white", font:F.sans, weight:600, ls:1, lh:1.2}),
-    stat1:      txt({bind:"stat1", kind:"stat", x:600, y:930, w:400, size:46, color:"white", font:F.cond}),
-    stat2:      txt({bind:"stat2", kind:"stat", x:600, y:1035, w:400, size:46, color:"white", font:F.cond}),
-    callout:    txt({bind:"callout", x:75, y:1205, w:930, size:24, color:"black", bg:"secondary", pad:"14px 20px", font:F.cond, weight:800, ls:4, align:"center", z:15}),
-  }},
-
-/* ---------------- NEO BRUTALIST (Swiss editorial grid) ---------------- */
-neo_brutalist: { name: "Swiss Grid",
-  stageBg: () => '#f6f5f1',
-  deco: () => {
-    const p = state.colors.primary;
-    const s = state.colors.secondary;
-    return `
-    <div style="left:0;top:0;width:100%;height:100%;background:repeating-linear-gradient(0deg,transparent,transparent 59px,${rgba('#111',.04)} 59px,${rgba('#111',.04)} 60px),repeating-linear-gradient(90deg,transparent,transparent 59px,${rgba('#111',.04)} 59px,${rgba('#111',.04)} 60px);z-index:1;"></div>
-    <div style="left:0;top:500px;width:580px;height:748px;background:#f6f5f1;z-index:2;"></div>
-    <div style="left:0;top:0;width:580px;height:500px;background:${p};z-index:4;"></div>
-    <div style="left:0;top:500px;width:580px;height:3px;background:#111111;z-index:14;"></div>
-    <div style="left:580px;top:500px;width:3px;height:748px;background:#111111;z-index:14;"></div>
-    <div style="left:56px;top:497px;width:468px;height:6px;background:${s};z-index:15;"></div>
-    <div style="left:56px;top:665px;width:504px;height:1px;background:${rgba('#111',.14)};z-index:12;"></div>
-    <div style="left:308px;top:665px;width:1px;height:355px;background:${rgba('#111',.12)};z-index:12;"></div>
-    <div style="left:56px;top:808px;width:504px;height:1px;background:${rgba('#111',.14)};z-index:12;"></div>
-    <div style="left:576px;top:0;width:56px;height:100%;background:linear-gradient(90deg,${rgba(p,.10)},transparent);z-index:9;pointer-events:none;"></div>
-    <div style="inset:0;border:3px solid #111111;z-index:30;pointer-events:none;"></div>`;
-  },
-  layers: {
-    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1, opacity: 0.07}),
-    player:     img({bind:"player", x:579, y:-3, w:640, h:1350, fit:"cover", z:7, zoom:1, cropX:0.52, cropY:0.38}),
-    logo:       img({bind:"logo", x:56, y:52, w:108, h:108, z:22}),
-    teamName:   txt({bind:"teamName", x:180, y:62, w:360, size:26, color:"white", font:F.cond, weight:700, ls:3, z:22}),
-    eyebrow:    txt({bind:"eyebrow", x:56, y:168, w:480, size:18, color:"secondary", font:F.cond, weight:700, ls:6, z:22}),
-    hero:       txt({bind:"heroNumber", x:56, y:200, w:500, size:210, color:"white", font:F.disp, lh:0.82, weight:900, z:22}),
-    heroDesc:   txt({bind:"heroDesc", x:56, y:398, w:480, size:14, color:"white", font:F.cond, weight:600, ls:3, textTransform:"uppercase", lh:1.35, z:22}),
-    playerName: txt({bind:"playerName", x:56, y:528, w:504, size:70, color:"primary", font:F.disp, lh:0.92, weight:900, z:20}),
-    playerMeta: txt({bind:"playerMeta", x:56, y:612, w:504, size:20, color:"black", font:F.cond, weight:700, ls:2, z:20}),
-    stat1:      txt({bind:"stat1", kind:"stat", statStack:true, x:56, y:692, w:236, size:36, color:"black", font:F.cond, z:18}),
-    stat2:      txt({bind:"stat2", kind:"stat", statStack:true, x:324, y:692, w:236, size:36, color:"black", font:F.cond, z:18}),
-    stat3:      txt({bind:"stat3", kind:"stat", statStack:true, x:56, y:832, w:504, size:36, color:"black", font:F.cond, z:18}),
-    callout:    txt({bind:"callout", x:0, y:1248, w:1080, size:26, color:"white", bg:"primary", pad:"18px 24px", font:F.cond, weight:800, ls:4, align:"center", z:25}),
-    footer:     txt({bind:"footer", x:620, y:1180, w:400, size:16, color:"muted", font:F.sans, weight:600, ls:2, align:"right", z:18}),
-  }},
-
-/* ---------------- VAPOR MOTION ---------------- */
-vapor_motion: { name: "Vapor Motion",
-  stageBg: () => `#0b0713`,
-  deco: () => `
-    <div style="left: -120px; top: -120px; width: 650px; height: 650px; border-radius: 50%; background: ${state.colors.secondary}; filter: blur(140px); opacity: 0.22; z-index: 2;"></div>
-    <div style="right: -80px; bottom: 80px; width: 750px; height: 750px; border-radius: 50%; background: ${state.colors.primary}; filter: blur(160px); opacity: 0.32; z-index: 2;"></div>`,
-  layers: {
-    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1, opacity: 0.25}),
-    player:     img({bind:"player", x:0, y:0, w:1080, h:1350, fit:"cover", z:3, zoom:1, cropX:0.5, cropY:0.5}),
-    glassCard:  glass({x:60, y:774, w:960, h:440, z:10}),
-    logo:       img({bind:"logo", x:100, y:804, w:88, h:88, z:15}),
-    eyebrow:    txt({bind:"eyebrow", x:210, y:802, w:400, size:22, color:"secondary", font:F.sans, weight:600, ls:4, italic:true, z:15}),
-    playerName: txt({bind:"playerName", x:210, y:828, w:400, size:50, color:"white", font:F.disp, italic:true, z:15}),
-    playerMeta: txt({bind:"playerMeta", x:214, y:878, w:400, size:20, color:"muted", font:F.cond, ls:2, z:15}),
-    hero:       txt({bind:"heroNumber", x:700, y:796, w:280, h:100, size:118, color:"secondary", font:F.bebas, align:"right", z:15, lh:0.9}),
-    heroDesc:   txt({bind:"heroDesc", x:660, y:862, w:320, h:68, size:17, color:"white", font:F.sans, weight:600, align:"right", z:15, lh:1.25}),
-    stat1:      txt({bind:"stat1", kind:"stat", x:100, y:914, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
-    stat2:      txt({bind:"stat2", kind:"stat", x:100, y:996, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
-    stat3:      txt({bind:"stat3", kind:"stat", x:560, y:914, w:400, h:72, size:42, color:"white", font:F.cond, z:15}),
-    callout:    txt({bind:"callout", x:560, y:998, w:400, h:68, size:20, color:"black", bg:"secondary", pad:"12px 14px", radius:12, font:F.cond, weight:700, align:"center", z:15}),
-    footer:     txt({bind:"footer", x:60, y:1082, w:960, h:40, size:16, color:"muted", font:F.sans, ls:3, align:"center", z:15}),
-  }},
-
-/* ---------------- SALUKIS CLEAN ---------------- */
-salukis_clean: { name: "Salukis Clean",
-  stageBg: () => '#ffffff',
-  deco: () => `
-    <style>
-      #stage[data-template="salukis_clean"] .layer[data-id="playerName"],
-      #stage[data-template="salukis_clean"] .layer[data-id="playerMeta"] { font-family: ${F.bebas} !important; text-transform: uppercase !important; }
-      #stage[data-template="salukis_clean"] .layer[data-id^="stat"] { flex-direction: column !important; align-items: flex-start !important; justify-content: center !important; gap: 0 !important; overflow: hidden !important; }
-      #stage[data-template="salukis_clean"] .layer[data-id^="stat"] .s-n { font-family: ${F.bebas} !important; font-weight: 400 !important; line-height: 0.9 !important; color: #112233 !important; width: 100% !important; }
-      #stage[data-template="salukis_clean"] .layer[data-id^="stat"] .s-l { font-family: ${F.cond} !important; font-size: 22px !important; font-weight: 800 !important; color: ${state.colors.primary} !important; letter-spacing: 0.5px !important; text-transform: uppercase !important; max-width: 100% !important; line-height: 1.15 !important; flex-shrink: 0 !important; }
-    </style>
-    <div style="left:0; bottom:0; width:100%; height:90px; background:${state.colors.primary}; z-index:10;"></div>`,
-  layers: {
-    logo:       img({bind:"logo", x:60, y:50, w:180, h:110, z:20}),
-    playerName: txt({bind:"playerName", x:420, y:52, w:600, size:76, color:"primary", font:F.bebas, weight:400, ls:2, align:"right", textTransform:"uppercase"}),
-    playerMeta: txt({bind:"playerMeta", x:420, y:128, w:600, size:40, color:"primary", font:F.bebas, weight:400, ls:2, align:"right", hollow:true, strokeW:1.5, textTransform:"uppercase"}),
-    player:     img({bind:"player", x:60, y:190, w:520, h:980, fit:"cover", z:5, border:true, borderColor:"primary"}),
-    eyebrow:    txt({bind:"eyebrow", x:640, y:200, w:380, size:20, color:"primary", font:F.cond, weight:800, ls:1, textTransform:"uppercase"}),
-    stat1:      txt({bind:"stat1", kind:"stat", statStack:true, x:640, y:SALUKIS_CLEAN_STAT_SLOTS[0].y, w:380, h:SALUKIS_CLEAN_STAT_SLOTS[0].h, size:150, font:F.bebas, align:"left", z:18}),
-    stat2:      txt({bind:"stat2", kind:"stat", statStack:true, x:640, y:SALUKIS_CLEAN_STAT_SLOTS[1].y, w:380, h:SALUKIS_CLEAN_STAT_SLOTS[1].h, size:150, font:F.bebas, align:"left", z:18}),
-    stat3:      txt({bind:"stat3", kind:"stat", statStack:true, x:640, y:SALUKIS_CLEAN_STAT_SLOTS[2].y, w:380, h:SALUKIS_CLEAN_STAT_SLOTS[2].h, size:150, font:F.bebas, align:"left", z:18}),
-    footer:     txt({bind:"footer", x:0, y:1296, w:1080, size:24, color:"white", font:F.sans, weight:700, align:"center", ls:1, z:20, textTransform:"uppercase"}),
-  }},
-
-/* ---------------- SALUKIS DARK ---------------- */
-salukis_dark: { name: "Salukis Dark",
-  stageBg: () => '#000000',
-  deco: () => `
-    <style>
-      #stage[data-template="salukis_dark"] .layer[data-id="playerName"],
-      #stage[data-template="salukis_dark"] .layer[data-id="playerMeta"] { font-family: ${F.bebas} !important; text-transform: uppercase !important; }
-      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] { flex-direction: column !important; align-items: center !important; justify-content: center !important; gap: 2px !important; overflow: hidden !important; text-align: center !important; padding: 8px 8px 0 !important; box-sizing: border-box !important; }
-      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] .s-n { font-family: ${F.bebas} !important; font-weight: 400 !important; line-height: 0.94 !important; width: 100% !important; color: ${state.colors.onPrimary || onColor(state.colors.primary)} !important; }
-      #stage[data-template="salukis_dark"] .layer[data-id^="stat"] .s-l { font-family: ${F.cond} !important; font-size: 16px !important; font-weight: 700 !important; letter-spacing: 0.4px !important; text-transform: uppercase !important; max-width: 96% !important; line-height: 1.1 !important; flex-shrink: 0 !important; margin-top: 2px !important; color: ${state.colors.onPrimaryMuted || state.colors.onPrimary || onColor(state.colors.primary)} !important; opacity: 0.92 !important; }
-      #stage[data-template="salukis_dark"] .layer[data-id="callout"],
-      #stage[data-template="salukis_dark"] .layer[data-id="footer"] { display: flex !important; align-items: center !important; justify-content: center !important; text-align: center !important; }
-    </style>
-    <div style="left:0; top:0; width:252px; height:112px; background:#f7f5ef; z-index:4;"></div>
-    <div style="right:0; top:0; width:46%; height:190px; z-index:4; background:linear-gradient(270deg, rgba(8,12,18,0.82) 0%, rgba(8,12,18,0.58) 44%, rgba(8,12,18,0) 100%);"></div>
-    <div style="left:0; bottom:0; width:100%; height:${SALUKIS_DARK_PANEL_H}px; background:${state.colors.primary}; z-index:10;"></div>`,
-  layers: {
-    logo:       img({bind:"logo", x:16, y:14, w:220, h:82, fit:"contain", z:20}),
-    playerName: txt({bind:"playerName", x:618, y:22, w:372, size:56, color:"white", font:F.bebas, weight:400, align:"right", ls:1, hollow:false, textTransform:"uppercase", z:20}),
-    playerMeta: txt({bind:"playerMeta", x:654, y:86, w:336, size:24, color:"white", font:F.bebas, weight:400, ls:2, align:"right", textTransform:"uppercase", z:20}),
-    player:     img({bind:"player", x:0, y:0, w:1080, h:1350, fit:"cover", zoom:1, cropX:0.5, cropY:0.5, z:2}),
-    stat1:      txt({bind:"stat1", kind:"stat", statStack:true, x:0, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
-    stat2:      txt({bind:"stat2", kind:"stat", statStack:true, x:360, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
-    stat3:      txt({bind:"stat3", kind:"stat", statStack:true, x:720, y:SALUKIS_DARK_PANEL_SLOTS.stats.y, w:360, h:SALUKIS_DARK_PANEL_SLOTS.stats.h, size:150, font:F.bebas, align:"center", z:15}),
-    calloutBox: block({x:SALUKIS_DARK_PANEL_SLOTS.calloutBox.x, y:SALUKIS_DARK_PANEL_SLOTS.calloutBox.y, w:SALUKIS_DARK_PANEL_SLOTS.calloutBox.w, h:SALUKIS_DARK_PANEL_SLOTS.calloutBox.h, fill:"white", radius:3, z:11}),
-    callout:    txt({bind:"callout", x:SALUKIS_DARK_PANEL_SLOTS.calloutBox.x, y:SALUKIS_DARK_PANEL_SLOTS.calloutBox.y, w:SALUKIS_DARK_PANEL_SLOTS.calloutBox.w, h:SALUKIS_DARK_PANEL_SLOTS.calloutBox.h, size:26, color:"primary", font:F.bebas, weight:400, align:"center", z:16}),
-    footer:     txt({bind:"footer", x:0, y:SALUKIS_DARK_PANEL_SLOTS.footer.y, w:1080, h:SALUKIS_DARK_PANEL_SLOTS.footer.h, size:20, color:"white", font:F.sans, weight:800, align:"center", ls:1, z:15, textTransform:"uppercase"}),
-  }},
-
-/* ---------------- CUTOUT SPLAT ---------------- */
-cutout_splat:{ name:"Cutout Splat",
-  stageBg:()=>state.colors.secondary||"#FFFFFF",
-  deco:()=>``,
-  layers:{
-    player:     img({bind:"player", x:390, y:70, w:690, h:1120, fit:"contain", zoom:1, cropX:0.52, cropY:0.42, z:12}),
-    logo:       img({bind:"logo", x:478, y:28, w:124, h:100, fit:"contain", z:22}),
-    hero:       txt({bind:"heroNumber", x:48, y:168, w:540, h:150, size:148, color:"primary", font:F.cond, weight:700, lh:.86, z:22}),
-    heroDesc:   txt({bind:"heroDesc", x:52, y:318, w:500, h:48, size:36, color:"primary", font:F.cond, weight:600, ls:2, textTransform:"uppercase", z:22}),
-    conference: img({bind:"conference", x:52, y:548, w:118, h:118, fit:"contain", z:22}),
-    callout:    txt({bind:"callout", x:186, y:560, w:420, h:44, size:28, color:"black", font:F.sans, weight:800, textTransform:"uppercase", z:22}),
-    eyebrow:    txt({bind:"eyebrow", x:186, y:606, w:420, h:36, size:22, color:"black", font:F.sans, weight:600, ls:1, textTransform:"uppercase", z:22}),
-    footer:     txt({bind:"footer", x:48, y:1184, w:500, h:40, size:22, color:"black", font:F.sans, weight:700, textTransform:"uppercase", z:22}),
-    sponsor:    img({bind:"sponsor", x:48, y:1240, w:210, h:78, fit:"contain", z:22}),
-    playerMeta: txt({bind:"playerMeta", x:560, y:1160, w:470, h:32, size:22, color:"white", font:F.sans, weight:600, ls:2, textTransform:"uppercase", z:22}),
-    playerName: txt({bind:"playerName", x:540, y:1196, w:500, h:72, size:54, color:"white", font:F.sans, weight:800, italic:true, textTransform:"uppercase", z:22}),
-  }},
-
-/* ---------------- SIDELINE CUTOUT ---------------- */
-sideline_cutout:{ name:"Sideline Cutout",
-  stageBg:()=>"#E8E0D4",
-  deco:()=>``,
-  layers:{
-    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1}),
-    player:     img({bind:"player", x:430, y:36, w:650, h:1160, fit:"contain", zoom:1, cropX:0.55, cropY:0.40, z:12}),
-    logo:       img({bind:"logo", x:176, y:116, w:90, h:70, fit:"contain", z:21}),
-    conference: img({bind:"conference", x:270, y:122, w:118, h:60, fit:"contain", z:21}),
-    teamName:   txt({bind:"teamName", placeholder:"VS. OPP | 00-00 |", x:168, y:248, w:260, h:36, size:22, color:"primary", font:F.sans, weight:700, italic:true, align:"center", textTransform:"uppercase", z:22}),
-    hashtag:    txt({bind:"hashtag", placeholder:"MON. DD, YYYY", x:72, y:308, w:400, h:50, size:24, color:"white", font:F.sans, weight:800, align:"center", ls:1, textTransform:"uppercase", z:22}),
-    hero:       txt({bind:"heroNumber", placeholder:"000", x:56, y:428, w:520, h:220, size:208, color:"primary", font:F.cond, weight:700, lh:.84, align:"center", z:22}),
-    heroDesc:   txt({bind:"heroDesc", placeholder:"STAT LABEL", x:70, y:768, w:520, h:72, size:48, color:"primary", font:F.cond, weight:600, ls:2, align:"center", textTransform:"uppercase", z:22}),
-    callout:    txt({bind:"callout", placeholder:"CONTEXT LINE", x:70, y:968, w:460, h:40, size:20, color:"black", font:F.sans, weight:700, italic:true, ls:1, align:"center", textTransform:"uppercase", z:22}),
-    playerName: txt({bind:"playerName", placeholder:"PLAYER NAME", x:580, y:1084, w:470, h:48, size:32, color:"white", font:F.sans, weight:800, italic:true, ls:1, textTransform:"uppercase", z:22}),
-    playerMeta: txt({bind:"playerMeta", placeholder:"CLASS | POS", x:580, y:1138, w:400, h:32, size:20, color:"white", font:F.sans, weight:600, italic:true, ls:1, textTransform:"uppercase", z:22}),
-    sponsor:    img({bind:"sponsor", x:88, y:1230, w:140, h:72, fit:"contain", z:22}),
-  }},
-
-/* ---------------- SIDELINE TEXT (no art) ---------------- */
-sideline_text:{ name:"Sideline Text",
-  stageBg:()=>"#E8E0D4",
-  deco:()=>``,
-  layers:{
-    bgImage:    img({bind:"background", x:0, y:0, w:1080, h:1350, fit:"cover", z:1}),
-    player:     img({bind:"player", x:430, y:36, w:650, h:1160, fit:"contain", zoom:1, cropX:0.55, cropY:0.40, z:12}),
-    logo:       img({bind:"logo", x:176, y:116, w:90, h:70, fit:"contain", z:21}),
-    conference: img({bind:"conference", x:270, y:122, w:118, h:60, fit:"contain", z:21}),
-    sponsor:    img({bind:"sponsor", x:88, y:1230, w:140, h:72, fit:"contain", z:22}),
-    teamName:   txt({bind:"teamName", placeholder:"VS. ULM | 23-8 |", x:80, y:248, w:420, h:36, size:22, color:"primary", font:F.sans, weight:700, italic:true, align:"center", textTransform:"uppercase", z:22}),
-    hashtag:    txt({bind:"hashtag", placeholder:"OCT. 11, 2025", x:72, y:308, w:400, h:50, size:24, color:"black", font:F.sans, weight:800, align:"center", ls:1, textTransform:"uppercase", z:22}),
-    hero:       txt({bind:"heroNumber", placeholder:"300", x:40, y:428, w:520, h:220, size:208, color:"primary", font:F.cond, weight:700, lh:.84, align:"center", z:22}),
-    heroDesc:   txt({bind:"heroDesc", placeholder:"FIELD GOALS", x:70, y:768, w:540, h:72, size:48, color:"primary", font:F.cond, weight:600, ls:2, align:"center", textTransform:"uppercase", z:22}),
-    callout:    txt({bind:"callout", placeholder:"MOST IN THE SBC THIS WEEK", x:40, y:968, w:520, h:40, size:20, color:"black", font:F.sans, weight:700, italic:true, ls:1, align:"center", textTransform:"uppercase", z:22}),
-    playerName: txt({bind:"playerName", placeholder:"KIAN AFROOKHTEH", x:560, y:1084, w:480, h:48, size:32, color:"black", font:F.sans, weight:800, italic:true, ls:1, textTransform:"uppercase", z:22}),
-    playerMeta: txt({bind:"playerMeta", placeholder:"JUNIOR | K", x:560, y:1138, w:400, h:32, size:20, color:"black", font:F.sans, weight:600, italic:true, ls:1, textTransform:"uppercase", z:22}),
-  }},
-};
 
 window.state=state;
 window.vaporGlassSettingsOf=vaporGlassSettingsOf;
@@ -1412,9 +927,7 @@ function migrateVaporGlassCardLayout(d){
   delete state.vaporGlassSettings.cardH;
 }
 
-/* Focus sprint — only these appear in the template picker */
-/* v3 lab — JSON-backed templates only (same defs as index_2, narrower picker) */
-const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11", "richmond"];
+/* Spotlight variant presets (legacy — only if a spotlight JSON template is added later) */
 const BUNDLED_STORIES_URL = "./stories.players.json";
 function spotlightDecoBase(opts={}){
   const s=state.colors.secondary;
@@ -1537,11 +1050,11 @@ function ensureEnabledTemplate(id){
     return id;
   }
   const loaded=templateIdsReady();
-  const fallback=loaded[0] || Object.keys(TEMPLATES)[0] || "magazine";
-  if(id && id!==fallback){
+  const fallback=loaded[0] || Object.keys(TEMPLATES)[0] || null;
+  if(id && id!==fallback && fallback){
     console.warn(`Template "${id}" is not loaded; using "${fallback}".`);
   }
-  return TEMPLATES[fallback] ? fallback : "magazine";
+  return fallback;
 }
 function isFrozenTemplate(id){
   const j=TEMPLATES[id]?._json;
@@ -1730,8 +1243,16 @@ function collectTextBindsFromLayers(layers, swapFields){
   });
   return [...binds].filter(Boolean);
 }
-/** Label for a text bind: JSON layer.label → TEXT_FIELDS → labelFor → bind key */
-function textFieldLabelFor(bind, layers){
+/** Label for a text bind: custom fieldLabels → JSON layer.label → TEXT_FIELDS → labelFor → bind key */
+function getStoredFieldLabel(templateId, bind){
+  const tid=templateId||state.template;
+  const fromState=state.fieldLabels?.[tid]?.[bind];
+  if(fromState) return fromState;
+  const fromJson=TEMPLATES[tid]?._json?.automation?.fieldLabels?.[bind];
+  if(fromJson) return fromJson;
+  return null;
+}
+function defaultTextFieldLabelFor(bind, layers){
   for(const def of Object.values(layers||{})){
     if(!def || def.type!=="text") continue;
     if(def.bind===bind && def.label) return def.label;
@@ -1744,6 +1265,64 @@ function textFieldLabelFor(bind, layers){
   const fromLabelFor=labelFor(bind);
   if(fromLabelFor && fromLabelFor!==bind) return fromLabelFor;
   return bind.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase()).trim();
+}
+function textFieldLabelFor(bind, layers, templateId){
+  const stored=getStoredFieldLabel(templateId, bind);
+  if(stored) return stored;
+  return defaultTextFieldLabelFor(bind, layers);
+}
+/** Persist a display label for a text bind (editor session + template JSON + layer defs). */
+function setFieldLabel(bind, label){
+  const tid=state.template;
+  const trimmed=String(label??"").trim();
+  if(!state.fieldLabels[tid]) state.fieldLabels[tid]={};
+  if(trimmed) state.fieldLabels[tid][bind]=trimmed;
+  else delete state.fieldLabels[tid][bind];
+  const json=TEMPLATES[tid]?._json;
+  if(json){
+    if(!json.automation) json.automation={ freezeLayout:!!isFrozenTemplate(tid), swapFields:[], swapImages:[] };
+    if(!json.automation.fieldLabels) json.automation.fieldLabels={};
+    if(trimmed) json.automation.fieldLabels[bind]=trimmed;
+    else delete json.automation.fieldLabels[bind];
+  }
+  syncFieldLabelToLayers(tid, bind, trimmed);
+  buildTextFields();
+  scheduleSave();
+}
+function syncFieldLabelToLayers(templateId, bind, label){
+  const apply=(def)=>{
+    if(!def || def.type!=="text") return false;
+    if(def.kind==="stat"){
+      if(def.bind+"num"===bind){ if(label) def.labelNum=label; else delete def.labelNum; return true; }
+      if(def.bind+"label"===bind){ if(label) def.labelText=label; else delete def.labelText; return true; }
+      return false;
+    }
+    if(def.bind===bind){ if(label) def.label=label; else delete def.label; return true; }
+    return false;
+  };
+  const json=TEMPLATES[templateId]?._json;
+  if(json?.layers && Array.isArray(json.layers)){
+    for(const layer of json.layers){ apply(layer); }
+  }
+  const extras=state.extraLayers[templateId];
+  if(extras){
+    for(const def of Object.values(extras)){ apply(def); }
+  }
+}
+function seedFieldLabelsFromTemplate(templateId){
+  const fl=TEMPLATES[templateId]?._json?.automation?.fieldLabels;
+  if(!fl || typeof fl!=="object") return;
+  if(!state.fieldLabels[templateId]) state.fieldLabels[templateId]={};
+  Object.assign(state.fieldLabels[templateId], fl);
+}
+function collectFieldLabelsForBake(templateId, layers, swapFields){
+  const binds=collectTextBindsFromLayers(layers, swapFields);
+  const out={ ...(TEMPLATES[templateId]?._json?.automation?.fieldLabels||{}), ...(state.fieldLabels[templateId]||{}) };
+  for(const bind of binds){
+    const label=textFieldLabelFor(bind, layers, templateId);
+    if(label) out[bind]=label;
+  }
+  return out;
 }
 function textFieldPlaceholderFor(bind, layers){
   for(const def of Object.values(layers||{})){
@@ -2504,6 +2083,7 @@ function switchTemplate(id){
   const prev=state.template;
   if(prev==="spotlight"&&next!=="spotlight") snapshotSpotlightLayout();
   state.template=next;
+  seedFieldLabelsFromTemplate(next);
   if(next!=="magazine") state.magazineHeaderColors=null;
   if(next!=="magazine") state.magazineHeaderSamples=null;
   if(next!=="salukis_dark") state.salukisDarkHeaderColors=null;
@@ -4090,8 +3670,8 @@ const LS_KEY = "posterEditor.v3";
 let _saveTimer=null;
 function scheduleSave(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(saveState,450); }
 function serializable(){
-  return { v:4, template:state.template, colors:state.colors, text:state.text,
-           layouts:state.layouts, extraLayers:state.extraLayers, autoPalette:state.autoPalette,
+  return { v:5, template:state.template, colors:state.colors, text:state.text,
+           layouts:state.layouts, extraLayers:state.extraLayers, fieldLabels:state.fieldLabels, autoPalette:state.autoPalette,
            lockTemplateFonts:state.lockTemplateFonts, logoSettings:state.logoSettings,
            spotlightVariant:state.spotlightVariant, spotlightLayouts:state.spotlightLayouts,
            vaporGlassSettings:state.vaporGlassSettings,
@@ -4118,6 +3698,7 @@ function loadState(){
   if(d.text) state.text=Object.assign({...DEFAULT_TEXT}, d.text);
   if(d.layouts) state.layouts=d.layouts;
   if(d.extraLayers) state.extraLayers=d.extraLayers;
+  if(d.fieldLabels) state.fieldLabels=Object.assign({}, d.fieldLabels);
   if(typeof d.autoPalette==="boolean") state.autoPalette=d.autoPalette;
   if(typeof d.lockTemplateFonts==="boolean") state.lockTemplateFonts=d.lockTemplateFonts;
   if(d.logoSettings) state.logoSettings=Object.assign(state.logoSettings, d.logoSettings);
@@ -4342,12 +3923,47 @@ function buildTextFields(){
   textFieldsWrap.innerHTML="";
   binds.forEach(key=>{
     const wrap=document.createElement("div");
-    wrap.innerHTML=`<label class="fld">${esc(textFieldLabelFor(key, layers))}</label>`;
-    const i=document.createElement("input"); i.type="text"; i.value=state.text[key]??"";
+    wrap.className="text-field-row";
+    const hdr=document.createElement("div");
+    hdr.className="text-field-hdr";
+    const lbl=document.createElement("label");
+    lbl.className="fld fld-label";
+    lbl.textContent=textFieldLabelFor(key, layers);
+    lbl.htmlFor="tf_"+key;
+    const editBtn=document.createElement("button");
+    editBtn.type="button";
+    editBtn.className="fld-rename";
+    editBtn.title="Rename field label (saved in template JSON)";
+    editBtn.textContent="✎";
+    editBtn.onclick=()=>{
+      const current=textFieldLabelFor(key, layers);
+      const rename=document.createElement("input");
+      rename.type="text";
+      rename.className="fld-rename-input";
+      rename.value=current;
+      rename.placeholder="Field label";
+      const finish=()=>{
+        setFieldLabel(key, rename.value);
+      };
+      rename.onblur=finish;
+      rename.onkeydown=e=>{
+        if(e.key==="Enter"){ e.preventDefault(); rename.blur(); }
+        if(e.key==="Escape"){ e.preventDefault(); buildTextFields(); }
+      };
+      hdr.replaceWith(rename);
+      rename.focus();
+      rename.select();
+    };
+    hdr.append(lbl, editBtn);
+    const i=document.createElement("input");
+    i.type="text";
+    i.id="tf_"+key;
+    i.value=state.text[key]??"";
     i.placeholder=textFieldPlaceholderFor(key, layers);
     i.oninput=e=>{ state.text[key]=e.target.value; queueTextPreview(); };
     i.onchange=()=>scheduleSave();
-    wrap.appendChild(i); textFieldsWrap.appendChild(wrap);
+    wrap.append(hdr, i);
+    textFieldsWrap.appendChild(wrap);
   });
 }
 
@@ -4496,7 +4112,16 @@ function layerDefToJson(id, def, g){
     if(align) out.align=align;
     const vAlign=g.vAlign??def.vAlign;
     if(vAlign && vAlign!=="middle") out.vAlign=vAlign;
-    if(def.label) out.label=def.label;
+    const bindKey=def.bind;
+    if(def.kind==="stat"){
+      const numLbl=getStoredFieldLabel(state.template, bindKey+"num")||def.labelNum;
+      const txtLbl=getStoredFieldLabel(state.template, bindKey+"label")||def.labelText;
+      if(numLbl) out.labelNum=numLbl;
+      if(txtLbl) out.labelText=txtLbl;
+    } else if(bindKey){
+      const effLbl=getStoredFieldLabel(state.template, bindKey)||def.label;
+      if(effLbl) out.label=effLbl;
+    }
     const ls=g.ls??def.ls;
     if(ls) out.ls=ls;
     const lh=g.lh??def.lh;
@@ -4593,6 +4218,9 @@ function buildFrozenTemplateJSON(opts={}){
   }
   layers.sort((a,b)=>(a.z||0)-(b.z||0));
 
+  const swapFieldsList=collectTextBindsFromLayers(defs, base.automation?.swapFields);
+  const fieldLabels=collectFieldLabelsForBake(srcId, defs, base.automation?.swapFields);
+
   const playerLayer=layers.find(l=>l.bind==="player");
   const settings={
     ...(base.settings||{}),
@@ -4635,8 +4263,9 @@ function buildFrozenTemplateJSON(opts={}){
     layers,
     automation:{
       freezeLayout:true,
-      swapFields:["playerName","playerMeta","teamName","hashtag","heroNumber","heroDesc","callout","eyebrow"],
-      swapImages:["player","logo","conference","sponsor","background"],
+      swapFields:swapFieldsList.length?swapFieldsList:(base.automation?.swapFields||[]),
+      swapImages:base.automation?.swapImages||["player","logo","conference","sponsor","background"],
+      fieldLabels,
       note:"Frozen layout from editor. Default player/background images are baked in; Automate may override via API.",
     },
     _bakeMeta:{
@@ -4724,6 +4353,7 @@ function restoreBakedTemplates(){
     }
     if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
     if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
+    seedFieldLabelsFromTemplate(id);
     // Seed durable default images into per-template image map
     if(json.defaults?.images){
       seedTemplateImagesFromDefaults(id, json.defaults.images, { onlyMissing:true });
@@ -4801,9 +4431,7 @@ async function bakeEditorIntoTemplate(download=true){
   if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
   if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
 
-  // Persist full template (including shapes + default images) in this browser + download file
-  saveBakedTemplateJson(json);
-  // Mirror baked defaults into the editor image map for this id
+  // In-memory update for this session (disk = Download template + manifest.json)
   if(json.defaults?.images){
     seedTemplateImagesFromDefaults(id, json.defaults.images, { onlyMissing:false });
   }
@@ -4844,8 +4472,8 @@ async function bakeEditorIntoTemplate(download=true){
     : " · (no player/bg uploaded yet — upload then Save again)";
   setBakeStatus(
     download
-      ? `Downloaded “${name}” (${id}.json) and saved for Automate — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+"."
-      : `Saved “${name}” for Automate (${id}) — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+`. Open Automate → “${name} ✓”.`
+      ? `Downloaded “${name}” (${id}.json) — add/replace under templates/ and list in manifest.json`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+"."
+      : `Updated “${name}” in this session (${id}). Download template to save JSON to templates/.`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+"."
   );
   return json;
 }
@@ -5234,17 +4862,12 @@ window.__RENDER_API_V3__={
     return { id:state.template, frozen:true };
   },
   listTemplates(){
-    // Baked / last-saved templates first so Automate shows what you just froze
-    const last=getLastBakedTemplateId();
     const ids=templateIdsReady();
-    if(last && TEMPLATES[last] && !ids.includes(last)) ids.unshift(last);
     ids.sort((a,b)=>{
       const af=isFrozenTemplate(a)?0:1;
       const bf=isFrozenTemplate(b)?0:1;
       if(af!==bf) return af-bf;
-      if(a===last) return -1;
-      if(b===last) return 1;
-      return 0;
+      return (TEMPLATES[a]?.name||a).localeCompare(TEMPLATES[b]?.name||b);
     });
     return ids.map(id=>({
       id,
@@ -5322,9 +4945,7 @@ async function init(){
   // Headless / automate preview should start clean (no editor localStorage)
   if(!headless) loadState();
   state.zoom=null;
-  state.template=ensureEnabledTemplate(state.template);
   const qp=qs.get("tpl");
-  if(qp && ENABLED_TEMPLATES.includes(qp)) state.template=ensureEnabledTemplate(qp);
   const storyParam=+(qs.get("story")||0)||0;
   const surl=qs.get("storiesurl");
   if(surl){
@@ -5335,13 +4956,12 @@ async function init(){
   cP.value=state.colors.primary; cS.value=state.colors.secondary;
   const ap=document.getElementById("autoPal"); if(ap) ap.checked=state.autoPalette;
   const lf=document.getElementById("lockFonts"); if(lf) lf.checked=state.lockTemplateFonts;
-  if(window.PosterTemplateLoader){
-    await ensurePosterTemplatesLoaded();
-  } else {
-    try { restoreBakedTemplates(); } catch (_) {}
-  }
+  await ensurePosterTemplatesLoaded();
+  if(qp) state.template=ensureEnabledTemplate(qp);
+  else state.template=ensureEnabledTemplate(state.template);
   // Ensure baked default player/bg appear after restart
   await applyTemplateDefaultImages(state.template, { onlyMissing:true });
+  seedFieldLabelsFromTemplate(state.template);
   ensureLayout();
   if(isFrozenTemplate(state.template)){
     resetLayoutFromTemplate(state.template, { freeze:true });

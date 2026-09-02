@@ -1,11 +1,12 @@
 /**
- * Loads poster templates from JSON and merges authoring layout overrides.
- * Patches window.TEMPLATES after inline definitions in index_2.html.
+ * Loads poster templates from JSON files listed in templates/manifest.json.
+ * No inline or localStorage templates — disk JSON is the only load source.
+ * (DB hook: replace fetchManifest/loadTemplateFile later.)
  */
 (function (global) {
   "use strict";
 
-  const JSON_TEMPLATE_IDS = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11", "richmond"];
+  const JSON_TEMPLATE_IDS = [];
   const FONT_KEYS = {
     disp: "'Anton',sans-serif",
     cond: "'Oswald',sans-serif",
@@ -54,7 +55,6 @@
     }));
   }
 
-  /** Even vertical bands inside the vapor glass card (header / stats / footer). */
   function vaporMotionCardSlots(rules) {
     const cardX = rules?.cardX ?? 60;
     const cardY = rules?.cardY ?? 740;
@@ -344,19 +344,46 @@
     }
   }
 
-  async function loadTemplate(id, baseUrl, authoringBaseUrl) {
-    const tplUrl = `${baseUrl}${id}.json`;
-    const res = await fetch(tplUrl);
+  async function fetchManifest(baseUrl) {
+    const url = `${baseUrl}manifest.json`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Template manifest not found: ${url}`);
+    return res.json();
+  }
+
+  async function loadTemplateFile(filename, baseUrl, authoringBaseUrl) {
+    const tplUrl = `${baseUrl}${encodeURI(filename)}`;
+    const res = await fetch(tplUrl, { cache: "no-store" });
     if (!res.ok) throw new Error(`Template not found: ${tplUrl}`);
     const json = await res.json();
+    if (!json?.id) throw new Error(`Template ${filename} missing "id" field`);
+    const id = json.id;
     try {
-      const authRes = await fetch(`${authoringBaseUrl}${id}.json`);
+      const authRes = await fetch(`${authoringBaseUrl}${id}.json`, { cache: "no-store" });
       if (authRes.ok) {
         const auth = await authRes.json();
         json.authoring = auth;
       }
     } catch (_) { /* optional authoring */ }
+    return { id, json };
+  }
+
+  /** @deprecated use loadTemplateFile — kept for compatibility */
+  async function loadTemplate(id, baseUrl, authoringBaseUrl) {
+    const res = await fetch(`${baseUrl}${id}.json`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`Template not found: ${baseUrl}${id}.json`);
+    const json = await res.json();
+    try {
+      const authRes = await fetch(`${authoringBaseUrl}${id}.json`, { cache: "no-store" });
+      if (authRes.ok) json.authoring = await authRes.json();
+    } catch (_) { /* optional */ }
     return json;
+  }
+
+  function registerTemplate(templates, id, json) {
+    templates[id] = toRuntimeTemplate(json);
+    applyTemplateSettings(json);
+    if (!JSON_TEMPLATE_IDS.includes(id)) JSON_TEMPLATE_IDS.push(id);
   }
 
   async function loadAll(options) {
@@ -365,15 +392,25 @@
     const templates = global.TEMPLATES;
     if (!templates) throw new Error("TEMPLATES must be defined before PosterTemplateLoader.loadAll");
 
+    // Clear stale runtime templates (JSON-only source of truth)
+    for (const key of Object.keys(templates)) delete templates[key];
+    JSON_TEMPLATE_IDS.length = 0;
+
+    const manifest = await fetchManifest(baseUrl);
+    const files = Array.isArray(manifest.templates) ? manifest.templates : [];
+    if (!files.length) {
+      console.warn("templates/manifest.json has no templates listed");
+      return [];
+    }
+
     const loaded = [];
-    for (const id of JSON_TEMPLATE_IDS) {
+    for (const file of files) {
       try {
-        const json = await loadTemplate(id, baseUrl, authoringBaseUrl);
-        templates[id] = toRuntimeTemplate(json);
-        applyTemplateSettings(json);
+        const { id, json } = await loadTemplateFile(file, baseUrl, authoringBaseUrl);
+        registerTemplate(templates, id, json);
         loaded.push(id);
       } catch (e) {
-        console.warn(`Template "${id}" failed to load:`, e);
+        console.warn(`Template file "${file}" failed to load:`, e);
       }
     }
     return loaded;
@@ -393,6 +430,8 @@
     JSON_TEMPLATE_IDS,
     loadAll,
     loadTemplate,
+    loadTemplateFile,
+    fetchManifest,
     getTextRules,
     getTemplateSettings,
     interpolate,
@@ -400,11 +439,10 @@
     salukisDarkPanelSlots,
     vaporMotionCardSlots,
     toRuntimeTemplate,
+    /** In-memory update after Save (until DB). Does not persist to disk — use Download template. */
     rebuildFromJson(json) {
       if (!json?.id || !global.TEMPLATES) return null;
-      if (!JSON_TEMPLATE_IDS.includes(json.id)) JSON_TEMPLATE_IDS.push(json.id);
-      global.TEMPLATES[json.id] = toRuntimeTemplate(json);
-      applyTemplateSettings(json);
+      registerTemplate(global.TEMPLATES, json.id, json);
       return json.id;
     },
   };
