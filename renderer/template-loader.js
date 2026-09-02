@@ -5,7 +5,7 @@
 (function (global) {
   "use strict";
 
-  const JSON_TEMPLATE_IDS = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11"];
+  const JSON_TEMPLATE_IDS = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11", "richmond"];
   const FONT_KEYS = {
     disp: "'Anton',sans-serif",
     cond: "'Oswald',sans-serif",
@@ -365,12 +365,18 @@
     const templates = global.TEMPLATES;
     if (!templates) throw new Error("TEMPLATES must be defined before PosterTemplateLoader.loadAll");
 
+    const loaded = [];
     for (const id of JSON_TEMPLATE_IDS) {
-      const json = await loadTemplate(id, baseUrl, authoringBaseUrl);
-      templates[id] = toRuntimeTemplate(json);
-      applyTemplateSettings(json);
+      try {
+        const json = await loadTemplate(id, baseUrl, authoringBaseUrl);
+        templates[id] = toRuntimeTemplate(json);
+        applyTemplateSettings(json);
+        loaded.push(id);
+      } catch (e) {
+        console.warn(`Template "${id}" failed to load:`, e);
+      }
     }
-    return JSON_TEMPLATE_IDS;
+    return loaded;
   }
 
   function getTextRules(templateId) {

@@ -134,10 +134,12 @@
     background:#fff;border:2px solid var(--accent);cursor:grab;display:none;pointer-events:auto;z-index:6;}
   .layer.sel .rot{display:block;}
   .layer.cropping .rot{display:none;}
-  .layer.txt{display:flex;flex-direction:column;justify-content:center;}
-  .layer.txt>.txt-flow{display:block;width:100%;min-width:0;}
-  .layer.txt:has(sup){overflow:visible;}
+  .layer.txt{display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;}
+  .layer.txt>.txt-flow{display:block;width:100%;min-width:0;max-width:100%;}
+  .layer.txt.fixed-box{overflow:hidden;}
+  .layer.txt:has(sup):not(.fixed-box){overflow:visible;}
   .layer.txt:has(sup)>.txt-flow{padding-top:0.18em;}
+  .layer.txt.fixed-box:has(sup)>.txt-flow{padding-top:0.18em;}
   .layer.txt sup,.layer.txt .s-n sup,.layer.txt .s-l sup{
     font-size:0.52em;line-height:1;vertical-align:baseline;position:relative;top:-0.42em;
     font-weight:inherit;font-style:inherit;letter-spacing:inherit;
@@ -187,6 +189,7 @@
       Uses <code>index.html</code> only. Saves to <code>posterEditor.v3</code>.
       Use <a href="./automate.html" style="color:#9ec1ff">Automate</a> to fill a fixed template with new values.
     </div>
+    <div id="templateLoadBanner" style="display:none;margin:0 0 12px;padding:10px 12px;border-radius:8px;border:1px solid #7a4a20;background:#2a1a0f;color:#ffd9a8;font-size:11px;line-height:1.45;"></div>
 
     <details class="group" open>
       <summary>Template</summary>
@@ -306,7 +309,7 @@
           <button class="btn" id="bakeTemplateBtn" style="flex:1">Save</button>
           <button class="btn sec" id="exportFrozenTemplate" style="flex:1">Download template</button>
         </div>
-        <div class="mini" style="margin-top:6px"><b>Save</b> → updates Automate with this exact layout (no file). <b>Download template</b> → same save + downloads <code>{id}.json</code>.</div>
+        <div class="mini" style="margin-top:6px"><b>Save</b> → freezes layout <b>and permanently stores player + background</b> for this template (survives restart). Automate can still override images via API. <b>Download template</b> → same + downloads <code>{id}.json</code> (includes embedded images).</div>
         <label class="fld" style="margin-top:10px">Save as template id</label>
         <input type="text" id="bakeTemplateId" placeholder="e.g. cc11">
         <label class="fld">Display name</label>
@@ -456,6 +459,74 @@ function imagesOf(templateId){
   if(!state.templateImages[tid]) state.templateImages[tid]={};
   return state.templateImages[tid];
 }
+const TEMPLATE_DEFAULT_IMAGE_KEYS=["player","background","logo","conference","sponsor"];
+function collectTemplateDefaultImages(templateId){
+  const imgs=imagesOf(templateId);
+  const out={};
+  for(const key of TEMPLATE_DEFAULT_IMAGE_KEYS){
+    const slot=imgs[key];
+    if(!slot) continue;
+    const src=slot.stored||slot.src;
+    if(!src || typeof src!=="string") continue;
+    // Prefer durable sources (data URL / http / relative path) — skip ephemeral blob: URLs
+    if(src.startsWith("blob:")) continue;
+    out[key]={ src, natW:slot.natW||null, natH:slot.natH||null };
+  }
+  return out;
+}
+function getTemplateDefaultImages(templateId){
+  const json=TEMPLATES[templateId]?._json;
+  return json?.defaults?.images || json?.settings?.defaultImages || null;
+}
+function seedTemplateImagesFromDefaults(templateId, defaults, { onlyMissing=true }={}){
+  if(!defaults || typeof defaults!=="object") return 0;
+  const slots=imagesOf(templateId);
+  let n=0;
+  for(const [key, meta] of Object.entries(defaults)){
+    const src=typeof meta==="string" ? meta : meta?.src;
+    if(!src) continue;
+    if(onlyMissing && slots[key]?.src && !String(slots[key].src).startsWith("blob:")) continue;
+    slots[key]={
+      src,
+      stored:src,
+      natW:(typeof meta==="object" && meta?.natW)||null,
+      natH:(typeof meta==="object" && meta?.natH)||null,
+    };
+    n++;
+  }
+  if(n) hydrateTemplateImagesRecord(slots);
+  return n;
+}
+/** Apply baked/disk default images for a template (player, background, …). */
+async function applyTemplateDefaultImages(templateId, opts={}){
+  const onlyMissing=opts.onlyMissing!==false;
+  const defaults=getTemplateDefaultImages(templateId);
+  if(!defaults) return 0;
+  seedTemplateImagesFromDefaults(templateId, defaults, { onlyMissing });
+  const slots=imagesOf(templateId);
+  const loads=[];
+  for(const key of TEMPLATE_DEFAULT_IMAGE_KEYS){
+    const slot=slots[key];
+    if(!slot?.src) continue;
+    if(slot.el && slot.el.complete) continue;
+    loads.push(new Promise(resolve=>{
+      const im=new Image();
+      im.crossOrigin="anonymous";
+      im.onload=()=>{
+        if(slots[key]){
+          slots[key].el=im;
+          slots[key].natW=im.naturalWidth;
+          slots[key].natH=im.naturalHeight;
+        }
+        resolve();
+      };
+      im.onerror=()=>resolve();
+      im.src=slot.stored||slot.src;
+    }));
+  }
+  if(loads.length) await Promise.all(loads);
+  return Object.keys(defaults).length;
+}
 function hydrateTemplateImagesRecord(imgs){
   if(!imgs) return;
   for(const [k,v] of Object.entries(imgs)){
@@ -494,24 +565,55 @@ function blockFillRoleSelectValue(g, def){
 // (older) template definitions. This promise ensures JSON templates are
 // fully loaded and patched into TEMPLATES before we render anything.
 let _posterTemplatesLoadPromise = null;
+let _posterTemplatesLoadError = null;
 function ensurePosterTemplatesLoaded() {
   if (_posterTemplatesLoadPromise) return _posterTemplatesLoadPromise;
   if (!window.PosterTemplateLoader) {
-    _posterTemplatesLoadPromise = Promise.resolve();
+    _posterTemplatesLoadPromise = Promise.resolve([]);
     return _posterTemplatesLoadPromise;
   }
   _posterTemplatesLoadPromise = (async () => {
+    let loaded = [];
     try {
-      await window.PosterTemplateLoader.loadAll();
+      loaded = await window.PosterTemplateLoader.loadAll();
     } catch (e) {
+      _posterTemplatesLoadError = e;
       console.warn("Template JSON load:", e);
     }
     // Re-apply editor-saved templates (includes shapes) over disk JSON
     try { restoreBakedTemplates(); } catch (e) {
       console.warn("Baked template restore:", e);
     }
+    // Seed default images from any loaded template JSON (disk or baked)
+    try {
+      for(const id of Object.keys(TEMPLATES||{})){
+        const defs=getTemplateDefaultImages(id);
+        if(defs) seedTemplateImagesFromDefaults(id, defs, { onlyMissing:true });
+      }
+    } catch (e) {
+      console.warn("Default image seed:", e);
+    }
+    state.template = ensureEnabledTemplate(state.template);
+    updateTemplateLoadBanner(loaded);
+    return loaded;
   })();
   return _posterTemplatesLoadPromise;
+}
+function updateTemplateLoadBanner(loadedIds){
+  const el=document.getElementById("templateLoadBanner");
+  if(!el) return;
+  const missing=ENABLED_TEMPLATES.filter(id=>!TEMPLATES[id]);
+  if(!missing.length && !_posterTemplatesLoadError){
+    el.style.display="none";
+    el.textContent="";
+    return;
+  }
+  el.style.display="block";
+  const parts=[];
+  if(_posterTemplatesLoadError) parts.push("Some templates failed to load from disk.");
+  if(missing.length) parts.push(`Missing: ${missing.join(", ")}. Serve via a local server (not file://) or re-save the template.`);
+  if(loadedIds?.length) parts.push(`Loaded ${loadedIds.length} JSON template(s).`);
+  el.textContent=parts.join(" ");
 }
 
 /* ============================================================
@@ -1312,7 +1414,7 @@ function migrateVaporGlassCardLayout(d){
 
 /* Focus sprint — only these appear in the template picker */
 /* v3 lab — JSON-backed templates only (same defs as index_2, narrower picker) */
-const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11"];
+const ENABLED_TEMPLATES = ["magazine", "vapor_motion", "salukis_clean", "salukis_dark", "big_sky_leader", "cutout_splat", "sideline_cutout", "sideline_text", "cc11", "richmond"];
 const BUNDLED_STORIES_URL = "./stories.players.json";
 function spotlightDecoBase(opts={}){
   const s=state.colors.secondary;
@@ -1426,15 +1528,20 @@ const SPOTLIGHT_VARIANTS = {
     }
   }
 };
+function templateIdsReady(){
+  return ENABLED_TEMPLATES.filter(id=>TEMPLATES[id]);
+}
 function ensureEnabledTemplate(id){
-  if(!id) return ENABLED_TEMPLATES[0];
-  if(ENABLED_TEMPLATES.includes(id)) return id;
-  // Custom / baked templates may exist in TEMPLATES before being listed
-  if(TEMPLATES[id]){
-    ENABLED_TEMPLATES.push(id);
+  if(id && TEMPLATES[id]){
+    if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
     return id;
   }
-  return ENABLED_TEMPLATES[0];
+  const loaded=templateIdsReady();
+  const fallback=loaded[0] || Object.keys(TEMPLATES)[0] || "magazine";
+  if(id && id!==fallback){
+    console.warn(`Template "${id}" is not loaded; using "${fallback}".`);
+  }
+  return TEMPLATES[fallback] ? fallback : "magazine";
 }
 function isFrozenTemplate(id){
   const j=TEMPLATES[id]?._json;
@@ -1480,7 +1587,11 @@ function resetLayoutFromTemplate(templateId, opts={}){
     L[id].hidden=!!def.hidden;
     L[id].opacity=def.opacity!=null?def.opacity:1;
     // Locked templates must not auto-resize text (keeps placeholder positions identical)
-    if(freeze && def.type==="text") L[id].manualSize=true;
+    if(freeze && def.type==="text"){
+      L[id].manualSize=true;
+      if(L[id].h!=null || def.h!=null) L[id].fixedBox=true;
+      if(def.vAlign) L[id].vAlign=def.vAlign;
+    }
   }
   return L;
 }
@@ -1585,7 +1696,7 @@ function vaporMotionBgColorForLayer(id){
 
 /* which bind keys are plain text inputs shown in the panel */
 const TEXT_FIELDS = [
-  ["teamName","Team name"],["playerName","Player name"],
+  ["teamName","Team name"],["opponent","Opponent"],["playerName","Player name"],
   ["position","Position (e.g. RB, WR)"],["playerClass","Class / Year"],["eyebrow","Eyebrow"],
   ["heroNumber","Hero stat number"],["heroDesc","Hero description"],
   ["stat1num","Stat 1 — number"],["stat1label","Stat 1 — label"],
@@ -1594,6 +1705,57 @@ const TEXT_FIELDS = [
   ["callout","Callout"],["hashtag","Hashtag"],["sport","Sport"],
   ["reportTitle","Report title"],["avgLabel","Average label"],["avgValue","Average value"],
 ];
+const TEXT_FIELD_LABELS=Object.fromEntries(TEXT_FIELDS);
+/** Collect editable text bind keys from layer defs (+ optional automation.swapFields). */
+function collectTextBindsFromLayers(layers, swapFields){
+  const binds=new Set();
+  const layerList=Object.values(layers||{});
+  for(const def of layerList){
+    if(!def || def.type!=="text") continue;
+    if(def.kind==="stat"){
+      binds.add(def.bind+"num");
+      binds.add(def.bind+"label");
+    } else if(def.bind==="footer"){
+      binds.add("teamName"); binds.add("hashtag");
+      binds.add("sport");
+    } else if(def.bind==="playerMeta"){
+      binds.add("position"); binds.add("playerClass");
+    } else if(def.bind){
+      binds.add(def.bind);
+    }
+  }
+  (swapFields||[]).forEach(k=>{
+    if(k==="playerMeta"){ binds.add("position"); binds.add("playerClass"); }
+    else binds.add(k);
+  });
+  return [...binds].filter(Boolean);
+}
+/** Label for a text bind: JSON layer.label → TEXT_FIELDS → labelFor → bind key */
+function textFieldLabelFor(bind, layers){
+  for(const def of Object.values(layers||{})){
+    if(!def || def.type!=="text") continue;
+    if(def.bind===bind && def.label) return def.label;
+    if(def.kind==="stat"){
+      if(def.bind+"num"===bind && def.labelNum) return def.labelNum;
+      if(def.bind+"label"===bind && def.labelText) return def.labelText;
+    }
+  }
+  if(TEXT_FIELD_LABELS[bind]) return TEXT_FIELD_LABELS[bind];
+  const fromLabelFor=labelFor(bind);
+  if(fromLabelFor && fromLabelFor!==bind) return fromLabelFor;
+  return bind.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase()).trim();
+}
+function textFieldPlaceholderFor(bind, layers){
+  for(const def of Object.values(layers||{})){
+    if(!def) continue;
+    if(def.bind===bind && def.placeholder) return def.placeholder;
+    if(def.kind==="stat"){
+      if(def.bind+"num"===bind && def.placeholderNum) return def.placeholderNum;
+      if(def.bind+"label"===bind && def.placeholderLabel) return def.placeholderLabel;
+    }
+  }
+  return "";
+}
 
 /* Same font family — varies weight, italic, spacing & color role only */
 const TEXT_STYLE_PRESETS = {
@@ -1668,9 +1830,23 @@ function textStyleSummary(presetId, g, def){
 /* ============================================================
    LAYOUT (geometry) MANAGEMENT
 ============================================================ */
-function tpl(){ return TEMPLATES[state.template]; }
+function tpl(){
+  const t=TEMPLATES[state.template];
+  if(t) return t;
+  state.template=ensureEnabledTemplate(state.template);
+  return TEMPLATES[state.template] || { name:state.template, stageBg:()=>"#111", deco:()=>"", layers:{} };
+}
 /* template layers merged with any duplicated (extra) layers for this template */
-function layersOf(){ return Object.assign({}, tpl().layers, state.extraLayers[state.template]||{}); }
+function layersOf(){
+  let base={};
+  try{
+    const t=tpl();
+    if(t?.layers) base=typeof t.layers==="object" ? t.layers : {};
+  }catch(e){
+    console.warn("layersOf:", e);
+  }
+  return Object.assign({}, base, state.extraLayers[state.template]||{});
+}
 function ensureLayout(){
   const t = state.template;
   if(!state.layouts[t]) state.layouts[t] = {};
@@ -1680,7 +1856,7 @@ function ensureLayout(){
                          weight:def.weight ?? null, rotate:parseRotate(def.transform), italic:!!def.italic,
                          underline:!!def.underline,
                          ls:def.ls ?? null, color:def.color, textTransform:def.textTransform ?? null,
-                         labelColor:null, textStyle:null, manualSize:false, hidden:false,
+                         labelColor:null, textStyle:null, manualSize:false, fixedBox:false, vAlign:def.vAlign ?? "middle", hidden:false,
                          // image transform / crop controls
                          fit:def.fit ?? null, zoom:def.zoom ?? 1, cropX:def.cropX ?? 0.5, cropY:def.cropY ?? 0.5, flipH:false, flipV:false,
                          opacity:(def.opacity!=null?def.opacity:1), radius:def.type==="glass"?(def.radius??24):(def.type==="block"||def.shape||/^shape_/.test(id)?(def.radius??0):0),
@@ -1689,6 +1865,10 @@ function ensureLayout(){
                          fill:def.fill ?? null, clip:def.clip ?? null, shape:def.shape ?? null };
     else {
       if(def.type==="text" && L[id].underline==null && def.underline) L[id].underline=true;
+      if(def.type==="text"){
+        if(L[id].vAlign==null) L[id].vAlign=def.vAlign ?? "middle";
+        if(def.manualSize && (L[id].h!=null || def.h!=null) && L[id].fixedBox==null) L[id].fixedBox=true;
+      }
       // Keep shape clip/fill/radius in sync when layer came from a baked template
       if(def.type==="block" || def.shape || /^shape_/.test(id)){
         if(L[id].clip==null && def.clip!=null) L[id].clip=def.clip;
@@ -2290,7 +2470,7 @@ function templateAutoFitBinds(){ return RE.templateAutoFitBinds(state.template, 
 function templateStatAutoFit(){ return RE.templateStatAutoFit(state.template, textRulesFor); }
 function autoFitSalukisStat(el, g, def){ RE.autoFitSalukisStat(el, g, def); }
 function autoFitGenericStat(el, g, def){ RE.autoFitGenericStat(el, g, def, state.template, textRulesFor); }
-function autoFitTextLayer(el, def, g){ RE.autoFitTextLayer(el, def, g, state.template, textRulesFor); }
+function autoFitTextLayer(el, def, g){ if(g?.fixedBox) return; RE.autoFitTextLayer(el, def, g, state.template, textRulesFor); }
 
 function fontAudit(){
   const results=[];
@@ -2339,30 +2519,32 @@ function switchTemplate(id){
     if(next==="vapor_motion") applyVaporMotionLayoutDefault();
     if(next==="salukis_clean"||next==="salukis_dark") applySalukisLayoutDefault();
   }
+  // Restore baked/disk default player + background for this template
+  applyTemplateDefaultImages(next, { onlyMissing:true }).then(()=>{
+    buildAssets();
+    buildLogoControls();
+    if(shouldUsePlayerPalette(next)) applyPaletteFromPlayer();
+    else applyTemplateHeaderColors();
+    render();
+  });
   if(shouldUsePlayerPalette(next)) applyPaletteFromPlayer();
   else applyTemplateHeaderColors();
   if(next==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
   select(null);
-  buildTplChips();
-  buildSpotlightVariantControls();
-  buildVaporGlassControls();
-  buildAssets();
-  buildTextFields();
-  buildCaptionColorControls();
-  buildLogoControls();
-  updateBrandColorControls();
   const idInput=document.getElementById("bakeTemplateId");
   const nameInput=document.getElementById("bakeTemplateName");
   if(idInput) idInput.value=next;
   if(nameInput) nameInput.value=TEMPLATES[next]?.name||next;
-  render();
-  updateTestBanner();
+  refreshEditorUI();
   scheduleSave();
 }
 function gotoTemplate(d){
-  const idx=ENABLED_TEMPLATES.indexOf(state.template);
-  const next=(idx+d+ENABLED_TEMPLATES.length)%ENABLED_TEMPLATES.length;
-  switchTemplate(ENABLED_TEMPLATES[next]);
+  const ready=templateIdsReady();
+  if(!ready.length) return;
+  const idx=ready.indexOf(state.template);
+  const base=idx>=0?idx:0;
+  const next=(base+d+ready.length)%ready.length;
+  switchTemplate(ready[next]);
 }
 function exportFilename(){
   const story=state.stories[state.storyIndex];
@@ -2389,9 +2571,52 @@ function applyTextUnderline(el, def, g){
   }
 }
 
-/** Keep manual text sizing from clipping inside a fixed template height. */
+/** Horizontal + vertical placement of text inside its box. */
+function applyTextBoxAlign(el, def, g){
+  if(!el || def.type!=="text") return;
+  const align=g.align ?? def.align ?? "left";
+  const vAlign=g.vAlign ?? def.vAlign ?? "middle";
+  el.style.display="flex";
+  el.style.flexDirection="column";
+  el.style.textAlign=align;
+  el.style.alignItems=align==="center"?"center":align==="right"?"flex-end":"flex-start";
+  el.style.justifyContent=vAlign==="top"?"flex-start":vAlign==="bottom"?"flex-end":"center";
+  const flow=el.querySelector(":scope > .txt-flow");
+  if(flow){
+    flow.style.width="100%";
+    flow.style.textAlign=align;
+  }
+}
+/** Apply width/height for text boxes; fixedBox = user-resized container (font size independent). */
+function applyTextBoxSize(el, def, g){
+  if(!el || def.type!=="text") return;
+  el.style.width=(g.w)+"px";
+  const fixed=!!g.fixedBox;
+  el.classList.toggle("fixed-box", fixed);
+  if(fixed){
+    const h=Math.max(12, g.h ?? def.h ?? Math.round((g.size??def.size??30)*1.35));
+    g.h=h;
+    el.style.height=h+"px";
+    el.style.overflow="hidden";
+  } else {
+    const textH=g.h ?? def.h ?? null;
+    if(textH && !g.manualSize){
+      el.style.height=textH+"px";
+      el.style.overflow="hidden";
+    } else {
+      el.style.height=textH ? textH+"px" : "auto";
+      el.style.overflow="visible";
+    }
+  }
+  applyTextBoxAlign(el, def, g);
+}
+/** Keep manual text sizing from clipping — skipped when the box was resized by the user. */
 function syncTextLayerHeight(el, g, def){
   if(!el || def.type!=="text" || def.kind==="stat") return;
+  if(g.fixedBox){
+    applyTextBoxSize(el, def, g);
+    return;
+  }
   el.style.height="auto";
   el.style.overflow="visible";
   const needed=Math.max(12, Math.ceil(el.scrollHeight));
@@ -2404,6 +2629,7 @@ function syncTextLayerHeight(el, g, def){
   const outH=g.h ?? def.h ?? needed;
   el.style.height=outH+"px";
   el.style.overflow="visible";
+  applyTextBoxAlign(el, def, g);
 }
 
 /** Soft opposite-value halo on Magazine header glyphs for busy photo backgrounds. */
@@ -2437,7 +2663,9 @@ function salukisDarkHeaderTextShadow(fontSize, textColor){
 
 function render(){
   const t = tpl();
-  const L = ensureLayout();
+  if(!t) return;
+  let L;
+  try{ L = ensureLayout(); }catch(e){ console.error("ensureLayout:", e); return; }
   stage.dataset.template = state.template;
   // background + vars
   stage.style.background = t.stageBg();
@@ -2534,14 +2762,7 @@ function render(){
       el.style.lineHeight = def.lh ?? 1.0;
       el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
       el.style.textTransform = g.textTransform ?? def.textTransform ?? "none";
-      const textH = g.h ?? def.h ?? null;
-      if(textH && !g.manualSize){
-        el.style.height = textH + "px";
-        el.style.overflow = "hidden";
-      } else {
-        el.style.height = textH ? textH + "px" : "auto";
-        el.style.overflow = "visible";
-      }
+      applyTextBoxSize(el, def, g);
       if(def.bg){ el.style.background = vaporMotionBgColorForLayer(id) || roleColor(def.bg); }
       if(def.pad){ el.style.padding = def.pad; }
       if(def.radius){ el.style.borderRadius = def.radius+"px"; }
@@ -2586,10 +2807,9 @@ function render(){
       }
     }
 
-    // resize handles — text uses corners + left/right; blocks/images use all 8
+    // resize handles — all layers get 8 handles (text box is freely resizable)
     const blockLayer=isBlockLayer(def, g, id);
-    const dirs = def.type==="text" && !blockLayer ? ["nw","ne","sw","se","w","e"]
-                                   : ["nw","ne","sw","se","n","s","w","e"];
+    const dirs = ["nw","ne","sw","se","n","s","w","e"];
     dirs.forEach(d=>{ const hd=document.createElement("div"); hd.className="h "+d; hd.dataset.handle=d; el.appendChild(hd); });
     const rt=document.createElement("div"); rt.className="rot"; rt.dataset.handle="rot"; el.appendChild(rt);
 
@@ -2597,8 +2817,12 @@ function render(){
     deco.after(el); // keep order; appended to stage
     stage.appendChild(el);
     if(def.type==="text") autoFitTextLayer(el, def, g);
-    if(def.type==="text" && el.querySelector("sup")) el.style.overflow="visible";
-    if(def.type==="text" && g.manualSize && def.kind!=="stat") syncTextLayerHeight(el, g, def);
+    if(def.type==="text" && el.querySelector("sup") && !g.fixedBox) el.style.overflow="visible";
+    if(def.type==="text" && def.kind!=="stat"){
+      if(g.fixedBox) applyTextBoxSize(el, def, g);
+      else if(g.manualSize) syncTextLayerHeight(el, g, def);
+      else applyTextBoxAlign(el, def, g);
+    }
     if(def.kind==="stat"&&templateStatAutoFit()){
       if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
       else autoFitGenericStat(el, g, def);
@@ -2756,7 +2980,9 @@ function attachLayerEvents(el, def, g){
     if(!handle && state.cropMode===el.dataset.id && def.type==="image") mode="pan";
     const layerId=el.dataset.id;
     const blockLayer=isBlockLayer(def, g, layerId);
-    if(blockLayer && g.h==null) g.h=def.h ?? g.w;
+    if((blockLayer || def.type==="text") && g.h==null){
+      g.h=def.h ?? Math.round(el.getBoundingClientRect().height/(currentScale()||1)) ?? g.w;
+    }
     const r=el.getBoundingClientRect();
     drag = { id:layerId, def, g, mode, blockLayer,
              sx:e.clientX, sy:e.clientY, ox:g.x, oy:g.y, ow:g.w, oh:g.h ?? def.h ?? g.w,
@@ -2807,8 +3033,19 @@ function attachLayerEvents(el, def, g){
         if(dir.includes("n")) ny=d.oy+(d.oh-nh);
         gg.x=Math.round(nx); gg.y=Math.round(ny);
         gg.w=Math.round(nw); gg.h=Math.round(nh);
+      } else if(def.type==="text"){
+        // Text box resize: change container only — font size stays (use Font size slider)
+        // Hold Shift while resizing a corner to also scale font with width
+        if(dir.includes("w")) nx=d.ox+(d.ow-nw);
+        if(dir.includes("n")) ny=d.oy+(d.oh-nh);
+        gg.x=Math.round(nx); gg.y=Math.round(ny);
+        gg.w=Math.round(nw); gg.h=Math.round(nh);
+        gg.fixedBox=true;
+        gg.manualSize=true;
+        if(e.shiftKey && corner){
+          gg.size=Math.max(8, Math.round(d.osize*(nw/d.ow)));
+        }
       } else {
-        // text: width drives the box; font scales with width
         if(dir.includes("w")) nx=d.ox+(d.ow-nw);
         gg.x=Math.round(nx); gg.w=Math.round(nw);
         gg.size=Math.max(8, Math.round(d.osize*(nw/d.ow)));
@@ -2893,6 +3130,7 @@ function applyTextLayerVisuals(el, def, g, layerId){
     if(n) n.style.color=vaporStatColor || textColor;
     if(l) l.style.color=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
     if(g.manualSize) syncTextLayerHeight(el, g, def);
+    else applyTextBoxAlign(el, def, g);
     return;
   }
   if(hollow){
@@ -2918,7 +3156,9 @@ function applyTextLayerVisuals(el, def, g, layerId){
   }
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
-  if(g.manualSize) syncTextLayerHeight(el, g, def);
+  applyTextBoxAlign(el, def, g);
+  if(g.fixedBox) applyTextBoxSize(el, def, g);
+  else if(g.manualSize) syncTextLayerHeight(el, g, def);
 }
 function applyGeo(el, def, g){
   el.style.left=g.x+"px"; el.style.top=g.y+"px"; el.style.width=g.w+"px";
@@ -2941,7 +3181,9 @@ function applyGeo(el, def, g){
     else autoFitGenericStat(el, g, def);
     applyTextLayerVisuals(el, def, g);
   } else if(def.type==="text"){
+    if(g.size) el.style.fontSize=g.size+"px";
     applyTextLayerVisuals(el, def, g);
+    applyTextBoxSize(el, def, g);
   } else if(g.size){ el.style.fontSize=g.size+"px"; }
   scheduleSave();
 }
@@ -3132,10 +3374,26 @@ function syncInspector(){
         <div><label class="fld">Rotation: <b id="ivr2">${g.rotate||0}°</b></label><input type="range" id="iRot" min="-90" max="90" value="${g.rotate||0}"></div></div>`;
     h+=`<label class="fld"><input type="checkbox" id="iIt" ${(g.italic ?? def.italic)?'checked':''} style="width:auto"> Italic</label>`;
     h+=`<label class="fld"><input type="checkbox" id="iUl" ${(g.underline ?? def.underline)?'checked':''} style="width:auto"> Underline</label>`;
+    h+=`<label class="fld">Align</label>
+        <div class="seg" id="iAlign">
+          <button type="button" data-align="left" class="${(g.align??def.align??"left")==="left"?"on":""}">Left</button>
+          <button type="button" data-align="center" class="${(g.align??def.align??"left")==="center"?"on":""}">Center</button>
+          <button type="button" data-align="right" class="${(g.align??def.align??"left")==="right"?"on":""}">Right</button>
+        </div>`;
+    h+=`<label class="fld" style="margin-top:8px">Vertical align</label>
+        <div class="seg" id="iVAlign">
+          <button type="button" data-valign="top" class="${(g.vAlign??def.vAlign??"middle")==="top"?"on":""}">Top</button>
+          <button type="button" data-valign="middle" class="${(g.vAlign??def.vAlign??"middle")==="middle"?"on":""}">Middle</button>
+          <button type="button" data-valign="bottom" class="${(g.vAlign??def.vAlign??"middle")==="bottom"?"on":""}">Bottom</button>
+        </div>`;
+    h+=`<div class="mini" style="margin:6px 0 8px">Drag any edge/corner of the blue box to resize it. Text stays aligned inside; font size is separate (slider above). Hold <b>Shift</b> on a corner to also scale font.</div>`;
     h+=`<div class="row" style="margin-top:6px">
           <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
           <div><label class="fld">Y</label><input class="num" type="number" id="iY" value="${Math.round(g.y)}"></div>
+        </div>
+        <div class="row" style="margin-top:6px">
           <div><label class="fld">Width</label><input class="num" type="number" id="iW" value="${Math.round(g.w)}"></div>
+          <div><label class="fld">Height</label><input class="num" type="number" id="iH" value="${Math.round(g.h ?? def.h ?? Math.round((g.size??def.size??30)*1.35))}"></div>
         </div>`;
   }
 
@@ -3267,12 +3525,34 @@ function syncInspector(){
       if(def.kind==="stat"&&templateStatAutoFit()){ render(); scheduleSave(); }
       else {
         const layerEl=el();
-        if(layerEl) layerEl.style.fontSize=g.size+"px";
-        syncTextLayerHeight(layerEl, g, def);
+        if(layerEl){
+          layerEl.style.fontSize=g.size+"px";
+          if(g.fixedBox) applyTextBoxSize(layerEl, def, g);
+          else syncTextLayerHeight(layerEl, g, def);
+        }
         scheduleSave();
       }
     };
     $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
+    $("iAlign")?.querySelectorAll("[data-align]").forEach(b=>{
+      b.onclick=()=>withUndo(()=>{
+        g.align=b.dataset.align;
+        markTextStyleCustom(g);
+        $("iAlign").querySelectorAll("[data-align]").forEach(x=>x.classList.toggle("on", x===b));
+        const layerEl=el();
+        if(layerEl) applyTextBoxAlign(layerEl, def, g);
+        scheduleSave();
+      });
+    });
+    $("iVAlign")?.querySelectorAll("[data-valign]").forEach(b=>{
+      b.onclick=()=>withUndo(()=>{
+        g.vAlign=b.dataset.valign;
+        $("iVAlign").querySelectorAll("[data-valign]").forEach(x=>x.classList.toggle("on", x===b));
+        const layerEl=el();
+        if(layerEl) applyTextBoxAlign(layerEl, def, g);
+        scheduleSave();
+      });
+    });
     const commitInspectorTextColor=()=>{
       const layerEl=el();
       if(layerEl) applyTextLayerVisuals(layerEl, def, g, id);
@@ -3325,7 +3605,19 @@ function syncInspector(){
     $("iUl").onchange=e=>{ g.underline=e.target.checked; markTextStyleCustom(g); applyGeo(el(),def,g); };
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
-    $("iW").oninput=e=>{ const v=Math.max(8,+e.target.value||8); g.size=Math.max(8,Math.round((g.size??def.size)*(v/g.w))); g.manualSize=true; g.w=v; applyGeo(el(),def,g); };
+    $("iW").oninput=e=>{
+      g.w=Math.max(8,+e.target.value||8);
+      g.fixedBox=true;
+      g.manualSize=true;
+      if(g.h==null) g.h=def.h ?? Math.round((g.size??def.size??30)*1.35);
+      applyGeo(el(),def,g);
+    };
+    if($("iH")) $("iH").oninput=e=>{
+      g.h=Math.max(12,+e.target.value||12);
+      g.fixedBox=true;
+      g.manualSize=true;
+      applyGeo(el(),def,g);
+    };
   }
 
   $("iOp").oninput=e=>{
@@ -3354,15 +3646,34 @@ function syncInspector(){
 // template chips
 const tplGrid=document.getElementById("tplGrid");
 function buildTplChips(){
+  if(!tplGrid) return;
   tplGrid.innerHTML="";
-  for(const id of ENABLED_TEMPLATES){
+  for(const id of templateIdsReady()){
     const t=TEMPLATES[id];
+    if(!t) continue;
     const c=document.createElement("div");
     c.className="tplchip"+(state.template===id?" active":"");
-    c.textContent=t.name;
+    c.textContent=t.name||id;
     c.onclick=()=>switchTemplate(id);
     tplGrid.appendChild(c);
   }
+}
+/** Rebuild sidebar + canvas after templates load or template switch. */
+function refreshEditorUI(){
+  state.template=ensureEnabledTemplate(state.template);
+  buildTplChips();
+  buildSpotlightVariantControls();
+  buildVaporGlassControls();
+  buildAssets();
+  buildLogoControls();
+  buildTextFields();
+  buildCaptionColorControls();
+  buildStorySelect();
+  updateBrandColorControls();
+  render();
+  applyZoom();
+  syncFrameGuide();
+  updateTestBanner();
 }
 function buildSpotlightVariantControls(){
   const wrap=document.getElementById("spotlightVariantControls");
@@ -3802,7 +4113,7 @@ function loadState(){
   let raw; try{ raw=localStorage.getItem(LS_KEY); }catch(e){ return false; }
   if(!raw) return false;
   let d; try{ d=JSON.parse(raw); }catch(e){ return false; }
-  if(d.template && ENABLED_TEMPLATES.includes(d.template)) state.template=ensureEnabledTemplate(d.template);
+  if(d.template) state.template=ensureEnabledTemplate(d.template);
   if(d.colors) state.colors=Object.assign(state.colors, d.colors);
   if(d.text) state.text=Object.assign({...DEFAULT_TEXT}, d.text);
   if(d.layouts) state.layouts=d.layouts;
@@ -4023,24 +4334,17 @@ function buildCaptionColorControls(){
   });
 }
 function buildTextFields(){
-  // show only fields relevant to current template binds
-  const binds=new Set();
-  Object.values(layersOf()).forEach(d=>{
-    if(d.kind==="stat"){ binds.add(d.bind+"num"); binds.add(d.bind+"label"); }
-    else if(d.bind==="footer"){
-      binds.add("teamName"); binds.add("hashtag");
-      if(state.template!=="cutout_splat") binds.add("sport");
-    }
-    else if(d.bind==="playerMeta"){ binds.add("position"); binds.add("playerClass"); }
-    else binds.add(d.bind);
-  });
-  // always allow hashtag/sport if a footer exists already handled
+  if(!textFieldsWrap) return;
+  let layers={};
+  try{ layers=layersOf(); }catch(e){ console.warn("buildTextFields layers:", e); }
+  const swapFields=TEMPLATES[state.template]?._json?.automation?.swapFields;
+  const binds=collectTextBindsFromLayers(layers, swapFields);
   textFieldsWrap.innerHTML="";
-  TEXT_FIELDS.forEach(([key,label])=>{
-    if(!binds.has(key)) return;
+  binds.forEach(key=>{
     const wrap=document.createElement("div");
-    wrap.innerHTML=`<label class="fld">${label}</label>`;
+    wrap.innerHTML=`<label class="fld">${esc(textFieldLabelFor(key, layers))}</label>`;
     const i=document.createElement("input"); i.type="text"; i.value=state.text[key]??"";
+    i.placeholder=textFieldPlaceholderFor(key, layers);
     i.oninput=e=>{ state.text[key]=e.target.value; queueTextPreview(); };
     i.onchange=()=>scheduleSave();
     wrap.appendChild(i); textFieldsWrap.appendChild(wrap);
@@ -4190,11 +4494,15 @@ function layerDefToJson(id, def, g){
     if(weight!=null) out.weight=weight;
     const align=g.align??def.align;
     if(align) out.align=align;
+    const vAlign=g.vAlign??def.vAlign;
+    if(vAlign && vAlign!=="middle") out.vAlign=vAlign;
+    if(def.label) out.label=def.label;
     const ls=g.ls??def.ls;
     if(ls) out.ls=ls;
     const lh=g.lh??def.lh;
     if(lh!=null && lh!==1) out.lh=lh;
     if(g.italic??def.italic) out.italic=true;
+    if(g.fixedBox || g.manualSize || def.manualSize) out.manualSize=true;
     if(g.underline??def.underline){
       out.underline=true;
       if(def.underlineW!=null) out.underlineW=def.underlineW;
@@ -4303,6 +4611,13 @@ function buildFrozenTemplateJSON(opts={}){
     };
   }
 
+  // Permanently bake player/background (and other slots) into the template so they
+  // reload after restart. Automate can still override via API image fields.
+  const defaultImages=collectTemplateDefaultImages(srcId);
+  // Also keep prior defaults when current session has no durable image yet
+  const prevDefaults=base.defaults?.images || {};
+  const mergedDefaults={ ...prevDefaults, ...defaultImages };
+
   return {
     ...base,
     id,
@@ -4313,18 +4628,23 @@ function buildFrozenTemplateJSON(opts={}){
     // No autofit — keeps exact font sizes/positions from the editor
     textRules:{ autoFit:[], stats:{ autoFit:false } },
     settings,
+    defaults:{
+      ...(base.defaults||{}),
+      images:mergedDefaults,
+    },
     layers,
     automation:{
       freezeLayout:true,
       swapFields:["playerName","playerMeta","teamName","hashtag","heroNumber","heroDesc","callout","eyebrow"],
       swapImages:["player","logo","conference","sponsor","background"],
-      note:"Frozen layout from editor. Automate only swaps text + images — positions stay exact.",
+      note:"Frozen layout from editor. Default player/background images are baked in; Automate may override via API.",
     },
     _bakeMeta:{
       bakedAt:new Date().toISOString(),
       sourceTemplate:srcId,
       layerCount:layers.length,
       shapeCount,
+      imageSlots:Object.keys(mergedDefaults),
     },
   };
 }
@@ -4358,7 +4678,27 @@ function saveBakedTemplateJson(json){
   try{
     localStorage.setItem(LS_BAKED_KEY, JSON.stringify(map));
     localStorage.setItem(LS_BAKED_KEY+".lastId", json.id);
-  }catch(e){ console.warn("Could not persist baked template", e); }
+  }catch(e){
+    // Quota: keep layout, drop heavy image payloads and retry
+    console.warn("Could not persist baked template with images", e);
+    try{
+      const slim=JSON.parse(JSON.stringify(json));
+      if(slim.defaults?.images){
+        // Keep only player + background if present, else drop all
+        const keep={};
+        for(const k of ["player","background"]){
+          if(slim.defaults.images[k]) keep[k]=slim.defaults.images[k];
+        }
+        slim.defaults.images=keep;
+      }
+      map[json.id]=slim;
+      localStorage.setItem(LS_BAKED_KEY, JSON.stringify(map));
+      localStorage.setItem(LS_BAKED_KEY+".lastId", json.id);
+      setBakeStatus("Saved layout; some images may not fit in browser storage — use Download template for a full JSON with images.");
+    }catch(e2){
+      console.warn("Could not persist baked template", e2);
+    }
+  }
 }
 function getLastBakedTemplateId(){
   try{ return localStorage.getItem(LS_BAKED_KEY+".lastId")||null; }catch(_){ return null; }
@@ -4384,12 +4724,42 @@ function restoreBakedTemplates(){
     }
     if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
     if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
+    // Seed durable default images into per-template image map
+    if(json.defaults?.images){
+      seedTemplateImagesFromDefaults(id, json.defaults.images, { onlyMissing:true });
+    }
     n++;
   }
   return n;
 }
 
-function bakeEditorIntoTemplate(download=true){
+/** Ensure blob: uploads are compressed to durable data URLs before Save. */
+async function ensureDurableTemplateImages(templateId){
+  const slots=imagesOf(templateId);
+  const tasks=[];
+  for(const key of TEMPLATE_DEFAULT_IMAGE_KEYS){
+    const slot=slots[key];
+    if(!slot?.src) continue;
+    if(slot.stored && !String(slot.stored).startsWith("blob:")) continue;
+    const src=slot.src;
+    if(!src) continue;
+    const keepAlpha=key==="logo"||key==="sponsor"||key==="conference"||key==="player"||String(src).includes("image/png");
+    const maxDim=(key==="logo"||key==="sponsor"||key==="conference")?760:1800;
+    tasks.push(
+      compressImage(src, maxDim, keepAlpha?"image/png":"image/jpeg", keepAlpha?0.92:0.85)
+        .then(d=>{
+          if(!slots[key]) return;
+          slots[key].stored=d;
+          // Prefer durable src for persistence
+          if(String(slots[key].src||"").startsWith("blob:")) slots[key].src=d;
+        })
+        .catch(()=>{})
+    );
+  }
+  if(tasks.length) await Promise.all(tasks);
+}
+
+async function bakeEditorIntoTemplate(download=true){
   const idInput=document.getElementById("bakeTemplateId");
   const nameInput=document.getElementById("bakeTemplateName");
   const id=(idInput?.value||state.template).trim().replace(/[^\w-]+/g,"_")||state.template;
@@ -4397,8 +4767,20 @@ function bakeEditorIntoTemplate(download=true){
   if(idInput && !idInput.value) idInput.value=id;
   if(nameInput && !nameInput.value) nameInput.value=name;
 
+  setBakeStatus("Saving template images…");
+  await ensureDurableTemplateImages(state.template);
+  // Copy current template images onto the bake id (when saving as a new id)
+  if(id!==state.template){
+    const srcSlots=imagesOf(state.template);
+    const dst=imagesOf(id);
+    for(const key of TEMPLATE_DEFAULT_IMAGE_KEYS){
+      if(srcSlots[key] && !dst[key]) dst[key]={ ...srcSlots[key] };
+    }
+  }
+
   const json=buildFrozenTemplateJSON({ id, name });
   const shapeCount=json._bakeMeta?.shapeCount||0;
+  const imageSlots=json._bakeMeta?.imageSlots||[];
   const loader=window.PosterTemplateLoader;
 
   if(loader?.rebuildFromJson){
@@ -4419,8 +4801,12 @@ function bakeEditorIntoTemplate(download=true){
   if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
   if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
 
-  // Persist full template (including shapes) in this browser + download file
+  // Persist full template (including shapes + default images) in this browser + download file
   saveBakedTemplateJson(json);
+  // Mirror baked defaults into the editor image map for this id
+  if(json.defaults?.images){
+    seedTemplateImagesFromDefaults(id, json.defaults.images, { onlyMissing:false });
+  }
 
   // Clear extras only after shapes are confirmed present on the runtime template
   const runtimeLayers=(()=>{ try{ return TEMPLATES[id]?.layers||{}; }catch(_){ return {}; }})();
@@ -4443,6 +4829,7 @@ function bakeEditorIntoTemplate(download=true){
   resetLayoutFromTemplate(id, { freeze:true, clearExtras:missingShapes.length===0 });
 
   buildTplChips();
+  buildAssets();
   buildTextFields();
   buildCaptionColorControls();
   buildLogoControls();
@@ -4452,10 +4839,13 @@ function bakeEditorIntoTemplate(download=true){
   scheduleSave();
 
   if(download) downloadJSON(json, `${id}.json`);
+  const imgNote=imageSlots.length
+    ? ` · images: ${imageSlots.join(", ")}`
+    : " · (no player/bg uploaded yet — upload then Save again)";
   setBakeStatus(
     download
-      ? `Downloaded “${name}” (${id}.json) and saved for Automate — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+"."
-      : `Saved “${name}” for Automate (${id}) — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+`. Open Automate → “${name} ✓”.`
+      ? `Downloaded “${name}” (${id}.json) and saved for Automate — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+"."
+      : `Saved “${name}” for Automate (${id}) — ${json.layers.length} layers`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+`. Open Automate → “${name} ✓”.`
   );
   return json;
 }
@@ -4772,9 +5162,7 @@ window.__RENDER_API_V3__={
     const styleId=payload.style||payload.template;
     await ensurePosterTemplatesLoaded();
     const prevTpl=state.template;
-    if(styleId && (TEMPLATES[styleId] || ENABLED_TEMPLATES.includes(styleId))){
-      state.template=ensureEnabledTemplate(styleId);
-    }
+    if(styleId) state.template=ensureEnabledTemplate(styleId);
     if(payload.auto_palette===false) state.autoPalette=false;
     else if(payload.auto_palette===true) state.autoPalette=true;
     if(payload.story) applyStory(payload.story);
@@ -4791,6 +5179,8 @@ window.__RENDER_API_V3__={
       state.colors=PosterRenderEngine.enrichThemeColors(state.colors);
     }
     if(payload.canvas_background) state.canvasOverride=payload.canvas_background;
+    // Load template's baked default player/bg first; API images override below
+    await applyTemplateDefaultImages(state.template, { onlyMissing:true });
     const imageMap={
       player: payload.player_image||payload.playerImageUrl||payload.player,
       background: payload.background_image||payload.backgroundImageUrl||payload.background,
@@ -4846,7 +5236,7 @@ window.__RENDER_API_V3__={
   listTemplates(){
     // Baked / last-saved templates first so Automate shows what you just froze
     const last=getLastBakedTemplateId();
-    const ids=[...ENABLED_TEMPLATES];
+    const ids=templateIdsReady();
     if(last && TEMPLATES[last] && !ids.includes(last)) ids.unshift(last);
     ids.sort((a,b)=>{
       const af=isFrozenTemplate(a)?0:1;
@@ -4912,39 +5302,11 @@ function templateInputFields(templateId){
   if(!t) return [];
   let layers;
   try{ layers=t.layers||{}; }catch(_){ layers={}; }
-  const binds=new Set();
-  for(const def of Object.values(layers)){
-    if(!def || def.type!=="text") continue;
-    if(def.kind==="stat"){
-      binds.add(def.bind+"num");
-      binds.add(def.bind+"label");
-    } else if(def.bind==="footer"){
-      binds.add("teamName"); binds.add("hashtag"); binds.add("sport");
-    } else if(def.bind==="playerMeta"){
-      binds.add("position"); binds.add("playerClass");
-    } else if(def.bind){
-      binds.add(def.bind);
-    }
-  }
-  const auto=t._json?.automation?.swapFields||[];
-  auto.forEach(k=>{
-    if(k==="playerMeta"){ binds.add("position"); binds.add("playerClass"); }
-    else binds.add(k);
-  });
-  const labelMap=Object.fromEntries(TEXT_FIELDS);
-  labelMap.teamName=labelMap.teamName||"Team / match line";
-  labelMap.hashtag=labelMap.hashtag||"Date / score line";
-  labelMap.heroNumber=labelMap.heroNumber||"Hero / score number";
-  labelMap.heroDesc=labelMap.heroDesc||"Hero description";
-  return [...binds].filter(Boolean).map(key=>({
+  const binds=collectTextBindsFromLayers(layers, t._json?.automation?.swapFields);
+  return binds.map(key=>({
     key,
-    label:labelMap[key]||key,
-    placeholder:(()=>{
-      for(const def of Object.values(layers)){
-        if(def && def.bind===key && def.placeholder) return def.placeholder;
-      }
-      return "";
-    })(),
+    label:textFieldLabelFor(key, layers),
+    placeholder:textFieldPlaceholderFor(key, layers),
   }));
 }
 
@@ -4978,6 +5340,8 @@ async function init(){
   } else {
     try { restoreBakedTemplates(); } catch (_) {}
   }
+  // Ensure baked default player/bg appear after restart
+  await applyTemplateDefaultImages(state.template, { onlyMissing:true });
   ensureLayout();
   if(isFrozenTemplate(state.template)){
     resetLayoutFromTemplate(state.template, { freeze:true });
@@ -4990,11 +5354,9 @@ async function init(){
   }
   if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
   else applyTemplateHeaderColors();
-  buildTplChips(); buildSpotlightVariantControls(); buildVaporGlassControls(); buildAssets(); buildLogoControls(); buildTextFields(); buildCaptionColorControls(); buildStorySelect();
-  updateBrandColorControls();
+  refreshEditorUI();
   buildShapePalette();
   loadAssetLibrary();
-  render(); applyZoom(); syncFrameGuide(); updateTestBanner();
   // re-apply zoom after fonts load (metrics shift)
   if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ render(); applyZoom(); updateTestBanner(); });
 }
@@ -5022,7 +5384,10 @@ window.__TEST_V3__={
   exportFilename,
   renderApi:()=>window.__RENDER_API_V3__,
 };
-init().catch(e=>console.error(e));
+init().catch(e=>{
+  console.error("Editor init failed:", e);
+  try{ refreshEditorUI(); }catch(_){}
+});
 </script>
 </body>
 </html>

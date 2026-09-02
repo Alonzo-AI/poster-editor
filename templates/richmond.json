@@ -87,9 +87,10 @@
       "cropY": 0.5
     },
     {
-      "id": "teamName",
+      "id": "opponent",
       "type": "text",
-      "bind": "teamName",
+      "bind": "opponent",
+      "label": "Opponent",
       "placeholder": "VS. ULM | 23-8 |",
       "x": 42,
       "y": 776,
@@ -230,12 +231,11 @@
     "swapFields": [
       "playerName",
       "playerMeta",
-      "teamName",
+      "opponent",
       "hashtag",
       "heroNumber",
       "heroDesc",
-      "callout",
-      "eyebrow"
+      "callout"
     ],
     "swapImages": [
       "player",
