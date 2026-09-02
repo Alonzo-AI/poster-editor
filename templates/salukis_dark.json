@@ -1,44 +1,255 @@
 {
-  "id": "salukis_dark",
-  "name": "Salukis Dark",
-  "version": 1,
-  "canvas": { "width": 1080, "height": 1350, "background": "#000000" },
-  "layoutRules": {
-    "salukisDarkPanelSlots": {
-      "panelHeight": 260,
-      "rowHeights": [110, 58, 92],
-      "calloutBoxWidth": 896,
-      "calloutBoxHeight": 46
+  "id": "richmond",
+  "name": "Richmond",
+  "version": 31,
+  "canvas": {
+    "width": 1080,
+    "height": 1350,
+    "background": "#E8E0D4"
+  },
+  "deco": {
+    "html": ""
+  },
+  "textRules": {
+    "autoFit": [],
+    "stats": {
+      "autoFit": false
     }
   },
   "settings": {
-    "logo": { "opacity": 1, "scale": 1 },
-    "brandColors": { "fromLogo": false, "contrast": "#0b111e" },
+    "logo": {
+      "opacity": 1,
+      "scale": 1
+    },
+    "brandColors": {
+      "fromLogo": false
+    },
     "playerImage": {
-      "fit": "cover",
-      "zoom": 1,
-      "cropX": 0.5,
-      "cropY": 0.5,
-      "fitToFrame": true
-    }
-  },
-  "textRules": {
-    "footer": { "salukisMode": "teamNameOnly" },
-    "stats": { "autoFit": true, "defaultSize": 150 }
-  },
-  "deco": {
-    "html": "<style>#stage[data-template=\"salukis_dark\"] .layer[data-id=\"playerName\"],#stage[data-template=\"salukis_dark\"] .layer[data-id=\"playerMeta\"]{font-family:'Bebas Neue',sans-serif!important;text-transform:uppercase!important;text-shadow:0 1px 2px rgba(255,255,255,0.45),0 2px 10px rgba(0,0,0,0.35)!important}#stage[data-template=\"salukis_dark\"] .layer[data-id^=\"stat\"]{flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;overflow:hidden!important;text-align:center!important;padding:0 8px!important;box-sizing:border-box!important}#stage[data-template=\"salukis_dark\"] .layer[data-id^=\"stat\"] .s-n{font-family:'Bebas Neue',sans-serif!important;font-weight:400!important;line-height:0.88!important;width:100%!important;color:{{onPrimary}}!important}#stage[data-template=\"salukis_dark\"] .layer[data-id^=\"stat\"] .s-l{font-family:'Oswald',sans-serif!important;font-size:16px!important;font-weight:700!important;letter-spacing:0.4px!important;text-transform:uppercase!important;max-width:96%!important;line-height:1.1!important;flex-shrink:0!important;margin-top:2px!important;color:{{onPrimaryMuted}}!important;opacity:0.92!important}#stage[data-template=\"salukis_dark\"] .layer[data-id=\"callout\"],#stage[data-template=\"salukis_dark\"] .layer[data-id=\"footer\"]{display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important}</style><div style=\"left:0;top:0;width:270px;height:125px;background:{{secondary}};z-index:4;\"></div><div style=\"left:0;bottom:0;width:100%;height:{{panelHeight}}px;background:{{primary}};z-index:10;\"></div>"
+      "fitToFrame": false,
+      "fit": "contain",
+      "cropX": 0.55,
+      "cropY": 0.4,
+      "zoom": 1
+    },
+    "freezeLayout": true
   },
   "layers": [
-    { "id": "logo", "type": "image", "bind": "logo", "x": 15, "y": 12, "w": 240, "h": 100, "z": 20 },
-    { "id": "playerName", "type": "text", "bind": "playerName", "x": 320, "y": 40, "w": 700, "size": 60, "color": "onPhoto", "font": "bebas", "weight": 400, "align": "right", "hollow": false, "ls": 2, "textTransform": "uppercase", "z": 20 },
-    { "id": "playerMeta", "type": "text", "bind": "playerMeta", "x": 320, "y": 108, "w": 700, "size": 30, "color": "onPhotoMuted", "font": "bebas", "weight": 400, "ls": 2, "align": "right", "hollow": true, "strokeW": 1.5, "textTransform": "uppercase", "z": 20 },
-    { "id": "player", "type": "image", "bind": "player", "x": 0, "y": 0, "w": 1080, "h": 1350, "fit": "cover", "zoom": 1, "cropX": 0.5, "cropY": 0.5, "z": 2 },
-    { "id": "stat1", "type": "text", "bind": "stat1", "kind": "stat", "statStack": true, "x": 0, "y": 1032, "w": 360, "h": 106, "size": 150, "font": "bebas", "align": "center", "z": 15 },
-    { "id": "stat2", "type": "text", "bind": "stat2", "kind": "stat", "statStack": true, "x": 360, "y": 1032, "w": 360, "h": 106, "size": 150, "font": "bebas", "align": "center", "z": 15 },
-    { "id": "stat3", "type": "text", "bind": "stat3", "kind": "stat", "statStack": true, "x": 720, "y": 1032, "w": 360, "h": 106, "size": 150, "font": "bebas", "align": "center", "z": 15 },
-    { "id": "calloutBox", "type": "block", "x": 92, "y": 1159, "w": 896, "h": 64, "fill": "calloutBg", "radius": 3, "z": 11 },
-    { "id": "callout", "type": "text", "bind": "callout", "x": 92, "y": 1159, "w": 896, "h": 64, "size": 28, "color": "onCallout", "font": "bebas", "weight": 400, "align": "center", "z": 16 },
-    { "id": "footer", "type": "text", "bind": "footer", "x": 0, "y": 1244, "w": 1080, "h": 106, "size": 20, "color": "onPrimary", "font": "sans", "weight": 800, "align": "center", "ls": 1, "z": 15, "textTransform": "uppercase" }
-  ]
+    {
+      "id": "bgImage",
+      "type": "image",
+      "bind": "background",
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 1350,
+      "z": 1,
+      "fit": "cover",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "player",
+      "type": "image",
+      "bind": "player",
+      "x": 388,
+      "y": -164,
+      "w": 815,
+      "h": 1614,
+      "z": 12,
+      "fit": "contain",
+      "cropX": 0.55,
+      "cropY": 0.4
+    },
+    {
+      "id": "conference",
+      "type": "image",
+      "bind": "conference",
+      "x": 270,
+      "y": 122,
+      "w": 118,
+      "h": 60,
+      "z": 21,
+      "fit": "contain",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "sponsor",
+      "type": "image",
+      "bind": "sponsor",
+      "x": 88,
+      "y": 1230,
+      "w": 140,
+      "h": 72,
+      "z": 22,
+      "fit": "contain",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "teamName",
+      "type": "text",
+      "bind": "teamName",
+      "placeholder": "VS. ULM | 23-8 |",
+      "x": 42,
+      "y": 776,
+      "w": 420,
+      "h": 99,
+      "z": 22,
+      "size": 38,
+      "color": "#ffffff",
+      "font": "sans",
+      "weight": 700,
+      "align": "center",
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hashtag",
+      "type": "text",
+      "bind": "hashtag",
+      "placeholder": "OCT. 11, 2025",
+      "x": 41,
+      "y": 842,
+      "w": 400,
+      "h": 60,
+      "z": 22,
+      "size": 33,
+      "color": "white",
+      "font": "sans",
+      "weight": 700,
+      "align": "center",
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hero",
+      "type": "text",
+      "bind": "heroNumber",
+      "placeholder": "300",
+      "x": -342,
+      "y": 152,
+      "w": 1188,
+      "h": 613,
+      "z": 22,
+      "size": 334,
+      "color": "#ffffff",
+      "font": "comic",
+      "weight": 300,
+      "align": "center",
+      "lh": 0.84
+    },
+    {
+      "id": "heroDesc",
+      "type": "text",
+      "bind": "heroDesc",
+      "placeholder": "FIELD GOALS",
+      "x": -42,
+      "y": 635,
+      "w": 540,
+      "h": 129,
+      "z": 22,
+      "size": 86,
+      "color": "#ffffff",
+      "font": "cond",
+      "weight": 700,
+      "align": "center",
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "callout",
+      "type": "text",
+      "bind": "callout",
+      "placeholder": "MOST IN THE SBC THIS WEEK",
+      "x": 31,
+      "y": 934,
+      "w": 461,
+      "h": 81,
+      "z": 22,
+      "size": 32,
+      "color": "#ffffff",
+      "font": "sans",
+      "weight": 300,
+      "align": "center",
+      "ls": 1,
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerMeta",
+      "type": "text",
+      "bind": "playerMeta",
+      "placeholder": "JUNIOR | K",
+      "x": 685,
+      "y": 1111,
+      "w": 428,
+      "h": 41,
+      "z": 22,
+      "size": 31,
+      "color": "#ffffff",
+      "font": "sans",
+      "weight": 600,
+      "ls": 1,
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerName",
+      "type": "text",
+      "bind": "playerName",
+      "placeholder": "KIAN AFROOKHTEH",
+      "x": 624,
+      "y": 1031,
+      "w": 480,
+      "h": 101,
+      "z": 24,
+      "size": 34,
+      "color": "#ffffff",
+      "font": "sans",
+      "weight": 800,
+      "ls": 1,
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "shape_rectangle_2",
+      "type": "block",
+      "x": 288,
+      "y": 1401,
+      "w": 467,
+      "h": 140,
+      "z": 27,
+      "fill": "primary",
+      "radius": 0,
+      "shape": "rectangle"
+    }
+  ],
+  "automation": {
+    "freezeLayout": true,
+    "swapFields": [
+      "playerName",
+      "playerMeta",
+      "teamName",
+      "hashtag",
+      "heroNumber",
+      "heroDesc",
+      "callout",
+      "eyebrow"
+    ],
+    "swapImages": [
+      "player",
+      "logo",
+      "conference",
+      "sponsor",
+      "background"
+    ],
+    "note": "Frozen layout from editor. Automate only swaps text + images — positions stay exact."
+  },
+  "_bakeMeta": {
+    "bakedAt": "2026-09-01T07:29:24.974Z",
+    "sourceTemplate": "richmond",
+    "layerCount": 12,
+    "shapeCount": 1
+  }
 }

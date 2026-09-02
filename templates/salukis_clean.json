@@ -1,27 +1,255 @@
 {
   "id": "salukis_clean",
-  "name": "Salukis Clean",
-  "version": 1,
-  "canvas": { "width": 1080, "height": 1350, "background": "#ffffff" },
-  "layoutRules": {
-    "salukisCleanStatSlots": { "top": 230, "bottom": 1170 }
-  },
-  "textRules": {
-    "footer": { "salukisMode": "teamNameOnly" },
-    "stats": { "autoFit": true, "defaultSize": 150 }
+  "name": "Coastal Carolina",
+  "version": 9,
+  "canvas": {
+    "width": 1080,
+    "height": 1350,
+    "background": "#E8E0D4"
   },
   "deco": {
-    "html": "<style>#stage[data-template=\"salukis_clean\"] .layer[data-id=\"playerName\"],#stage[data-template=\"salukis_clean\"] .layer[data-id=\"playerMeta\"]{font-family:'Bebas Neue',sans-serif!important;text-transform:uppercase!important}#stage[data-template=\"salukis_clean\"] .layer[data-id^=\"stat\"]{flex-direction:column!important;align-items:flex-start!important;justify-content:center!important;gap:0!important;overflow:hidden!important}#stage[data-template=\"salukis_clean\"] .layer[data-id^=\"stat\"] .s-n{font-family:'Bebas Neue',sans-serif!important;font-weight:400!important;line-height:0.9!important;color:{{contrast}}!important;width:100%!important}#stage[data-template=\"salukis_clean\"] .layer[data-id^=\"stat\"] .s-l{font-family:'Oswald',sans-serif!important;font-size:22px!important;font-weight:800!important;color:{{primary}}!important;letter-spacing:0.5px!important;text-transform:uppercase!important;max-width:100%!important;line-height:1.15!important;flex-shrink:0!important}</style><div style=\"left:0;bottom:0;width:100%;height:90px;background:{{primary}};z-index:10;\"></div>"
+    "html": ""
+  },
+  "textRules": {
+    "autoFit": [],
+    "stats": {
+      "autoFit": false
+    }
+  },
+  "settings": {
+    "logo": {
+      "opacity": 1,
+      "scale": 1
+    },
+    "brandColors": {
+      "fromLogo": false
+    },
+    "playerImage": {
+      "fitToFrame": false,
+      "fit": "contain",
+      "cropX": 0.55,
+      "cropY": 0.4,
+      "zoom": 1
+    },
+    "freezeLayout": true
   },
   "layers": [
-    { "id": "logo", "type": "image", "bind": "logo", "x": 60, "y": 50, "w": 180, "h": 110, "z": 20 },
-    { "id": "playerName", "type": "text", "bind": "playerName", "x": 420, "y": 52, "w": 600, "size": 76, "color": "primary", "font": "bebas", "weight": 400, "ls": 2, "align": "right", "textTransform": "uppercase" },
-    { "id": "playerMeta", "type": "text", "bind": "playerMeta", "x": 420, "y": 128, "w": 600, "size": 40, "color": "primary", "font": "bebas", "weight": 400, "ls": 2, "align": "right", "hollow": true, "strokeW": 1.5, "textTransform": "uppercase" },
-    { "id": "player", "type": "image", "bind": "player", "x": 60, "y": 190, "w": 520, "h": 980, "fit": "cover", "z": 5, "border": true, "borderColor": "primary" },
-    { "id": "eyebrow", "type": "text", "bind": "eyebrow", "x": 640, "y": 200, "w": 380, "size": 20, "color": "primary", "font": "cond", "weight": 800, "ls": 1, "textTransform": "uppercase" },
-    { "id": "stat1", "type": "text", "bind": "stat1", "kind": "stat", "statStack": true, "x": 640, "y": 230, "w": 380, "h": 313, "size": 150, "font": "bebas", "align": "left", "z": 18 },
-    { "id": "stat2", "type": "text", "bind": "stat2", "kind": "stat", "statStack": true, "x": 640, "y": 543, "w": 380, "h": 313, "size": 150, "font": "bebas", "align": "left", "z": 18 },
-    { "id": "stat3", "type": "text", "bind": "stat3", "kind": "stat", "statStack": true, "x": 640, "y": 856, "w": 380, "h": 314, "size": 150, "font": "bebas", "align": "left", "z": 18 },
-    { "id": "footer", "type": "text", "bind": "footer", "x": 0, "y": 1296, "w": 1080, "size": 24, "color": "white", "font": "sans", "weight": 700, "align": "center", "ls": 1, "z": 20, "textTransform": "uppercase" }
-  ]
+    {
+      "id": "bgImage",
+      "type": "image",
+      "bind": "background",
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 1350,
+      "z": 1,
+      "fit": "cover",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "player",
+      "type": "image",
+      "bind": "player",
+      "x": 504,
+      "y": 147,
+      "w": 562,
+      "h": 1002,
+      "z": 12,
+      "fit": "contain",
+      "cropX": 0.55,
+      "cropY": 0.4
+    },
+    {
+      "id": "shape_parallelogram_1",
+      "type": "block",
+      "x": 614,
+      "y": 1087,
+      "w": 482,
+      "h": 124,
+      "z": 18,
+      "fill": "primary",
+      "radius": 0,
+      "clip": "polygon(14% 0%, 100% 0%, 86% 100%, 0% 100%)",
+      "shape": "parallelogram"
+    },
+    {
+      "id": "conference",
+      "type": "image",
+      "bind": "conference",
+      "x": 270,
+      "y": 122,
+      "w": 118,
+      "h": 60,
+      "z": 21,
+      "fit": "contain",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "sponsor",
+      "type": "image",
+      "bind": "sponsor",
+      "x": 88,
+      "y": 1230,
+      "w": 140,
+      "h": 72,
+      "z": 22,
+      "fit": "contain",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "teamName",
+      "type": "text",
+      "bind": "teamName",
+      "placeholder": "VS. ULM | 23-8 |",
+      "x": 80,
+      "y": 248,
+      "w": 420,
+      "h": 36,
+      "z": 22,
+      "size": 22,
+      "color": "primary",
+      "font": "sans",
+      "weight": 700,
+      "align": "center",
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hashtag",
+      "type": "text",
+      "bind": "hashtag",
+      "placeholder": "OCT. 11, 2025",
+      "x": 70,
+      "y": 317,
+      "w": 400,
+      "h": 50,
+      "z": 22,
+      "size": 30,
+      "color": "#ffffff",
+      "font": "sans",
+      "weight": 800,
+      "align": "center",
+      "ls": 1,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hero",
+      "type": "text",
+      "bind": "heroNumber",
+      "placeholder": "300",
+      "x": -52,
+      "y": 403,
+      "w": 648,
+      "h": 300,
+      "z": 22,
+      "size": 259,
+      "color": "primary",
+      "font": "cond",
+      "weight": 700,
+      "align": "center",
+      "lh": 0.84
+    },
+    {
+      "id": "heroDesc",
+      "type": "text",
+      "bind": "heroDesc",
+      "placeholder": "FIELD GOALS",
+      "x": 72,
+      "y": 648,
+      "w": 400,
+      "h": 293,
+      "z": 22,
+      "size": 84,
+      "color": "primary",
+      "font": "cond",
+      "weight": 600,
+      "align": "center",
+      "ls": 2,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "callout",
+      "type": "text",
+      "bind": "callout",
+      "placeholder": "MOST IN THE SBC THIS WEEK",
+      "x": 10,
+      "y": 934,
+      "w": 520,
+      "h": 101,
+      "z": 22,
+      "size": 47,
+      "color": "black",
+      "font": "sans",
+      "weight": 700,
+      "align": "center",
+      "ls": 1,
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerName",
+      "type": "text",
+      "bind": "playerName",
+      "placeholder": "KIAN AFROOKHTEH",
+      "x": 693,
+      "y": 1101,
+      "w": 480,
+      "h": 48,
+      "z": 22,
+      "size": 32,
+      "color": "black",
+      "font": "sans",
+      "weight": 800,
+      "ls": 1,
+      "italic": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerMeta",
+      "type": "text",
+      "bind": "playerMeta",
+      "placeholder": "JUNIOR | K",
+      "x": 763,
+      "y": 1149,
+      "w": 400,
+      "h": 43,
+      "z": 22,
+      "size": 24,
+      "color": "black",
+      "font": "sans",
+      "weight": 600,
+      "italic": true,
+      "textTransform": "uppercase"
+    }
+  ],
+  "automation": {
+    "freezeLayout": true,
+    "swapFields": [
+      "playerName",
+      "playerMeta",
+      "teamName",
+      "hashtag",
+      "heroNumber",
+      "heroDesc",
+      "callout",
+      "eyebrow"
+    ],
+    "swapImages": [
+      "player",
+      "logo",
+      "conference",
+      "sponsor",
+      "background"
+    ],
+    "note": "Frozen layout from editor. Automate only swaps text + images — positions stay exact."
+  },
+  "_bakeMeta": {
+    "bakedAt": "2026-09-01T07:31:57.519Z",
+    "sourceTemplate": "cc",
+    "layerCount": 12,
+    "shapeCount": 1
+  }
 }

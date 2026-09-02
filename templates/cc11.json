@@ -139,7 +139,7 @@
       "id": "hero",
       "type": "text",
       "bind": "heroNumber",
-      "placeholder": "300",
+      "placeholder": "30",
       "x": 10,
       "y": 428,
       "w": 520,

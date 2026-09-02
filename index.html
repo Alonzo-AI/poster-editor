@@ -135,6 +135,13 @@
   .layer.sel .rot{display:block;}
   .layer.cropping .rot{display:none;}
   .layer.txt{display:flex;flex-direction:column;justify-content:center;}
+  .layer.txt>.txt-flow{display:block;width:100%;min-width:0;}
+  .layer.txt:has(sup){overflow:visible;}
+  .layer.txt:has(sup)>.txt-flow{padding-top:0.18em;}
+  .layer.txt sup,.layer.txt .s-n sup,.layer.txt .s-l sup{
+    font-size:0.52em;line-height:1;vertical-align:baseline;position:relative;top:-0.42em;
+    font-weight:inherit;font-style:inherit;letter-spacing:inherit;
+  }
   /* inspector helpers */
   .ibtns{display:flex;gap:6px;flex-wrap:wrap;}
   .ibtns .btn{flex:1;padding:7px 4px;min-width:0;}
@@ -284,6 +291,7 @@
     <details class="group" open>
       <summary>Text content</summary>
       <div class="body" id="textFields"></div>
+      <div class="mini" style="padding:0 12px 10px;margin-top:-4px">Ordinals like <b>1st</b>, <b>2nd</b>, <b>3rd</b> render as superscript. Or wrap text in <code>&lt;sup&gt;…&lt;/sup&gt;</code>.</div>
     </details>
 
     <details class="group" open>
@@ -402,7 +410,7 @@ const state = {
   template: "magazine",
   colors: { primary:"#9D2235", secondary:"#FFFFFF" },
   text: { ...DEFAULT_TEXT },
-  images: {},      // key -> {src, natW, natH}
+  templateImages: {}, // templateId -> slotKey -> {src, natW, natH, stored?, el?}
   layouts: {},     // templateId -> layerId -> geometry overrides
   extraLayers: {}, // templateId -> layerId -> layer def (duplicated layers)
   cropMode: null,  // layer id currently being cropped, or null
@@ -442,6 +450,44 @@ const state = {
   salukisDarkHeaderSamples: null,
   salukisDarkHeaderColors: null,
 };
+
+function imagesOf(templateId){
+  const tid=templateId ?? state.template;
+  if(!state.templateImages[tid]) state.templateImages[tid]={};
+  return state.templateImages[tid];
+}
+function hydrateTemplateImagesRecord(imgs){
+  if(!imgs) return;
+  for(const [k,v] of Object.entries(imgs)){
+    if(!v?.src || v.el) continue;
+    const im=new Image();
+    im.onload=()=>{ if(imgs[k]) imgs[k].el=im; };
+    im.src=v.stored||v.src;
+  }
+}
+function serializeTemplateImages(){
+  const out={};
+  for(const [tid,slots] of Object.entries(state.templateImages||{})){
+    const imgs={};
+    for(const [k,v] of Object.entries(slots||{})){
+      if(v) imgs[k]={src:v.stored||v.src,natW:v.natW,natH:v.natH};
+    }
+    if(Object.keys(imgs).length) out[tid]=imgs;
+  }
+  return out;
+}
+function isBlockLayer(def, g, id){
+  id=id||"";
+  return def?.type==="block" || !!def?.shape || !!g?.shape || /^shape_/.test(id);
+}
+function resolvedBlockFillHex(g, def){
+  return roleColor(g.fill || g.color || def.fill || def.color || "white");
+}
+function blockFillRoleSelectValue(g, def){
+  const c=g.fill || g.color || def.fill || def.color || "white";
+  if(isKnownColorRole(c)) return c;
+  return "__custom__";
+}
 
 // In headless usage, __RENDER_API_V3__.setPayload can run before init() finishes
 // PosterTemplateLoader.loadAll(). That would make us render with the inline
@@ -532,9 +578,37 @@ function onColor(hex){ return lum(hex) > 0.55 ? "#111111" : "#ffffff"; }
    TEXT LAYER RENDERERS (inner markup by kind)
 ============================================================ */
 function statHTML(numKey, labelKey){
-  return `<span class="s-n">${esc(state.text[numKey]||"")}</span><span class="s-l">${esc(state.text[labelKey]||"")}</span>`;
+  return `<span class="s-n">${formatPosterText(state.text[numKey]||"")}</span><span class="s-l">${formatPosterText(state.text[labelKey]||"")}</span>`;
 }
 function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function formatPosterText(raw){
+  if(raw==null || raw==="") return "";
+  let s=String(raw);
+  const supSlots=[];
+  s=s.replace(/<sup\b[^>]*>([\s\S]*?)<\/sup>/gi, (_, inner)=>{
+    const tok=`\x00SUP${supSlots.length}\x00`;
+    supSlots.push(inner);
+    return tok;
+  });
+  s=esc(s);
+  s=s.replace(/(\d+)(st|nd|rd|th)\b/gi, (m, num, suf)=>`${num}<sup>${suf}</sup>`);
+  supSlots.forEach((inner, i)=>{
+    s=s.replace(`\x00SUP${i}\x00`, `<sup>${esc(inner)}</sup>`);
+  });
+  return s;
+}
+function serializeEditableText(el){
+  if(!el) return "";
+  const walk=(node)=>{
+    if(node.nodeType===Node.TEXT_NODE) return node.textContent;
+    if(node.nodeType!==Node.ELEMENT_NODE) return "";
+    const tag=node.tagName;
+    if(tag==="SUP") return `<sup>${Array.from(node.childNodes).map(walk).join("")}</sup>`;
+    if(tag==="BR") return "\n";
+    return Array.from(node.childNodes).map(walk).join("");
+  };
+  return Array.from(el.childNodes).map(walk).join("").trim();
+}
 
 /* ============================================================
    TEMPLATE DEFINITIONS
@@ -1417,7 +1491,7 @@ function logoSettingsOf(t){
 function buildLogoControls(){
   const wrap=document.getElementById("logoControls");
   if(!wrap) return;
-  const im=state.images.logo;
+  const im=imagesOf().logo;
   if(!im){ wrap.style.display="none"; return; }
   wrap.style.display="block";
   const ls=logoSettingsOf(state.template);
@@ -2174,40 +2248,40 @@ function bindContent(def){
   }
   if(def.bind==="footer"){
     if(state.template==="salukis_clean"||state.template==="salukis_dark"){
-      return esc((state.text.teamName||"").toUpperCase());
+      return formatPosterText((state.text.teamName||"").toUpperCase());
     }
     if(state.template==="cutout_splat"){
-      const loc=esc((state.text.teamName||"").toUpperCase());
-      const meta=esc(String(state.text.hashtag||"").replace(/^#/,"").toUpperCase());
+      const loc=formatPosterText((state.text.teamName||"").toUpperCase());
+      const meta=formatPosterText(String(state.text.hashtag||"").replace(/^#/,"").toUpperCase());
       if(!meta) return `<span class="game-loc">${loc}</span>`;
       return `<span class="game-loc">${loc}</span><span class="game-meta">&nbsp;|&nbsp;${meta}</span>`;
     }
-    return `${esc(state.text.hashtag||"")}&nbsp;&nbsp;&nbsp;${esc(state.text.teamName||"")} ${esc(state.text.sport||"")}`;
+    return `${formatPosterText(state.text.hashtag||"")}&nbsp;&nbsp;&nbsp;${formatPosterText(state.text.teamName||"")} ${formatPosterText(state.text.sport||"")}`;
   }
   if(def.bind==="hashtag" && (state.template==="sideline_cutout"||state.template==="sideline_text")){
     const v=String(state.text.hashtag||"").replace(/^#/,"").trim();
-    return esc((v||def.placeholder||"OCT. 11, 2025").toUpperCase());
+    return formatPosterText((v||def.placeholder||"OCT. 11, 2025").toUpperCase());
   }
   if(def.bind==="playerMeta"){
     const parts=[state.text.playerClass,state.text.position].filter(s=>s&&s.trim());
     if(state.template==="sideline_cutout"||state.template==="sideline_text"){
-      if(!parts.length) return esc(def.placeholder||"JUNIOR | K");
-      return parts.map(s=>esc(s.toUpperCase())).join(' &nbsp;|&nbsp; ');
+      if(!parts.length) return formatPosterText(def.placeholder||"JUNIOR | K");
+      return parts.map(s=>formatPosterText(s.toUpperCase())).join(' &nbsp;|&nbsp; ');
     }
     if(state.template==="cutout_splat"){
-      return parts.map(s=>esc(s.toUpperCase())).join(' &nbsp;|&nbsp; ');
+      return parts.map(s=>formatPosterText(s.toUpperCase())).join(' &nbsp;|&nbsp; ');
     }
     const posFirst=[state.text.position,state.text.playerClass].filter(s=>s&&s.trim());
     if(state.template==="salukis_clean"||state.template==="salukis_dark"){
-      return posFirst.map(s=>esc(s.toUpperCase())).join(' &nbsp;. &nbsp; ');
+      return posFirst.map(s=>formatPosterText(s.toUpperCase())).join(' &nbsp;. &nbsp; ');
     }
-    return posFirst.map(esc).join(' &nbsp;·&nbsp; ');
+    return posFirst.map(s=>formatPosterText(s)).join(' &nbsp;·&nbsp; ');
   }
   const raw=state.text[def.bind];
   if(raw==null || String(raw).trim()===""){
-    if(def.placeholder) return esc(def.placeholder);
+    if(def.placeholder) return formatPosterText(def.placeholder);
   }
-  return esc(raw ?? "");
+  return formatPosterText(raw ?? "");
 }
 
 const RE = window.PosterRenderEngine;
@@ -2272,6 +2346,7 @@ function switchTemplate(id){
   buildTplChips();
   buildSpotlightVariantControls();
   buildVaporGlassControls();
+  buildAssets();
   buildTextFields();
   buildCaptionColorControls();
   buildLogoControls();
@@ -2378,7 +2453,7 @@ function render(){
   for(const [id,def] of Object.entries(layersOf())){
     const g = L[id];
     if(!g || g.hidden) continue;
-    if(def.type==="image" && ["background","sponsor","conference"].includes(def.bind) && !state.images[def.bind]) continue;
+    if(def.type==="image" && ["background","sponsor","conference"].includes(def.bind) && !imagesOf()[def.bind]) continue;
     const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(id);
     const el = document.createElement("div");
     el.className = "layer " + (def.type==="text"&&!isBlock?"txt": def.type==="glass"?"glass": isBlock?"block":"img");
@@ -2402,7 +2477,7 @@ function render(){
     el.style.transform = rot? `rotate(${rot}deg)`:"";
 
     if(def.type==="image" && !isBlock){
-      const im = state.images[def.bind];
+      const im = imagesOf()[def.bind];
       el.style.height = displayH+"px";
       if(im){
         // Image content lives in an inner div so flip/crop apply to the photo
@@ -2425,7 +2500,8 @@ function render(){
       el.style.height = displayH+"px";
       applyBlockStyle(el, Object.assign({}, def, {type:"block"}), g);
     } else {
-      el.innerHTML = bindContent(def);
+      const markup=bindContent(def);
+      el.innerHTML = def.kind==="stat" ? markup : `<span class="txt-flow">${markup}</span>`;
       const size = g.size ?? def.size ?? 30;
       el.style.fontFamily = state.lockTemplateFonts ? (def.font||F.sans) : (g.font||def.font||F.sans);
       el.style.fontSize = size+"px";
@@ -2510,9 +2586,9 @@ function render(){
       }
     }
 
-    // resize handles — text uses corners + left/right; images use all 8
-    const dirs = def.type==="text" ? ["nw","ne","sw","se","w","e"]
-                                   : def.type==="block" ? ["nw","ne","sw","se","n","s","w","e"]
+    // resize handles — text uses corners + left/right; blocks/images use all 8
+    const blockLayer=isBlockLayer(def, g, id);
+    const dirs = def.type==="text" && !blockLayer ? ["nw","ne","sw","se","w","e"]
                                    : ["nw","ne","sw","se","n","s","w","e"];
     dirs.forEach(d=>{ const hd=document.createElement("div"); hd.className="h "+d; hd.dataset.handle=d; el.appendChild(hd); });
     const rt=document.createElement("div"); rt.className="rot"; rt.dataset.handle="rot"; el.appendChild(rt);
@@ -2521,6 +2597,7 @@ function render(){
     deco.after(el); // keep order; appended to stage
     stage.appendChild(el);
     if(def.type==="text") autoFitTextLayer(el, def, g);
+    if(def.type==="text" && el.querySelector("sup")) el.style.overflow="visible";
     if(def.type==="text" && g.manualSize && def.kind!=="stat") syncTextLayerHeight(el, g, def);
     if(def.kind==="stat"&&templateStatAutoFit()){
       if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
@@ -2677,14 +2754,17 @@ function attachLayerEvents(el, def, g){
     // in crop mode, a drag on the photo pans the image inside its frame
     let mode = handle || "move";
     if(!handle && state.cropMode===el.dataset.id && def.type==="image") mode="pan";
+    const layerId=el.dataset.id;
+    const blockLayer=isBlockLayer(def, g, layerId);
+    if(blockLayer && g.h==null) g.h=def.h ?? g.w;
     const r=el.getBoundingClientRect();
-    drag = { id:el.dataset.id, def, g, mode,
-             sx:e.clientX, sy:e.clientY, ox:g.x, oy:g.y, ow:g.w, oh:g.h ?? g.w,
+    drag = { id:layerId, def, g, mode, blockLayer,
+             sx:e.clientX, sy:e.clientY, ox:g.x, oy:g.y, ow:g.w, oh:g.h ?? def.h ?? g.w,
              osize:g.size ?? def.size ?? 30, orot:g.rotate||0, sc,
              ocx:g.cropX??0.5, ocy:g.cropY??0.5,
-             ratio:(g.h ?? g.w)/g.w,
+             ratio:(g.h ?? def.h ?? g.w)/g.w,
              cx:r.left+r.width/2, cy:r.top+r.height/2 };
-    if(mode==="pan"){ const d=computeDisp(def,g,state.images[def.bind]); drag.dispW=d.dispW; drag.dispH=d.dispH; }
+    if(mode==="pan"){ const d=computeDisp(def,g,imagesOf()[def.bind]); drag.dispW=d.dispW; drag.dispH=d.dispH; }
     el.setPointerCapture(e.pointerId);
   });
   el.addEventListener("pointermove",(e)=>{
@@ -2715,8 +2795,8 @@ function attachLayerEvents(el, def, g){
       if(dir.includes("n")){ nh=d.oh-dy; ny=d.oy+dy; }
       nw=Math.max(24,nw); nh=Math.max(12,nh);
       const corner = dir.length===2;
-      if(def.type==="image" || def.type==="glass" || def.type==="block"){
-        const lock = (def.type==="image" || def.type==="block") && ((gg.lockAspect && !e.altKey) || (!gg.lockAspect && e.shiftKey));
+      if(def.type==="image" || def.type==="glass" || d.blockLayer){
+        const lock = (def.type==="image" || d.blockLayer) && ((gg.lockAspect && !e.altKey) || (!gg.lockAspect && e.shiftKey));
         if(lock){
           if(corner){ nh=nw*d.ratio; }       // width drives height on corners
           else if(dir==="n"||dir==="s"){ nw=nh/d.ratio; } else { nh=nw*d.ratio; }
@@ -2779,14 +2859,20 @@ function beginInlineTextEdit(el, def){
   try{ document.execCommand("selectAll",false,null); }catch(_){}
   el.addEventListener("blur",function h(){
     el.contentEditable="false";
-    commitInlineTextEdit(def, el.innerText);
+    commitInlineTextEdit(def, serializeEditableText(el));
     el.removeEventListener("blur",h);
+    el.removeEventListener("keydown",kd);
     render(); buildTextFields(); buildCaptionColorControls(); syncInspector(); scheduleSave();
   },{once:true});
-  el.addEventListener("keydown",function kd(e){
+  function kd(e){
     if(e.key==="Escape"){ e.preventDefault(); el.blur(); }
     if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); el.blur(); }
-  },{once:true});
+    if((e.ctrlKey||e.metaKey) && e.shiftKey && (e.key==="=" || e.key==="+" || e.key===".")){
+      e.preventDefault();
+      try{ document.execCommand("superscript", false, null); }catch(_){}
+    }
+  }
+  el.addEventListener("keydown",kd);
 }
 function applyTextLayerVisuals(el, def, g, layerId){
   if(!el || def.type!=="text") return;
@@ -2842,7 +2928,7 @@ function applyGeo(el, def, g){
   if(def.type==="image" && !isBlock){
     el.style.height=(g.h ?? g.w)+"px";
     const c=el.querySelector(".imgcontent");
-    const im=state.images[def.bind];
+    const im=imagesOf()[def.bind];
     if(c && im) applyImageStyle(c, def, g, im);
   } else if(def.type==="glass"){
     applyGlassStyle(el, def, g);
@@ -2861,7 +2947,7 @@ function applyGeo(el, def, g){
 }
 function toggleCrop(id){
   const def=layersOf()[id];
-  if(!def || def.type!=="image" || !state.images[def.bind]) return;
+  if(!def || def.type!=="image" || !imagesOf()[def.bind]) return;
   state.cropMode = (state.cropMode===id)? null : id;
   document.querySelectorAll(".layer.cropping").forEach(n=>n.classList.remove("cropping"));
   const active=document.querySelector(`.layer[data-id="${state.cropMode}"]`);
@@ -2965,8 +3051,17 @@ function syncInspector(){
     h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??24}</b></label>
         <input type="range" id="iRad" min="0" max="80" value="${g.radius??def.radius??24}">`;
   } else if(isBlock){
+    const fillRole=blockFillRoleSelectValue(g, def);
+    const fillHex=resolvedBlockFillHex(g, def);
     h+=`<label class="fld">Fill color</label>
-        <select id="iCol">${["white","primary","secondary","black"].map(c=>`<option value="${c}" ${(g.fill||g.color||def.fill||def.color||"white")===c?'selected':''}>${c}</option>`).join('')}</select>`;
+        <select id="iCol">
+          ${CAPTION_COLOR_OPTIONS.filter(([v])=>v!=="__default").map(([c,name])=>`<option value="${c}" ${fillRole===c?'selected':''}>${name}</option>`).join('')}
+          <option value="__custom__" ${fillRole==="__custom__"?'selected':''}>Custom hex</option>
+        </select>
+        <div class="row" style="margin-top:6px;align-items:flex-end">
+          <div style="flex:1.2"><label class="fld">Hex</label><input type="text" id="iColHex" class="num" value="${esc(fillHex)}" placeholder="#RRGGBB" spellcheck="false" autocomplete="off"></div>
+          <div style="flex:0.7"><label class="fld">Swatch</label><input type="color" id="iColPick" value="${esc(fillHex)}" style="width:100%;height:34px;padding:2px;cursor:pointer"></div>
+        </div>`;
     if(g.shape||def.shape) h+=`<div class="mini" style="margin:4px 0 8px">Shape: <b>${esc(g.shape||def.shape)}</b></div>`;
     h+=`<label class="fld" style="margin-top:10px">Position & size</label>`;
     h+=`<div class="row" style="margin-top:8px">
@@ -3005,7 +3100,7 @@ function syncInspector(){
         h+=`<label class="fld">${esc(label)}</label>
             <textarea id="iTxt" rows="2" placeholder="${esc(def.placeholder||"")}">${esc(val)}</textarea>`;
       }
-      h+=`<div class="mini" style="margin:4px 0 10px">Edit here, or <b>double-click</b> the text on the poster.</div>`;
+      h+=`<div class="mini" style="margin:4px 0 10px">Edit here, or <b>double-click</b> the text on the poster. Ordinals like <b>1st</b> auto-superscript; use <code>&lt;sup&gt;…&lt;/sup&gt;</code> for custom text. Double-click + <b>Ctrl+Shift+.</b> for superscript selection.</div>`;
     }
     h+=`<label class="fld">Text style <span style="font-weight:400;color:var(--dim)">(same font)</span></label>`;
     h+=`<div id="iStyleCurrent" style="margin-bottom:6px;padding:6px 8px;border-radius:7px;border:1px solid ${styleCustom?"#5a4a18":"#24344f"};background:${styleCustom?"#2a2410":"#11203a"};font-size:11px;color:#cfd3da">Active: <b style="color:${styleCustom?"#ffd34f":"#cfe1ff"}">${esc(textStyleSummary(activeStyle,g,def))}</b></div>`;
@@ -3086,7 +3181,46 @@ function syncInspector(){
     $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
     $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
   } else if(isBlock){
-    $("iCol").onchange=e=>{ g.fill=e.target.value; g.color=e.target.value; applyGeo(el(),def,g); };
+    const commitBlockFill=()=>{
+      const layerEl=el();
+      if(layerEl) applyBlockStyle(layerEl, Object.assign({}, def, {type:"block"}), g);
+      scheduleSave();
+    };
+    const syncBlockColorFields=()=>{
+      const hex=resolvedBlockFillHex(g, def);
+      const pick=$("iColPick"), hexIn=$("iColHex");
+      if(pick) pick.value=hex;
+      if(hexIn && document.activeElement!==hexIn) hexIn.value=hex;
+    };
+    $("iCol").onchange=e=>{
+      const v=e.target.value;
+      if(v==="__custom__") return;
+      g.fill=v; g.color=v;
+      syncBlockColorFields();
+      commitBlockFill();
+    };
+    const iColPick=$("iColPick");
+    if(iColPick){
+      iColPick.oninput=e=>{
+        g.fill=e.target.value; g.color=e.target.value;
+        if($("iCol")) $("iCol").value="__custom__";
+        if($("iColHex")) $("iColHex").value=g.fill;
+        commitBlockFill();
+      };
+    }
+    const iColHex=$("iColHex");
+    if(iColHex){
+      iColHex.onchange=e=>{
+        const hex=normalizeHex(e.target.value);
+        if(!hex){ syncBlockColorFields(); return; }
+        g.fill=hex; g.color=hex;
+        if($("iCol")) $("iCol").value="__custom__";
+        if($("iColPick")) $("iColPick").value=hex;
+        e.target.value=hex;
+        commitBlockFill();
+      };
+      iColHex.onkeydown=e=>{ if(e.key==="Enter") e.target.blur(); };
+    }
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
     $("iW").oninput=e=>{
@@ -3290,7 +3424,7 @@ function buildAssets(){
   assetList.innerHTML="";
   ASSETS.forEach(([key,label])=>{
     const row=document.createElement("div"); row.className="assetrow";
-    const im=state.images[key];
+    const im=imagesOf()[key];
     const thumb=document.createElement("div"); thumb.className="thumb";
     if(im) thumb.style.backgroundImage=`url(${im.src})`;
     const meta=document.createElement("div"); meta.className="meta";
@@ -3304,7 +3438,7 @@ function buildAssets(){
     row.append(thumb,meta,inp);
     assetList.appendChild(row);
   });
-  assetList.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{ delete state.images[x.dataset.rm]; buildAssets(); buildLogoControls(); render(); scheduleSave(); });
+  assetList.querySelectorAll("[data-rm]").forEach(x=>x.onclick=()=>{ delete imagesOf()[x.dataset.rm]; buildAssets(); buildLogoControls(); render(); scheduleSave(); });
   if(CUTOUT_FEATURE_ENABLED){
     assetList.querySelectorAll("[data-cutbg]").forEach(x=>x.onchange=e=>setCutBg(x.dataset.cutbg, e.target.checked));
   }
@@ -3326,7 +3460,7 @@ function revealImageLayers(key){
   }
 }
 function applyImageSrc(key, url, stored){
-  const slot=state.images[key]; if(!slot) return;
+  const slot=imagesOf()[key]; if(!slot) return;
   const img=new Image();
   img.onload=()=>{
     slot.src=url; slot.natW=img.naturalWidth; slot.natH=img.naturalHeight; slot.el=img;
@@ -3344,9 +3478,9 @@ function loadImage(key,file){
   const blobUrl=URL.createObjectURL(file);
   const im=new Image();
   im.onload=()=>{
-    const prev=state.images[key];
+    const prev=imagesOf()[key];
     if(prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl);
-    state.images[key]={
+    imagesOf()[key]={
       src:blobUrl, blobUrl, original:blobUrl, cutout:null, cutBg:false,
       natW:im.naturalWidth, natH:im.naturalHeight, el:im,
     };
@@ -3369,8 +3503,8 @@ function loadImage(key,file){
     const maxDim = (key==="logo"||key==="sponsor"||key==="conference") ? 760 : 1800;
     compressImage(blobUrl, maxDim, keepAlpha?"image/png":"image/jpeg", keepAlpha?0.92:0.88)
       .then(d=>{
-        if(!state.images[key]) return;
-        state.images[key].stored=d;
+        if(!imagesOf()[key]) return;
+        imagesOf()[key].stored=d;
         scheduleSave();
       });
   };
@@ -3412,7 +3546,7 @@ function extractPalette(img){
   return { primary:toHexC(primary), secondary:toHexC(secondary) };
 }
 function applyPaletteFromLogo(){
-  const im=state.images.logo;
+  const im=imagesOf().logo;
   if(!im||!im.el){ setPalStatus("Upload a team logo first."); return false; }
   const pal=extractPalette(im.el);
   if(!pal){ setPalStatus("Couldn't read colors — keeping current palette."); return false; }
@@ -3429,7 +3563,7 @@ function applyPaletteFromLogo(){
 }
 async function applyPaletteFromPlayer(){
   if(!AUTO_PLAYER_PALETTE) return false;
-  const im=state.images.player;
+  const im=imagesOf().player;
   if(!im||!im.el){ setPalStatus("Upload a player photo first."); return false; }
   const pal=await window.PosterPhotoPalette?.applyFromPlayer(im.el);
   if(pal){
@@ -3456,13 +3590,13 @@ function applyMagazineHeaderColors(){
     return;
   }
   const api=window.PosterMagazineHeaderColors;
-  if(state.template!=="magazine" || !state.images.player?.el){
+  if(state.template!=="magazine" || !imagesOf().player?.el){
     state.magazineHeaderSamples = null;
     state.magazineHeaderColors = null;
     return;
   }
   state.magazineHeaderSamples = api?.sample?.(
-    ensureLayout(), layersOf(), state.images.player.el, "magazine"
+    ensureLayout(), layersOf(), imagesOf().player.el, "magazine"
   ) || null;
   state.magazineHeaderColors = api?.resolve?.(
     state.magazineHeaderSamples, state.colors, "magazine"
@@ -3475,13 +3609,13 @@ function applySalukisDarkHeaderColors(){
     return;
   }
   const api=window.PosterMagazineHeaderColors;
-  if(state.template!=="salukis_dark" || !state.images.player?.el){
+  if(state.template!=="salukis_dark" || !imagesOf().player?.el){
     state.salukisDarkHeaderSamples = null;
     state.salukisDarkHeaderColors = null;
     return;
   }
   state.salukisDarkHeaderSamples = api?.sample?.(
-    ensureLayout(), layersOf(), state.images.player.el, "salukis_dark"
+    ensureLayout(), layersOf(), imagesOf().player.el, "salukis_dark"
   ) || null;
   state.salukisDarkHeaderColors = api?.resolve?.(
     state.salukisDarkHeaderSamples, state.colors, "salukis_dark"
@@ -3524,7 +3658,7 @@ function templateUsesPlayerPalette(templateId){
 }
 function shouldUsePlayerPalette(templateId){
   if(!AUTO_PLAYER_PALETTE) return false;
-  return templateUsesPlayerPalette(templateId) && !!state.images.player?.el;
+  return templateUsesPlayerPalette(templateId) && !!imagesOf(templateId).player?.el;
 }
 function shouldUseLogoPaletteForTemplate(templateId){
   return !templateUsesPlayerPalette(templateId);
@@ -3593,7 +3727,7 @@ function toSupportedSrc(src){
 }
 async function setCutBg(key, enabled){
   if(!CUTOUT_FEATURE_ENABLED){
-    const im=state.images[key];
+    const im=imagesOf()[key];
     if(im && im.cutBg){
       im.cutBg=false;
       applyImageSrc(key, im.original||im.src);
@@ -3601,7 +3735,7 @@ async function setCutBg(key, enabled){
     setBgStatus("");
     return;
   }
-  const im=state.images[key]; if(!im) return;
+  const im=imagesOf()[key]; if(!im) return;
   if(!enabled){
     const original=im.original||im.src;
     if(!im.original) im.original=original;
@@ -3645,14 +3779,13 @@ const LS_KEY = "posterEditor.v3";
 let _saveTimer=null;
 function scheduleSave(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(saveState,450); }
 function serializable(){
-  const imgs={};
-  for(const [k,v] of Object.entries(state.images)) imgs[k]={src:v.stored||v.src,natW:v.natW,natH:v.natH};
-  return { v:3, template:state.template, colors:state.colors, text:state.text,
+  return { v:4, template:state.template, colors:state.colors, text:state.text,
            layouts:state.layouts, extraLayers:state.extraLayers, autoPalette:state.autoPalette,
            lockTemplateFonts:state.lockTemplateFonts, logoSettings:state.logoSettings,
            spotlightVariant:state.spotlightVariant, spotlightLayouts:state.spotlightLayouts,
            vaporGlassSettings:state.vaporGlassSettings,
-           salukisLayoutMeta:state.salukisLayoutMeta, vaporLayoutMeta:state.vaporLayoutMeta, magazineLayoutMeta:state.magazineLayoutMeta, images:imgs,
+           salukisLayoutMeta:state.salukisLayoutMeta, vaporLayoutMeta:state.vaporLayoutMeta, magazineLayoutMeta:state.magazineLayoutMeta,
+           templateImages:serializeTemplateImages(),
            stories:state.stories, storyIndex:state.storyIndex };
 }
 function saveState(){
@@ -3660,7 +3793,7 @@ function saveState(){
   try{ localStorage.setItem(LS_KEY, JSON.stringify(data)); }
   catch(e){
     // most likely quota exceeded from large images — keep text/layout, drop images
-    try{ const slim={...data}; delete slim.images; localStorage.setItem(LS_KEY, JSON.stringify(slim));
+    try{ const slim={...data}; delete slim.templateImages; localStorage.setItem(LS_KEY, JSON.stringify(slim));
          setPalStatus("Saved (images too large to remember in this browser)."); }
     catch(_){ /* give up silently */ }
   }
@@ -3684,11 +3817,16 @@ function loadState(){
   migrateVaporGlassCardLayout(d);
   if(d.spotlightVariant && SPOTLIGHT_VARIANTS[d.spotlightVariant]) state.spotlightVariant=d.spotlightVariant;
   if(Array.isArray(d.stories)){ state.stories=d.stories; state.storyIndex = (typeof d.storyIndex==="number")?d.storyIndex:-1; }
-  if(d.images){
+  if(d.templateImages && typeof d.templateImages==="object"){
+    state.templateImages=d.templateImages;
+    for(const slots of Object.values(state.templateImages)) hydrateTemplateImagesRecord(slots);
+  } else if(d.images){
+    const tid=d.template || state.template || "magazine";
+    if(!state.templateImages[tid]) state.templateImages[tid]={};
     for(const [k,v] of Object.entries(d.images)){
-      state.images[k]={src:v.src,natW:v.natW,natH:v.natH,stored:v.src};
-      const im=new Image(); im.onload=()=>{ state.images[k] && (state.images[k].el=im); }; im.src=v.src;
+      state.templateImages[tid][k]={src:v.src,natW:v.natW,natH:v.natH,stored:v.src};
     }
+    hydrateTemplateImagesRecord(state.templateImages[tid]);
   }
   applyBroadcastPhotoDefault();
   applyHypeLowerThirdDefault();
@@ -4393,7 +4531,7 @@ document.getElementById("autoPal").onchange=e=>{
   state.autoPalette=e.target.checked;
   if(!e.target.checked) return;
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
-  else if(shouldUseLogoPaletteForTemplate(state.template) && state.images.logo) applyPaletteFromLogo();
+  else if(shouldUseLogoPaletteForTemplate(state.template) && imagesOf().logo) applyPaletteFromLogo();
 };
 document.getElementById("detectPal").onclick=()=>{
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
@@ -4473,9 +4611,9 @@ function loadImageFromUrl(key, url){
     const im=new Image();
     im.crossOrigin="anonymous";
     im.onload=()=>{
-      const prev=state.images[key];
+      const prev=imagesOf()[key];
       if(prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl);
-      state.images[key]={src:url, stored:url, natW:im.naturalWidth, natH:im.naturalHeight, el:im};
+      imagesOf()[key]={src:url, stored:url, natW:im.naturalWidth, natH:im.naturalHeight, el:im};
       if(key==="player"){
         applyBroadcastPhotoDefault(true);
         applyHypeLowerThirdDefault();
@@ -4664,7 +4802,7 @@ window.__RENDER_API_V3__={
       if(url) await loadImageFromUrl(key, url);
     }
     if(imageMap.logo && shouldUseLogoPalette(payload, state.template)) applyPaletteFromLogo();
-    else if(shouldUseLogoPalette(payload, state.template) && state.images.logo) applyPaletteFromLogo();
+    else if(shouldUseLogoPalette(payload, state.template) && imagesOf().logo) applyPaletteFromLogo();
     if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
     // Always re-apply frozen layer positions when Automate selects a template
     // or when payload asks to keep layout locked (default for Automate).
