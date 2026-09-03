@@ -1,0 +1,363 @@
+# Narrative Styles Portal — Architecture
+
+**Agents:** read this file before adding features. Extend these seams; do not break Editor, Automate, freeze/bake, or PNG export. See `.cursor/rules/architecture-first.mdc`.
+
+Sports poster lab: design a **1080×1350 (4:5)** layout in the Editor, freeze it as JSON, then fill text/images in Automate and export PNG. There is no backend. The browser is the runtime.
+
+This document describes the **vanilla JS app** in this folder. `react-editor/` is an unused Vite scaffold and is not on the live path.
+
+---
+
+## 1. What the system does
+
+Two human surfaces, one render engine:
+
+| Surface | File | Job |
+|---|---|---|
+| **Editor** | `index.html` | Place layers, drag geometry, colors, shapes, save a frozen template |
+| **Automate** | `automate.html` | Pick a frozen template, swap copy + images, export PNG |
+
+Automate does **not** re-implement drawing. It loads the Editor in a headless iframe (`index.html?headless=1`) and talks to `window.__RENDER_API_V3__`.
+
+```
+┌─────────────┐     iframe ?headless=1      ┌──────────────────────┐
+│ automate.html│ ─────────────────────────► │ index.html (engine)  │
+│  form UI     │   __RENDER_API_V3__        │  1080×1350 #stage    │
+└─────────────┘   setPayload / exportPng    └──────────┬───────────┘
+                                                       │
+                         ┌─────────────────────────────┼─────────────────────────────┐
+                         ▼                             ▼                             ▼
+                templates/*.json              renderer/*.js                   html2canvas PNG
+                manifest.json                 stories.players.js              localStorage bake
+```
+
+---
+
+## 2. Repository layout
+
+```
+narrative-styles-portal/
+├── index.html                 Editor + render engine (single-page app)
+├── automate.html              Fill-and-export UI (iframe host)
+├── architecture.md            This file
+│
+├── renderer/
+│   ├── template-loader.js     Load JSON templates → TEMPLATES runtime
+│   ├── render-engine.js       Story mapping, theme tokens, stat auto-fit
+│   ├── photo-palette.js       Palette from player photo (ColorThief)
+│   ├── magazine-header-colors.js  Text color from sampled photo behind headers
+│   ├── theme-colors.js        ESM duplicate of theme helpers (not loaded by index.html)
+│   └── index.html             Legacy redirect (stale; points at index_2.html)
+│
+├── templates/
+│   ├── manifest.json          Only files listed here are loaded
+│   └── *.json                 Frozen layouts (layers, automation, defaults)
+│
+├── assets/
+│   ├── library.json           Sidebar asset catalog
+│   ├── player/ background/ logo/ conference/ sponsor/ shape/
+│
+├── stories.players.js         Bundled sample stories (window.__BUNDLED_STORIES__)
+├── stories.players.json       Same data as JSON (optional fetch)
+│
+└── react-editor/              Unused React/Vite scaffold
+```
+
+Must be served over HTTP (not `file://`) so `fetch` can load `templates/manifest.json`.
+
+---
+
+## 3. Boot sequence
+
+Scripts in `index.html`:
+
+1. html2canvas (CDN)
+2. `renderer/render-engine.js` → `PosterRenderEngine`
+3. `renderer/template-loader.js` → `PosterTemplateLoader`
+4. `renderer/photo-palette.js` → `PosterPhotoPalette`
+5. `renderer/magazine-header-colors.js` → header sampling
+6. `stories.players.js`
+7. Inline editor (~5k lines): `state`, `render()`, inspector, bake, `__RENDER_API_V3__`
+
+`init()`:
+
+1. `loadState()` from `localStorage` key `posterEditor.v3` (skipped when `?headless=1`)
+2. `PosterTemplateLoader.loadAll()` from `templates/manifest.json`
+3. `restoreBakedTemplates()` from `posterEditor.v3.bakedTemplates`
+4. Headless: `loadEditorSessionForAutomate()` (labels + layout styles)
+5. Seed default images baked into the template JSON
+6. `ensureLayout()` — do **not** freeze-reset in the Editor (so drags persist). Automate still freeze-resets via `setPayload({ freeze_layout: true })`
+7. `refreshEditorUI()` + first `render()`
+
+---
+
+## 4. Runtime objects
+
+### 4.1 `state` (session)
+
+Held in `index.html`. Not a framework store.
+
+| Field | Role |
+|---|---|
+| `template` | Active template id (`magazine`, `cc`, …) |
+| `text` | Bind → string (`playerName`, `heroNumber`, …) |
+| `colors` | Brand tokens (`primary`, `secondary`, derived `onPrimary`, …) |
+| `templateImages` | templateId → slot (`player`, `background`, `logo`, `conference`, `sponsor`) → `{src, natW, natH, el}` |
+| `layouts` | templateId → layerId → geometry/style overrides (x, y, w, h, fill, gradient, …) |
+| `extraLayers` | Layers added in-session (shapes, duplicates) not yet in disk JSON |
+| `fieldLabels` | Renamed Automate field labels |
+| `selected` / `cropMode` / `zoom` | Editor chrome |
+
+### 4.2 `TEMPLATES`
+
+Empty object filled by the loader. Each entry is a **runtime template**:
+
+```js
+{
+  name,
+  _json,          // original disk JSON
+  stageBg(),      // canvas CSS background, {{primary}} interpolated
+  deco(),         // decorative HTML (vignettes, lines)
+  get layers()    // id → layer def; may merge authoring + live layouts
+}
+```
+
+Visible layers on the stage:
+
+```
+layersOf() = TEMPLATES[id].layers  ∪  state.extraLayers[id]
+ensureLayout()[id]                 // per-layer geo the user can drag
+```
+
+`render()` walks `layersOf()`, skips `hidden`, paints `#stage`.
+
+---
+
+## 5. Template JSON (source of truth)
+
+Disk files listed in `templates/manifest.json` are the only load source. Inline / localStorage templates are not a load path (bakes are a **session overlay**).
+
+### 5.1 Shape of a file
+
+```json
+{
+  "id": "magazine",
+  "name": "Magazine",
+  "canvas": { "width": 1080, "height": 1350, "background": "#E8E0D4" },
+  "deco": { "html": "" },
+  "textRules": { "autoFit": [], "stats": { "autoFit": false } },
+  "settings": {
+    "freezeLayout": true,
+    "logo": { "opacity": 1, "scale": 1 },
+    "brandColors": { "fromLogo": false },
+    "playerImage": { "fit": "contain", "cropX": 0.5, "cropY": 0.4 }
+  },
+  "layers": [ /* see §6 */ ],
+  "automation": {
+    "freezeLayout": true,
+    "swapFields": ["playerName", "heroNumber", "callout", "..."],
+    "swapImages": ["player", "logo", "conference", "sponsor", "background"],
+    "fieldLabels": { "heroNumber": "stat value" }
+  },
+  "defaults": { "images": { "player": { "src": "data:image/..." } } },
+  "_bakeMeta": { "bakedAt": "...", "shapeCount": 1 }
+}
+```
+
+A template is **frozen** when `settings.freezeLayout`, `automation.freezeLayout`, or `_bakeMeta` is set. Frozen templates keep Automate from running stock layout migrations (Salukis / Vapor / Magazine defaults).
+
+### 5.2 Loader
+
+`PosterTemplateLoader.loadAll()`:
+
+1. Fetch `templates/manifest.json`
+2. Fetch each listed file
+3. Optionally merge `layouts/authoring/{id}.json` if present
+4. `toRuntimeTemplate(json)` into `TEMPLATES[json.id]`
+5. Apply `settings` (logo scale, vapor glass, authoring extras)
+
+Template **id** is the JSON `id` field, not the filename (`coastal carolina.json` → `cc`).
+
+---
+
+## 6. Layer model
+
+Every layer is a rectangle on the 1080×1350 stage plus a `type`.
+
+| `type` | Bound to | Paint |
+|---|---|---|
+| `image` | `bind`: player / background / logo / conference / sponsor | Photo in `.imgcontent` (fit, zoom, crop, flip) |
+| `text` | `bind`: playerName, heroNumber, callout, … | HTML + font autofit into a **fixed box** |
+| `block` | optional `shape` + `clip` | SVG data-URL fill (solid or gradient) |
+| `glass` | vapor_motion card | Frosted panel |
+
+### 6.1 Text
+
+- Box size is fixed (`g.w` / `g.h`). Font shrinks/grows (`fitTextToFixedBox`) like Canva autofit.
+- `bind` maps to `state.text[bind]`. Empty user value stays empty (placeholder only if never set).
+- Stats use `kind: "stat"` plus `stat1num` / `stat1label` binds.
+- Color: role (`primary`) or hex, optional `gradient` (`linear` / `radial`).
+
+### 6.2 Images
+
+Slots: `player`, `background`, `logo`, `conference`, `sponsor`. Missing conference/sponsor/background skips the layer. Player still shows an empty placeholder.
+
+### 6.3 Shapes (`block`)
+
+`SHAPE_PRESETS` in `index.html`: circle, square, rectangle, rounded, oval, triangle, diamond, parallelogram, pill, bar.
+
+- Presets with polygons store CSS `clip` (`polygon(...)`).
+- Live + export paint via **inline `<img class="shapefill">`** whose `src` is an SVG data URL (html2canvas drops CSS `clip-path`).
+- Selecting a shape then clicking another preset **morphs that layer in place**. Shift-click / empty canvas adds a new extra layer.
+
+### 6.4 Z-order
+
+CSS `z-index` from `g.z ?? def.z`. Typical: background `1`, player `12`, type `22`, shapes `~28–40`.
+
+---
+
+## 7. Render pipeline
+
+```
+render()
+  ensureLayout()
+  #stage background = template.stageBg()
+  wipe DOM; inject deco HTML
+  for each visible layer:
+      position from layout geo
+      paint by type (image / glass / block SVG / text)
+      8 resize handles + rotate handle
+      attachLayerEvents (drag / resize / rotate)
+  syncInspector()
+```
+
+Geometry writes go to `state.layouts[templateId][layerId]`. On pointer-up, `syncLayerDefGeometry` copies x/y/w/h back onto the layer def so bake/export see the drag.
+
+**Editor vs Automate freeze**
+
+- **Editor:** `switchTemplate` / `init` call `ensureLayout()` only. User drags stick across refresh via `localStorage`.
+- **Automate:** `setPayload` calls `resetLayoutFromTemplate(..., { freeze:true })` so copy/image swaps cannot drift positions.
+
+---
+
+## 8. Color system
+
+```
+Brand primary / secondary
+        │
+        ▼
+PosterRenderEngine.enrichThemeColors()
+        │  onPrimary, onContrast, calloutBg, onPhoto, …
+        ▼
+roleColor("primary") | hex | gradient { from, to, angle, type }
+        │
+        ├── text: color or background-clip:text
+        └── shapes: SVG stops
+```
+
+Optional auto palettes:
+
+- **From logo** — `settings.brandColors.fromLogo` or `state.autoPalette`
+- **From player photo** — `PosterPhotoPalette` (ColorThief / bucket fallback)
+- **Magazine / Salukis headers** — sample pixels under name/meta/eyebrow, pick light or dark type
+
+`{{primary}}` / `{{secondary}}` in `canvas.background` and `deco.html` are interpolated by the loader.
+
+---
+
+## 9. Persistence
+
+| Store | Key | Contents |
+|---|---|---|
+| Editor session | `posterEditor.v3` | template, colors, text, layouts, extraLayers, fieldLabels, images |
+| Baked templates | `posterEditor.v3.bakedTemplates` | Full JSON copies so Automate sees last Save without a disk write |
+| Disk | `templates/*.json` + `manifest.json` | Durable source of truth (commit / share) |
+
+**Save editor → template** (`buildFrozenTemplateJSON`):
+
+1. Merge template layers + extras + current geo
+2. Set `freezeLayout: true`, `automation.swapFields` / `swapImages`
+3. Embed durable default images (data URLs)
+4. `PosterTemplateLoader.rebuildFromJson` (live)
+5. Write `localStorage` bake map
+6. Optionally download `{id}.json` for `templates/`
+
+Quota: oversized images are dropped from session save; bake retries with player+background only.
+
+---
+
+## 10. Automate + `__RENDER_API_V3__`
+
+`automate.html` waits for the iframe API, then `listTemplates()` (frozen first). Each field/image change debounces `setPayload`.
+
+```js
+__RENDER_API_V3__ = {
+  setPayload(payload),      // template, text, colors, images, freeze_layout
+  freezeCurrentLayout(),
+  listTemplates(),          // id, name, frozen, fields, images, automation
+  getTemplateFields(id),
+  exportPng(),              // data URL
+  exportPngBuffer(),
+  render(),
+  applyStory,
+  loadImageFromUrl,
+  getState(),
+}
+```
+
+`setPayload` image aliases: `player_image` / `playerImageUrl`, `logo_url`, `conference_logo`, `sponsor_logo`, `background_image`.
+
+Export: park `#stage` off-screen at native 1080×1350, `html2canvas` scale 2, download PNG. Clipped shapes already have SVG `<img>` children so clip-path is not required.
+
+---
+
+## 11. Stories
+
+`PosterRenderEngine.mapStoryToText(story)` maps a sports story record onto binds:
+
+`player_name` → `playerName`, `hero_stat_number` → `heroNumber`, `stat_line_1` → `stat1num`, colors, sport abbreviation, etc.
+
+Editor can cycle bundled stories; Automate can pass `payload.story`.
+
+---
+
+## 12. Asset library
+
+`assets/library.json` catalogs files under `assets/`. Clicking a card:
+
+- **player / background / logo / conference / sponsor** → load into that image slot
+- **shape** with `preset` → `addShapeLayer(preset)` (editable block)
+- **shape** without preset → floating `image` layer (`shape_img_*`)
+
+---
+
+## 13. Constraints (intentional)
+
+- **Canvas is always 1080×1350.** Zoom is CSS transform on `#stage`; export ignores zoom.
+- **No server.** Serve static files; JSON load requires HTTP.
+- **JSON-only templates.** `manifest.json` is the allow-list.
+- **Editor is one HTML file.** Shared math lives in `renderer/`; UI and paint live in `index.html`.
+- **html2canvas is the PNG path.** Prefer DOM the library can rasterize (inline SVG images for shapes, real `<img>` for photos).
+- **`react-editor/` is not wired.** Do not treat it as the product.
+
+---
+
+## 14. How to extend
+
+**New template**
+
+1. Duplicate a JSON under `templates/`, unique `id`
+2. Add the filename to `templates/manifest.json`
+3. Refresh Editor
+
+**New text field**
+
+Add a `type: "text"` layer with a new `bind`. Automate picks it up via `swapFields` / layer binds after Save.
+
+**New shape preset**
+
+Add an entry to `SHAPE_PRESETS` (w/h, radius, optional `clip` polygon). Optionally add an SVG + `library.json` row.
+
+**Headless / pipeline**
+
+Load `index.html?headless=1` and call `__RENDER_API_V3__.setPayload` then `exportPng`. Comment at top of `index.html`: this lab API is **not** the production `POST /posters/render` path.
