@@ -59,8 +59,9 @@
   .mini{font-size:10px;color:var(--dim);margin-top:4px;line-height:1.4;}
   .text-field-hdr{display:flex;align-items:center;gap:4px;margin:8px 0 3px;}
   .text-field-hdr .fld-label{flex:1;margin:0;}
-  .fld-rename{background:transparent;border:1px solid transparent;color:var(--dim);cursor:pointer;font-size:10px;padding:2px 5px;border-radius:4px;line-height:1;font-family:inherit;}
-  .fld-rename:hover{color:var(--accent);border-color:var(--line);background:#16233f;}
+  .fld-rename,.fld-delete{background:#16233f;border:1px solid var(--line);color:#cfd3da;cursor:pointer;font-size:10px;padding:3px 7px;border-radius:4px;line-height:1.2;font-family:inherit;flex:none;}
+  .fld-rename:hover{color:#fff;border-color:var(--accent);background:#1c2e52;}
+  .fld-delete:hover{color:#fff;border-color:#ff6b6b;background:#5a2a2a;}
   .fld-rename-input{width:100%;background:#0d1014;border:1px solid var(--accent);color:var(--txt);border-radius:6px;padding:4px 6px;font-size:11px;font-family:inherit;margin:8px 0 3px;}
   .assetrow{display:flex;align-items:center;gap:8px;margin:6px 0;}
   .assetrow .thumb{width:42px;height:42px;border-radius:6px;border:1px solid var(--line);background:#0d1014 center/contain no-repeat;flex:none;}
@@ -299,7 +300,7 @@
     <details class="group" open>
       <summary>Text content</summary>
       <div class="body" id="textFields"></div>
-      <div class="mini" style="padding:0 12px 10px;margin-top:-4px">Ordinals like <b>1st</b>, <b>2nd</b>, <b>3rd</b> render as superscript. Or wrap text in <code>&lt;sup&gt;…&lt;/sup&gt;</code>. Click <b>✎</b> next to a field name to rename it (saved in template JSON + Automate).</div>
+      <div class="mini" style="padding:0 12px 10px;margin-top:-4px">Ordinals like <b>1st</b>, <b>2nd</b>, <b>3rd</b> render as superscript. Use <b>Rename</b> to change the field label (shows in Automate). Use <b>Remove</b> to drop a field from this template.</div>
     </details>
 
     <details class="group" open>
@@ -900,17 +901,38 @@ function applyGlassStyle(el, def, g){
 function applyBlockStyle(el, def, g){
   const fill=roleColor(g.fill || g.color || def.fill || def.color || "white");
   el.style.background=fill;
-  const clip=g.clip ?? def.clip ?? null;
+  let clip=g.clip ?? def.clip ?? null;
+  const shapeName=g.shape || def.shape;
+  if(!clip && shapeName && SHAPE_PRESETS[shapeName]?.clip) clip=SHAPE_PRESETS[shapeName].clip;
   if(clip){
     el.style.clipPath=clip;
     el.style.webkitClipPath=clip;
     el.style.borderRadius="0px";
+    el.dataset.clip=clip;
+    el.dataset.shapeFill=fill;
   } else {
     el.style.clipPath="";
     el.style.webkitClipPath="";
     el.style.borderRadius=(g.radius??def.radius??0)+"px";
+    delete el.dataset.clip;
+    delete el.dataset.shapeFill;
   }
   el.style.height=(g.h??g.w)+"px";
+}
+/** Convert CSS polygon()/percent clip into an SVG background (html2canvas-safe). */
+function clipPathToSvgBackground(clip, fillColor, w, h){
+  const raw=String(clip||"").trim();
+  const m=/^polygon\((.+)\)$/i.exec(raw);
+  if(!m || !(w>0) || !(h>0)) return null;
+  const pts=m[1].split(",").map(part=>{
+    const bits=part.trim().split(/\s+/);
+    const x=bits[0]||"0", y=bits[1]||"0";
+    const px=String(x).endsWith("%") ? (parseFloat(x)/100)*w : parseFloat(x);
+    const py=String(y).endsWith("%") ? (parseFloat(y)/100)*h : parseFloat(y);
+    return `${Number.isFinite(px)?px:0},${Number.isFinite(py)?py:0}`;
+  }).join(" ");
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polygon points="${pts}" fill="${fillColor||"#ffffff"}"/></svg>`;
+  return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
 }
 function migrateVaporGlassCardLayout(d){
   const vg=d?.vaporGlassSettings;
@@ -1099,11 +1121,17 @@ function resetLayoutFromTemplate(templateId, opts={}){
     L[id].hollow=!!def.hollow;
     L[id].hidden=!!def.hidden;
     L[id].opacity=def.opacity!=null?def.opacity:1;
-    // Locked templates must not auto-resize text (keeps placeholder positions identical)
+    if(def.rotate!=null) L[id].rotate=+def.rotate;
+    else if(def.transform) L[id].rotate=parseRotate(def.transform);
+    if(def.clip!=null) L[id].clip=def.clip;
+    else if((def.shape||L[id].shape) && SHAPE_PRESETS[def.shape||L[id].shape]?.clip){
+      L[id].clip=SHAPE_PRESETS[def.shape||L[id].shape].clip;
+    }
+    if(def.shape!=null) L[id].shape=def.shape;
+    // Frozen layout: keep template min/max height; box may still grow when text overflows
     if(freeze && def.type==="text"){
-      L[id].manualSize=true;
-      if(L[id].h!=null || def.h!=null) L[id].fixedBox=true;
-      if(def.vAlign) L[id].vAlign=def.vAlign;
+      if(def.h!=null) L[id].boxMinH=def.h;
+      if(def.maxH!=null) L[id].boxMaxH=def.maxH;
     }
   }
   return L;
@@ -1219,12 +1247,14 @@ const TEXT_FIELDS = [
   ["reportTitle","Report title"],["avgLabel","Average label"],["avgValue","Average value"],
 ];
 const TEXT_FIELD_LABELS=Object.fromEntries(TEXT_FIELDS);
-/** Collect editable text bind keys from layer defs (+ optional automation.swapFields). */
-function collectTextBindsFromLayers(layers, swapFields){
+/** Collect editable text bind keys from layer defs (+ optional automation.swapFields). Skips hidden layers. */
+function collectTextBindsFromLayers(layers, swapFields, templateId){
   const binds=new Set();
-  const layerList=Object.values(layers||{});
-  for(const def of layerList){
+  const tid=templateId||state.template;
+  const L=state.layouts?.[tid]||{};
+  for(const [id,def] of Object.entries(layers||{})){
     if(!def || def.type!=="text") continue;
+    if(def.hidden || L[id]?.hidden) continue;
     if(def.kind==="stat"){
       binds.add(def.bind+"num");
       binds.add(def.bind+"label");
@@ -1241,7 +1271,70 @@ function collectTextBindsFromLayers(layers, swapFields){
     if(k==="playerMeta"){ binds.add("position"); binds.add("playerClass"); }
     else binds.add(k);
   });
-  return [...binds].filter(Boolean);
+  // Drop binds whose owning layer(s) are all hidden
+  return [...binds].filter(Boolean).filter(bind=>textBindHasVisibleLayer(bind, layers, tid));
+}
+/** Layer ids that own a text bind (including composite footer / playerMeta / stats). */
+function layerIdsForTextBind(bind, layers){
+  const ids=[];
+  for(const [id,def] of Object.entries(layers||{})){
+    if(!def || def.type!=="text") continue;
+    if(def.kind==="stat"){
+      if(bind===def.bind+"num" || bind===def.bind+"label") ids.push(id);
+    } else if(def.bind===bind){
+      ids.push(id);
+    } else if(def.bind==="footer" && (bind==="teamName"||bind==="hashtag"||bind==="sport")){
+      ids.push(id);
+    } else if(def.bind==="playerMeta" && (bind==="position"||bind==="playerClass")){
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+function textBindHasVisibleLayer(bind, layers, templateId){
+  const ids=layerIdsForTextBind(bind, layers);
+  if(!ids.length) return true; // swapFields-only bind still editable
+  const tid=templateId||state.template;
+  const L=state.layouts?.[tid]||{};
+  return ids.some(id=>{
+    const def=layers[id];
+    return def && !def.hidden && !L[id]?.hidden;
+  });
+}
+/** Hide canvas layer(s) for a text field and remove it from the sidebar. */
+function deleteTextField(bind){
+  try{
+    const layers=layersOf();
+    const ids=layerIdsForTextBind(bind, layers);
+    if(!ids.length){
+      state.text[bind]="";
+      buildTextFields();
+      saveState();
+      return;
+    }
+    const label=textFieldLabelFor(bind, layers);
+    if(!confirm(`Remove "${label}" from this template?\n\nIt will also disappear in Automate after you refresh that page.`)) return;
+    withUndo(()=>{
+      const L=ensureLayout();
+      const tid=state.template;
+      for(const id of ids){
+        if(L[id]) L[id].hidden=true;
+        if(layers[id]) layers[id].hidden=true;
+        const runtime=TEMPLATES[tid]?.layers?.[id];
+        if(runtime) runtime.hidden=true;
+        const jsonLayer=TEMPLATES[tid]?._json?.layers?.find(l=>l.id===id);
+        if(jsonLayer) jsonLayer.hidden=true;
+      }
+      if(ids.includes(state.selected)) select(null);
+      buildTextFields();
+      buildCaptionColorControls();
+      render();
+      saveState();
+    });
+  }catch(err){
+    console.error("deleteTextField failed:", err);
+    alert("Could not remove field: "+(err&&err.message||err));
+  }
 }
 /** Label for a text bind: custom fieldLabels → JSON layer.label → TEXT_FIELDS → labelFor → bind key */
 function getStoredFieldLabel(templateId, bind){
@@ -1273,21 +1366,27 @@ function textFieldLabelFor(bind, layers, templateId){
 }
 /** Persist a display label for a text bind (editor session + template JSON + layer defs). */
 function setFieldLabel(bind, label){
-  const tid=state.template;
-  const trimmed=String(label??"").trim();
-  if(!state.fieldLabels[tid]) state.fieldLabels[tid]={};
-  if(trimmed) state.fieldLabels[tid][bind]=trimmed;
-  else delete state.fieldLabels[tid][bind];
-  const json=TEMPLATES[tid]?._json;
-  if(json){
-    if(!json.automation) json.automation={ freezeLayout:!!isFrozenTemplate(tid), swapFields:[], swapImages:[] };
-    if(!json.automation.fieldLabels) json.automation.fieldLabels={};
-    if(trimmed) json.automation.fieldLabels[bind]=trimmed;
-    else delete json.automation.fieldLabels[bind];
+  try{
+    const tid=state.template;
+    if(!tid) return;
+    const trimmed=String(label??"").trim();
+    if(!state.fieldLabels[tid]) state.fieldLabels[tid]={};
+    if(trimmed) state.fieldLabels[tid][bind]=trimmed;
+    else delete state.fieldLabels[tid][bind];
+    const json=TEMPLATES[tid]?._json;
+    if(json){
+      if(!json.automation) json.automation={ freezeLayout:!!isFrozenTemplate(tid), swapFields:[], swapImages:[] };
+      if(!json.automation.fieldLabels) json.automation.fieldLabels={};
+      if(trimmed) json.automation.fieldLabels[bind]=trimmed;
+      else delete json.automation.fieldLabels[bind];
+    }
+    syncFieldLabelToLayers(tid, bind, trimmed);
+    buildTextFields();
+    saveState(); // immediate — Automate reads labels from localStorage
+  }catch(err){
+    console.error("setFieldLabel failed:", err);
+    alert("Could not rename field: "+(err&&err.message||err));
   }
-  syncFieldLabelToLayers(tid, bind, trimmed);
-  buildTextFields();
-  scheduleSave();
 }
 function syncFieldLabelToLayers(templateId, bind, label){
   const apply=(def)=>{
@@ -1304,6 +1403,10 @@ function syncFieldLabelToLayers(templateId, bind, label){
   if(json?.layers && Array.isArray(json.layers)){
     for(const layer of json.layers){ apply(layer); }
   }
+  const runtime=TEMPLATES[templateId]?.layers;
+  if(runtime){
+    for(const def of Object.values(runtime)){ apply(def); }
+  }
   const extras=state.extraLayers[templateId];
   if(extras){
     for(const def of Object.values(extras)){ apply(def); }
@@ -1316,7 +1419,7 @@ function seedFieldLabelsFromTemplate(templateId){
   Object.assign(state.fieldLabels[templateId], fl);
 }
 function collectFieldLabelsForBake(templateId, layers, swapFields){
-  const binds=collectTextBindsFromLayers(layers, swapFields);
+  const binds=collectTextBindsFromLayers(layers, swapFields, templateId);
   const out={ ...(TEMPLATES[templateId]?._json?.automation?.fieldLabels||{}), ...(state.fieldLabels[templateId]||{}) };
   for(const bind of binds){
     const label=textFieldLabelFor(bind, layers, templateId);
@@ -1432,25 +1535,39 @@ function ensureLayout(){
   const L = state.layouts[t];
   for(const [id,def] of Object.entries(layersOf())){
     if(!L[id]) L[id] = { x:def.x, y:def.y, w:def.w, h:def.h ?? null, size:def.size ?? null,
-                         weight:def.weight ?? null, rotate:parseRotate(def.transform), italic:!!def.italic,
-                         underline:!!def.underline,
+                         weight:def.weight ?? null,
+                         rotate:(def.rotate!=null?+def.rotate:parseRotate(def.transform)),
+                         italic:!!def.italic,
+                         underline:!!def.underline, align:def.align ?? null,
                          ls:def.ls ?? null, color:def.color, textTransform:def.textTransform ?? null,
-                         labelColor:null, textStyle:null, manualSize:false, fixedBox:false, vAlign:def.vAlign ?? "middle", hidden:false,
+                         labelColor:null, textStyle:null, manualSize:false, fixedBox:false,
+                         boxMinH:def.type==="text"?(def.h??null):null, boxMaxH:def.maxH??null,
+                         userResizedBox:false, vAlign:def.vAlign ?? "middle", hidden:false,
                          // image transform / crop controls
                          fit:def.fit ?? null, zoom:def.zoom ?? 1, cropX:def.cropX ?? 0.5, cropY:def.cropY ?? 0.5, flipH:false, flipV:false,
                          opacity:(def.opacity!=null?def.opacity:1), radius:def.type==="glass"?(def.radius??24):(def.type==="block"||def.shape||/^shape_/.test(id)?(def.radius??0):0),
                          borderOn:!!def.border, borderW:6, borderColor:def.borderColor||"primary",
                          lockAspect:def.type==="image", z:def.z ?? null,
-                         fill:def.fill ?? null, clip:def.clip ?? null, shape:def.shape ?? null };
+                         fill:def.fill ?? null,
+                         clip:(def.clip!=null?def.clip:(def.shape && SHAPE_PRESETS[def.shape]?.clip)||null),
+                         shape:def.shape ?? null };
     else {
       if(def.type==="text" && L[id].underline==null && def.underline) L[id].underline=true;
       if(def.type==="text"){
         if(L[id].vAlign==null) L[id].vAlign=def.vAlign ?? "middle";
-        if(def.manualSize && (L[id].h!=null || def.h!=null) && L[id].fixedBox==null) L[id].fixedBox=true;
+        if(L[id].align==null && def.align!=null) L[id].align=def.align;
+        if(L[id].boxMinH==null && def.h!=null) L[id].boxMinH=def.h;
+        if(L[id].boxMaxH==null && def.maxH!=null) L[id].boxMaxH=def.maxH;
+      }
+      if((L[id].rotate==null || L[id].rotate===0) && (def.rotate || def.transform)){
+        L[id].rotate=def.rotate!=null?+def.rotate:parseRotate(def.transform);
       }
       // Keep shape clip/fill/radius in sync when layer came from a baked template
       if(def.type==="block" || def.shape || /^shape_/.test(id)){
         if(L[id].clip==null && def.clip!=null) L[id].clip=def.clip;
+        if(!L[id].clip && (def.shape||L[id].shape) && SHAPE_PRESETS[def.shape||L[id].shape]?.clip){
+          L[id].clip=SHAPE_PRESETS[def.shape||L[id].shape].clip;
+        }
         if(L[id].fill==null && def.fill!=null) L[id].fill=def.fill;
         if(L[id].shape==null && def.shape!=null) L[id].shape=def.shape;
         if(L[id].radius==null && def.radius!=null) L[id].radius=def.radius;
@@ -2000,6 +2117,10 @@ function buildShapePalette(){
 ============================================================ */
 const stage = document.getElementById("stage");
 
+/** True when the user has explicitly set this bind (including empty string). */
+function textBindIsSet(bind){
+  return Object.prototype.hasOwnProperty.call(state.text, bind);
+}
 function bindContent(def){
   if(def.kind==="stat"){
     const base = def.bind; // stat1 / stat2 / stat3
@@ -2018,13 +2139,15 @@ function bindContent(def){
     return `${formatPosterText(state.text.hashtag||"")}&nbsp;&nbsp;&nbsp;${formatPosterText(state.text.teamName||"")} ${formatPosterText(state.text.sport||"")}`;
   }
   if(def.bind==="hashtag" && (state.template==="sideline_cutout"||state.template==="sideline_text")){
+    if(textBindIsSet("hashtag") && !String(state.text.hashtag||"").trim()) return "";
     const v=String(state.text.hashtag||"").replace(/^#/,"").trim();
     return formatPosterText((v||def.placeholder||"OCT. 11, 2025").toUpperCase());
   }
   if(def.bind==="playerMeta"){
     const parts=[state.text.playerClass,state.text.position].filter(s=>s&&s.trim());
+    const anySet=textBindIsSet("playerClass")||textBindIsSet("position");
     if(state.template==="sideline_cutout"||state.template==="sideline_text"){
-      if(!parts.length) return formatPosterText(def.placeholder||"JUNIOR | K");
+      if(!parts.length) return anySet ? "" : formatPosterText(def.placeholder||"JUNIOR | K");
       return parts.map(s=>formatPosterText(s.toUpperCase())).join(' &nbsp;|&nbsp; ');
     }
     if(state.template==="cutout_splat"){
@@ -2037,6 +2160,8 @@ function bindContent(def){
     return posFirst.map(s=>formatPosterText(s)).join(' &nbsp;·&nbsp; ');
   }
   const raw=state.text[def.bind];
+  // Cleared by user → keep empty box (do not fall back to placeholder / hide layer)
+  if(textBindIsSet(def.bind) && String(raw??"").trim()==="") return "";
   if(raw==null || String(raw).trim()===""){
     if(def.placeholder) return formatPosterText(def.placeholder);
   }
@@ -2049,7 +2174,10 @@ function templateAutoFitBinds(){ return RE.templateAutoFitBinds(state.template, 
 function templateStatAutoFit(){ return RE.templateStatAutoFit(state.template, textRulesFor); }
 function autoFitSalukisStat(el, g, def){ RE.autoFitSalukisStat(el, g, def); }
 function autoFitGenericStat(el, g, def){ RE.autoFitGenericStat(el, g, def, state.template, textRulesFor); }
-function autoFitTextLayer(el, def, g){ if(g?.fixedBox) return; RE.autoFitTextLayer(el, def, g, state.template, textRulesFor); }
+function autoFitTextLayer(el, def, g){
+  if(g?.userResizedBox) return;
+  RE.autoFitTextLayer(el, def, g, state.template, textRulesFor);
+}
 
 function fontAudit(){
   const results=[];
@@ -2190,27 +2318,45 @@ function applyTextBoxSize(el, def, g){
   }
   applyTextBoxAlign(el, def, g);
 }
-/** Keep manual text sizing from clipping — skipped when the box was resized by the user. */
-function syncTextLayerHeight(el, g, def){
+function textBoxMinH(g, def){
+  return g.boxMinH ?? def.h ?? Math.round((g.size ?? def.size ?? 30) * 1.25);
+}
+function textBoxMaxH(g, def){
+  if(g.boxMaxH!=null) return g.boxMaxH;
+  if(def.maxH!=null) return def.maxH;
+  const minH=textBoxMinH(g, def);
+  const y=g.y ?? def.y ?? 0;
+  const canvasRoom=Math.max(minH, SH-y-12);
+  return Math.min(canvasRoom, Math.max(minH*3, minH+Math.round(minH*1.5)));
+}
+/** Grow text box height when content exceeds template min; cap at max. User-resized boxes stay fixed. */
+function syncTextBoxGrow(el, g, def){
   if(!el || def.type!=="text" || def.kind==="stat") return;
-  if(g.fixedBox){
+  if(g.userResizedBox){
     applyTextBoxSize(el, def, g);
     return;
   }
+  const minH=textBoxMinH(g, def);
+  const maxH=textBoxMaxH(g, def);
+  const w=g.w ?? def.w ?? 100;
+  el.style.width=w+"px";
+  el.style.overflowWrap="break-word";
+  el.style.wordBreak="break-word";
+  el.style.whiteSpace="normal";
+  el.classList.add("fixed-box");
   el.style.height="auto";
   el.style.overflow="visible";
+  applyTextBoxAlign(el, def, g);
   const needed=Math.max(12, Math.ceil(el.scrollHeight));
-  const floor=g.h ?? def.h ?? 0;
-  if(g.manualSize || needed > floor){
-    if(needed > floor) g.h=needed;
-    else if(g.h==null && def.h!=null) g.h=def.h;
-    else if(g.h==null) g.h=needed;
-  }
-  const outH=g.h ?? def.h ?? needed;
-  el.style.height=outH+"px";
-  el.style.overflow="visible";
+  const targetH=needed<=minH ? minH : Math.min(maxH, needed);
+  g.h=targetH;
+  g.fixedBox=true;
+  el.style.height=targetH+"px";
+  el.style.overflow=needed>maxH ? "hidden" : "hidden";
   applyTextBoxAlign(el, def, g);
 }
+/** @deprecated use syncTextBoxGrow */
+function syncTextLayerHeight(el, g, def){ syncTextBoxGrow(el, g, def); }
 
 /** Soft opposite-value halo on Magazine header glyphs for busy photo backgrounds. */
 function magazineHeaderTextShadow(fontSize, textColor){
@@ -2342,7 +2488,6 @@ function render(){
       el.style.lineHeight = def.lh ?? 1.0;
       el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
       el.style.textTransform = g.textTransform ?? def.textTransform ?? "none";
-      applyTextBoxSize(el, def, g);
       if(def.bg){ el.style.background = vaporMotionBgColorForLayer(id) || roleColor(def.bg); }
       if(def.pad){ el.style.padding = def.pad; }
       if(def.radius){ el.style.borderRadius = def.radius+"px"; }
@@ -2396,12 +2541,15 @@ function render(){
     if(state.selected===id) el.classList.add("sel");
     deco.after(el); // keep order; appended to stage
     stage.appendChild(el);
-    if(def.type==="text") autoFitTextLayer(el, def, g);
     if(def.type==="text" && el.querySelector("sup") && !g.fixedBox) el.style.overflow="visible";
     if(def.type==="text" && def.kind!=="stat"){
-      if(g.fixedBox) applyTextBoxSize(el, def, g);
-      else if(g.manualSize) syncTextLayerHeight(el, g, def);
-      else applyTextBoxAlign(el, def, g);
+      if(g.userResizedBox) applyTextBoxSize(el, def, g);
+      else{
+        syncTextBoxGrow(el, g, def);
+        if(!g.manualSize && templateAutoFitBinds().has(def.bind) && Math.ceil(el.scrollHeight)>textBoxMaxH(g, def)+2){
+          autoFitTextLayer(el, def, g);
+        }
+      }
     }
     if(def.kind==="stat"&&templateStatAutoFit()){
       if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
@@ -2622,6 +2770,7 @@ function attachLayerEvents(el, def, g){
         gg.w=Math.round(nw); gg.h=Math.round(nh);
         gg.fixedBox=true;
         gg.manualSize=true;
+        gg.userResizedBox=true;
         if(e.shiftKey && corner){
           gg.size=Math.max(8, Math.round(d.osize*(nw/d.ow)));
         }
@@ -2737,8 +2886,8 @@ function applyTextLayerVisuals(el, def, g, layerId){
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
   applyTextBoxAlign(el, def, g);
-  if(g.fixedBox) applyTextBoxSize(el, def, g);
-  else if(g.manualSize) syncTextLayerHeight(el, g, def);
+  if(g.userResizedBox) applyTextBoxSize(el, def, g);
+  else syncTextBoxGrow(el, g, def);
 }
 function applyGeo(el, def, g){
   el.style.left=g.x+"px"; el.style.top=g.y+"px"; el.style.width=g.w+"px";
@@ -2763,7 +2912,6 @@ function applyGeo(el, def, g){
   } else if(def.type==="text"){
     if(g.size) el.style.fontSize=g.size+"px";
     applyTextLayerVisuals(el, def, g);
-    applyTextBoxSize(el, def, g);
   } else if(g.size){ el.style.fontSize=g.size+"px"; }
   scheduleSave();
 }
@@ -3107,8 +3255,8 @@ function syncInspector(){
         const layerEl=el();
         if(layerEl){
           layerEl.style.fontSize=g.size+"px";
-          if(g.fixedBox) applyTextBoxSize(layerEl, def, g);
-          else syncTextLayerHeight(layerEl, g, def);
+          if(g.userResizedBox) applyTextBoxSize(layerEl, def, g);
+          else syncTextBoxGrow(layerEl, def, g);
         }
         scheduleSave();
       }
@@ -3118,19 +3266,27 @@ function syncInspector(){
       b.onclick=()=>withUndo(()=>{
         g.align=b.dataset.align;
         markTextStyleCustom(g);
+        const runtime=TEMPLATES[state.template]?.layers?.[id];
+        if(runtime) runtime.align=g.align;
+        const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===id);
+        if(jl) jl.align=g.align;
         $("iAlign").querySelectorAll("[data-align]").forEach(x=>x.classList.toggle("on", x===b));
         const layerEl=el();
         if(layerEl) applyTextBoxAlign(layerEl, def, g);
-        scheduleSave();
+        saveState();
       });
     });
     $("iVAlign")?.querySelectorAll("[data-valign]").forEach(b=>{
       b.onclick=()=>withUndo(()=>{
         g.vAlign=b.dataset.valign;
+        const runtime=TEMPLATES[state.template]?.layers?.[id];
+        if(runtime) runtime.vAlign=g.vAlign;
+        const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===id);
+        if(jl) jl.vAlign=g.vAlign;
         $("iVAlign").querySelectorAll("[data-valign]").forEach(x=>x.classList.toggle("on", x===b));
         const layerEl=el();
         if(layerEl) applyTextBoxAlign(layerEl, def, g);
-        scheduleSave();
+        saveState();
       });
     });
     const commitInspectorTextColor=()=>{
@@ -3189,6 +3345,7 @@ function syncInspector(){
       g.w=Math.max(8,+e.target.value||8);
       g.fixedBox=true;
       g.manualSize=true;
+      g.userResizedBox=true;
       if(g.h==null) g.h=def.h ?? Math.round((g.size??def.size??30)*1.35);
       applyGeo(el(),def,g);
     };
@@ -3196,6 +3353,7 @@ function syncInspector(){
       g.h=Math.max(12,+e.target.value||12);
       g.fixedBox=true;
       g.manualSize=true;
+      g.userResizedBox=true;
       applyGeo(el(),def,g);
     };
   }
@@ -3725,6 +3883,76 @@ function loadState(){
   migrateSpotlightState(d);
   return true;
 }
+/** Headless Automate: pull renamed labels, hidden fields, and layout styles (align, size, …) from the editor session. */
+function loadEditorSessionForAutomate(){
+  let raw; try{ raw=localStorage.getItem(LS_KEY); }catch(e){ return false; }
+  if(!raw) return false;
+  let d; try{ d=JSON.parse(raw); }catch(e){ return false; }
+  if(d.fieldLabels && typeof d.fieldLabels==="object"){
+    state.fieldLabels=Object.assign({}, d.fieldLabels);
+  }
+  if(d.layouts && typeof d.layouts==="object"){
+    state.layouts=d.layouts;
+  }
+  if(d.extraLayers && typeof d.extraLayers==="object"){
+    state.extraLayers=d.extraLayers;
+  }
+  // Mirror session labels into loaded template JSON so listTemplates() sees them
+  for(const [tid, labels] of Object.entries(state.fieldLabels||{})){
+    const json=TEMPLATES[tid]?._json;
+    if(!json || !labels) continue;
+    if(!json.automation) json.automation={};
+    json.automation.fieldLabels={ ...(json.automation.fieldLabels||{}), ...labels };
+    for(const [bind, label] of Object.entries(labels)){
+      syncFieldLabelToLayers(tid, bind, label);
+    }
+  }
+  // Push editor layout styles (center align, sizes, positions, hidden) onto template defs
+  // so Automate freeze/reset uses the latest saved editor look — not only disk JSON.
+  applySessionLayoutsToTemplateDefs();
+  return true;
+}
+/** Copy layout overrides from the editor session onto TEMPLATES layer defs + _json.layers. */
+function applySessionLayoutsToTemplateDefs(){
+  const STYLE_KEYS=[
+    "x","y","w","h","size","weight","align","vAlign","color","italic","underline",
+    "ls","lh","textTransform","opacity","z","rotate","hidden","manualSize","fixedBox",
+    "boxMinH","boxMaxH","fit","zoom","cropX","cropY","fill","clip","shape","radius",
+  ];
+  for(const [tid, L] of Object.entries(state.layouts||{})){
+    const t=TEMPLATES[tid];
+    if(!t) continue;
+    for(const [lid, g] of Object.entries(L||{})){
+      if(!g) continue;
+      const runtime=t.layers?.[lid];
+      const jl=t._json?.layers?.find(l=>l.id===lid);
+      for(const key of STYLE_KEYS){
+        if(g[key]==null) continue;
+        if(runtime) runtime[key]=g[key];
+        if(jl) jl[key]=g[key];
+      }
+      // Font: layout may store CSS stack; prefer font key on JSON when possible
+      if(g.font!=null){
+        if(runtime) runtime.font=g.font;
+        if(jl){
+          const fk=fontKeyFromValue(g.font);
+          if(fk) jl.font=fk;
+        }
+      }
+      if(g.hidden){
+        if(runtime) runtime.hidden=true;
+        if(jl) jl.hidden=true;
+      }
+    }
+    // Mark template frozen so Automate keeps these positions/styles
+    if(t._json){
+      if(!t._json.settings) t._json.settings={};
+      t._json.settings.freezeLayout=true;
+      if(!t._json.automation) t._json.automation={};
+      t._json.automation.freezeLayout=true;
+    }
+  }
+}
 /* downscale + re-encode so uploads fit in localStorage; preserve PNG alpha for cutouts */
 function imageHasAlpha(img){
   try{
@@ -3919,7 +4147,7 @@ function buildTextFields(){
   let layers={};
   try{ layers=layersOf(); }catch(e){ console.warn("buildTextFields layers:", e); }
   const swapFields=TEMPLATES[state.template]?._json?.automation?.swapFields;
-  const binds=collectTextBindsFromLayers(layers, swapFields);
+  const binds=collectTextBindsFromLayers(layers, swapFields, state.template);
   textFieldsWrap.innerHTML="";
   binds.forEach(key=>{
     const wrap=document.createElement("div");
@@ -3928,33 +4156,53 @@ function buildTextFields(){
     hdr.className="text-field-hdr";
     const lbl=document.createElement("label");
     lbl.className="fld fld-label";
-    lbl.textContent=textFieldLabelFor(key, layers);
+    lbl.textContent=textFieldLabelFor(key, layers, state.template);
     lbl.htmlFor="tf_"+key;
     const editBtn=document.createElement("button");
     editBtn.type="button";
     editBtn.className="fld-rename";
-    editBtn.title="Rename field label (saved in template JSON)";
-    editBtn.textContent="✎";
-    editBtn.onclick=()=>{
-      const current=textFieldLabelFor(key, layers);
+    editBtn.title="Rename field label (shows in Automate)";
+    editBtn.textContent="Rename";
+    editBtn.addEventListener("click",(e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      const current=textFieldLabelFor(key, layers, state.template);
       const rename=document.createElement("input");
       rename.type="text";
       rename.className="fld-rename-input";
       rename.value=current;
       rename.placeholder="Field label";
+      let done=false;
       const finish=()=>{
+        if(done) return;
+        done=true;
         setFieldLabel(key, rename.value);
       };
-      rename.onblur=finish;
-      rename.onkeydown=e=>{
-        if(e.key==="Enter"){ e.preventDefault(); rename.blur(); }
-        if(e.key==="Escape"){ e.preventDefault(); buildTextFields(); }
-      };
+      rename.addEventListener("blur", finish);
+      rename.addEventListener("keydown",(ev)=>{
+        if(ev.key==="Enter"){ ev.preventDefault(); rename.blur(); }
+        if(ev.key==="Escape"){
+          ev.preventDefault();
+          done=true;
+          rename.removeEventListener("blur", finish);
+          buildTextFields();
+        }
+      });
       hdr.replaceWith(rename);
       rename.focus();
       rename.select();
-    };
-    hdr.append(lbl, editBtn);
+    });
+    const delBtn=document.createElement("button");
+    delBtn.type="button";
+    delBtn.className="fld-delete";
+    delBtn.title="Remove this field from the template";
+    delBtn.textContent="Remove";
+    delBtn.addEventListener("click",(e)=>{
+      e.preventDefault();
+      e.stopPropagation();
+      deleteTextField(key);
+    });
+    hdr.append(lbl, editBtn, delBtn);
     const i=document.createElement("input");
     i.type="text";
     i.id="tf_"+key;
@@ -4097,6 +4345,11 @@ function layerDefToJson(id, def, g){
   const opacity=g.opacity!=null?g.opacity:(def.opacity!=null?def.opacity:null);
   if(opacity!=null && opacity!==1) out.opacity=opacity;
   if(g.hidden||def.hidden) out.hidden=true;
+  const rot=Number((g.rotate??def.rotate??parseRotate(def.transform))||0);
+  if(rot){
+    out.rotate=Math.round(rot);
+    out.transform=`rotate(${Math.round(rot)}deg)`;
+  }
 
   if(def.type==="text"){
     const size=g.size??def.size;
@@ -4153,10 +4406,12 @@ function layerDefToJson(id, def, g){
     out.fill=fill;
     const radius=g.radius??def.radius??0;
     out.radius=radius;
-    const clip=g.clip??def.clip;
-    if(clip) out.clip=clip;
     const shape=g.shape||def.shape;
     if(shape) out.shape=shape;
+    let clip=g.clip??def.clip;
+    // Always keep preset clip for triangles / parallelograms / diamonds etc.
+    if(!clip && shape && SHAPE_PRESETS[shape]?.clip) clip=SHAPE_PRESETS[shape].clip;
+    if(clip) out.clip=clip;
   } else if(def.type==="glass"){
     const radius=g.radius??def.radius;
     if(radius!=null) out.radius=radius;
@@ -4212,13 +4467,19 @@ function buildFrozenTemplateJSON(opts={}){
     }
     if(normalized.type==="block"||normalized.shape||g.shape||/^shape_/.test(lid)){
       normalized.type="block";
+      const shapeName=normalized.shape||g.shape||(String(lid).match(/^shape_([a-z0-9]+)_/i)||[])[1];
+      if(shapeName && !normalized.shape) normalized.shape=shapeName;
+      if(!(g.clip||normalized.clip) && shapeName && SHAPE_PRESETS[shapeName]?.clip){
+        normalized.clip=SHAPE_PRESETS[shapeName].clip;
+      }
+      if(g.clip) normalized.clip=g.clip;
       shapeCount++;
     }
     layers.push(layerDefToJson(lid, normalized, Object.assign({}, normalized, g)));
   }
   layers.sort((a,b)=>(a.z||0)-(b.z||0));
 
-  const swapFieldsList=collectTextBindsFromLayers(defs, base.automation?.swapFields);
+  const swapFieldsList=collectTextBindsFromLayers(defs, base.automation?.swapFields, srcId);
   const fieldLabels=collectFieldLabelsForBake(srcId, defs, base.automation?.swapFields);
 
   const playerLayer=layers.find(l=>l.bind==="player");
@@ -4428,6 +4689,9 @@ async function bakeEditorIntoTemplate(download=true){
     };
   }
 
+  // Persist bake so Automate (headless) can restore align/layout without downloading JSON
+  saveBakedTemplateJson(json);
+
   if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
   if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
 
@@ -4473,7 +4737,7 @@ async function bakeEditorIntoTemplate(download=true){
   setBakeStatus(
     download
       ? `Downloaded “${name}” (${id}.json) — add/replace under templates/ and list in manifest.json`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+"."
-      : `Updated “${name}” in this session (${id}). Download template to save JSON to templates/.`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+"."
+      : `Saved “${name}” for Editor + Automate (${id}). Download template if you also want a repo JSON file.`+(shapeCount?` · ${shapeCount} shape(s)`:"")+imgNote+"."
   );
   return json;
 }
@@ -4536,7 +4800,16 @@ document.addEventListener("keydown",(e)=>{
     case "ArrowRight": pushUndo(); g.x+=step; break;
     case "ArrowUp":    pushUndo(); g.y-=step; break;
     case "ArrowDown":  pushUndo(); g.y-=step; break;
-    case "Delete": case "Backspace": pushUndo(); g.hidden=true; select(null); break;
+    case "Delete":
+      pushUndo(); g.hidden=true; select(null);
+      buildTextFields(); buildCaptionColorControls();
+      break;
+    case "Backspace":
+      // Backspace must not remove text layers (easy to hit while editing). Use Delete or ✕.
+      if(def.type==="text"){ act=false; break; }
+      pushUndo(); g.hidden=true; select(null);
+      buildTextFields(); buildCaptionColorControls();
+      break;
     case "[": pushUndo(); g.z=(g.z ?? def.z ?? 10)-1; break;
     case "]": pushUndo(); g.z=(g.z ?? def.z ?? 10)+1; break;
     case "d": case "D": if(e.metaKey||e.ctrlKey){ duplicateLayer(id); } else act=false; break;
@@ -4745,7 +5018,34 @@ async function captureStagePng(){
   await new Promise(r=>setTimeout(r,120));
   let canvas;
   try{
-    canvas=await html2canvas(stage,{scale:2,backgroundColor:null,useCORS:true,logging:false,width:SW,height:SH});
+    canvas=await html2canvas(stage,{
+      scale:2,
+      backgroundColor:null,
+      useCORS:true,
+      logging:false,
+      width:SW,
+      height:SH,
+      // html2canvas often drops CSS clip-path — redraw clipped shapes as SVG fills
+      onclone(_doc, clone){
+        clone.querySelectorAll(".layer.block").forEach(el=>{
+          const clip=el.dataset.clip || el.style.clipPath || el.style.webkitClipPath;
+          if(!clip || clip==="none") return;
+          const w=parseFloat(el.style.width)||el.offsetWidth||0;
+          const h=parseFloat(el.style.height)||el.offsetHeight||0;
+          const fill=el.dataset.shapeFill || el.style.backgroundColor || el.style.background || "#ffffff";
+          const solid=String(fill).includes("gradient") ? "#ffffff" : String(fill).trim();
+          const bg=clipPathToSvgBackground(clip, solid, w, h);
+          if(!bg) return;
+          el.style.clipPath="none";
+          el.style.webkitClipPath="none";
+          el.style.background=bg;
+          el.style.backgroundSize="100% 100%";
+          el.style.backgroundRepeat="no-repeat";
+          el.style.backgroundPosition="center";
+          el.style.borderRadius="0";
+        });
+      },
+    });
   }finally{
     wrap.style.position=prev.pos;
     wrap.style.left=prev.left;
@@ -4924,11 +5224,11 @@ function templateInputFields(templateId){
   const t=TEMPLATES[templateId];
   if(!t) return [];
   let layers;
-  try{ layers=t.layers||{}; }catch(_){ layers={}; }
-  const binds=collectTextBindsFromLayers(layers, t._json?.automation?.swapFields);
+  try{ layers=Object.assign({}, t.layers||{}, state.extraLayers[templateId]||{}); }catch(_){ layers={}; }
+  const binds=collectTextBindsFromLayers(layers, t._json?.automation?.swapFields, templateId);
   return binds.map(key=>({
     key,
-    label:textFieldLabelFor(key, layers),
+    label:textFieldLabelFor(key, layers, templateId),
     placeholder:textFieldPlaceholderFor(key, layers),
   }));
 }
@@ -4957,6 +5257,10 @@ async function init(){
   const ap=document.getElementById("autoPal"); if(ap) ap.checked=state.autoPalette;
   const lf=document.getElementById("lockFonts"); if(lf) lf.checked=state.lockTemplateFonts;
   await ensurePosterTemplatesLoaded();
+  // Prefer last Save from editor (includes text align, positions, labels) over raw disk JSON
+  restoreBakedTemplates();
+  // Automate iframe: also apply latest editor session layout styles (align, etc.)
+  if(headless) loadEditorSessionForAutomate();
   if(qp) state.template=ensureEnabledTemplate(qp);
   else state.template=ensureEnabledTemplate(state.template);
   // Ensure baked default player/bg appear after restart

@@ -1,7 +1,7 @@
 {
     "id": "cc",
     "name": "cc",
-    "version": 10,
+    "version": 13,
     "canvas": {
       "width": 1080,
       "height": 1350,
@@ -70,8 +70,8 @@
         "z": 18,
         "fill": "primary",
         "radius": 0,
-        "clip": "polygon(14% 0%, 100% 0%, 86% 100%, 0% 100%)",
-        "shape": "parallelogram"
+        "shape": "parallelogram",
+        "clip": "polygon(14% 0%, 100% 0%, 86% 100%, 0% 100%)"
       },
       {
         "id": "conference",
@@ -104,16 +104,17 @@
         "type": "text",
         "bind": "teamName",
         "placeholder": "VS. ULM | 23-8 |",
-        "x": 80,
-        "y": 248,
+        "x": 74,
+        "y": 253,
         "w": 420,
         "h": 36,
         "z": 22,
-        "size": 22,
+        "size": 29,
         "color": "primary",
         "font": "sans",
         "weight": 700,
         "align": "center",
+        "label": "Team name",
         "italic": true,
         "manualSize": true,
         "textTransform": "uppercase"
@@ -133,6 +134,7 @@
         "font": "sans",
         "weight": 800,
         "align": "center",
+        "label": "Hashtag",
         "ls": 1,
         "manualSize": true,
         "textTransform": "uppercase"
@@ -152,6 +154,7 @@
         "font": "cond",
         "weight": 700,
         "align": "center",
+        "label": "Hero stat number",
         "lh": 0.84,
         "manualSize": true
       },
@@ -170,6 +173,7 @@
         "font": "cond",
         "weight": 600,
         "align": "center",
+        "label": "Hero description",
         "ls": 2,
         "manualSize": true,
         "textTransform": "uppercase"
@@ -189,6 +193,7 @@
         "font": "sans",
         "weight": 700,
         "align": "center",
+        "label": "Callout",
         "ls": 1,
         "italic": true,
         "manualSize": true,
@@ -199,7 +204,7 @@
         "type": "text",
         "bind": "playerName",
         "placeholder": "KIAN AFROOKHTEH",
-        "x": 693,
+        "x": 630,
         "y": 1101,
         "w": 480,
         "h": 48,
@@ -208,6 +213,8 @@
         "color": "black",
         "font": "sans",
         "weight": 800,
+        "align": "center",
+        "label": "Player name",
         "ls": 1,
         "italic": true,
         "manualSize": true,
@@ -218,7 +225,7 @@
         "type": "text",
         "bind": "playerMeta",
         "placeholder": "JUNIOR | K",
-        "x": 763,
+        "x": 656,
         "y": 1149,
         "w": 400,
         "h": 43,
@@ -227,6 +234,7 @@
         "color": "black",
         "font": "sans",
         "weight": 600,
+        "align": "center",
         "italic": true,
         "manualSize": true,
         "textTransform": "uppercase"
@@ -266,13 +274,21 @@
       "note": "Frozen layout from editor. Default player/background images are baked in; Automate may override via API."
     },
     "_bakeMeta": {
-      "bakedAt": "2026-09-02T12:05:42.562Z",
+      "bakedAt": "2026-09-03T04:53:25.562Z",
       "sourceTemplate": "cc",
       "layerCount": 12,
       "shapeCount": 1,
-      "imageSlots": []
+      "imageSlots": [
+        "background"
+      ]
     },
     "defaults": {
-      "images": {}
+      "images": {
+        "background": {
+          "src": "assets/background/ccbg.png",
+          "natW": 1080,
+          "natH": 1350
+        }
+      }
     }
   }
