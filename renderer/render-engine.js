@@ -99,45 +99,52 @@
   }
 
   function autoFitTextLayer(el, def, g, templateId, getTextRules) {
-    if (def.type !== "text" || def.kind === "stat" || !templateAutoFitBinds(templateId, getTextRules).has(def.bind)) return;
-    if (g?.manualSize) return;
-    const maxW = g.w;
+    if (def.type !== "text" || def.kind === "stat") return;
+    const maxW = g.w ?? def.w ?? 100;
     const lh = def.lh ?? g.lh ?? 1;
     let maxH = g.h ?? def.h ?? null;
     if (!maxH && def.bind === "heroNumber") {
-      maxH = Math.round((g.size ?? def.size ?? 30) * (typeof lh === "number" ? lh : 1) * 1.08);
+      maxH = Math.round((g.baseSize ?? g.size ?? def.size ?? 30) * (typeof lh === "number" ? lh : 1) * 1.08);
     }
-    if (maxH) {
-      el.style.height = maxH + "px";
-      el.style.overflow = "hidden";
-    }
-    let size = parseFloat(el.style.fontSize) || (g.size ?? def.size ?? 30);
+    if (!maxH) maxH = Math.round((g.baseSize ?? g.size ?? def.size ?? 30) * 1.25);
+    el.style.width = maxW + "px";
+    el.style.height = maxH + "px";
+    el.style.overflow = "hidden";
+    const maxSize = Math.max(8, g.baseSize ?? def.size ?? g.size ?? 30);
+    const minSize = Math.max(8, Math.round(maxSize * 0.28));
+    let size = maxSize;
+    el.style.fontSize = size + "px";
     el.style.overflowWrap = "break-word";
     el.style.wordBreak = "break-word";
-    if (def.bind === "heroNumber") {
-      el.style.whiteSpace = "nowrap";
-      el.style.lineHeight = String(lh);
-      let guard = 0;
-      while (size > 12 && guard++ < 90) {
-        const wOk = el.scrollWidth <= maxW + 2;
-        const hOk = !maxH || el.scrollHeight <= maxH + 2;
-        if (wOk && hOk) break;
-        size -= 2;
-        el.style.fontSize = size + "px";
-      }
-    } else {
-      el.style.whiteSpace = "normal";
-      const minSize = Math.max(10, Math.round(size * 0.72));
-      let guard = 0;
-      while (size > minSize && guard++ < 60) {
-        const wOk = el.scrollWidth <= maxW + 2;
-        const hOk = !maxH || el.scrollHeight <= maxH + 4;
-        if (wOk && hOk) break;
-        size -= 1;
-        el.style.fontSize = size + "px";
-      }
-      if (maxH) el.style.overflow = "hidden";
+    el.style.whiteSpace = def.bind === "heroNumber" ? "nowrap" : "normal";
+    if (def.bind === "heroNumber") el.style.lineHeight = String(lh);
+
+    const fits = () => {
+      const prevH = el.style.height, prevO = el.style.overflow;
+      el.style.height = "auto";
+      el.style.overflow = "visible";
+      const ok = el.scrollWidth <= maxW + 2 && el.scrollHeight <= maxH + 2;
+      el.style.height = prevH;
+      el.style.overflow = prevO;
+      return ok;
+    };
+
+    let guard = 0;
+    while (size > minSize && guard++ < 160) {
+      if (fits()) break;
+      size -= 1;
+      el.style.fontSize = size + "px";
     }
+    guard = 0;
+    while (size < maxSize && guard++ < 160) {
+      el.style.fontSize = (size + 1) + "px";
+      if (!fits()) {
+        el.style.fontSize = size + "px";
+        break;
+      }
+      size += 1;
+    }
+    if (g) g.fitSize = size;
   }
 
   function themeLum(hex) {

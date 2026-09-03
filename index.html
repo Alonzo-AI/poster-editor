@@ -1543,6 +1543,7 @@ function ensureLayout(){
                          labelColor:null, textStyle:null, manualSize:false, fixedBox:false,
                          boxMinH:def.type==="text"?(def.h??null):null, boxMaxH:def.maxH??null,
                          userResizedBox:false, vAlign:def.vAlign ?? "middle", hidden:false,
+                         baseSize:def.type==="text"?(def.size??null):null,
                          // image transform / crop controls
                          fit:def.fit ?? null, zoom:def.zoom ?? 1, cropX:def.cropX ?? 0.5, cropY:def.cropY ?? 0.5, flipH:false, flipV:false,
                          opacity:(def.opacity!=null?def.opacity:1), radius:def.type==="glass"?(def.radius??24):(def.type==="block"||def.shape||/^shape_/.test(id)?(def.radius??0):0),
@@ -1558,6 +1559,7 @@ function ensureLayout(){
         if(L[id].align==null && def.align!=null) L[id].align=def.align;
         if(L[id].boxMinH==null && def.h!=null) L[id].boxMinH=def.h;
         if(L[id].boxMaxH==null && def.maxH!=null) L[id].boxMaxH=def.maxH;
+        if(L[id].baseSize==null && def.size!=null) L[id].baseSize=def.size;
       }
       if((L[id].rotate==null || L[id].rotate===0) && (def.rotate || def.transform)){
         L[id].rotate=def.rotate!=null?+def.rotate:parseRotate(def.transform);
@@ -2175,8 +2177,7 @@ function templateStatAutoFit(){ return RE.templateStatAutoFit(state.template, te
 function autoFitSalukisStat(el, g, def){ RE.autoFitSalukisStat(el, g, def); }
 function autoFitGenericStat(el, g, def){ RE.autoFitGenericStat(el, g, def, state.template, textRulesFor); }
 function autoFitTextLayer(el, def, g){
-  if(g?.userResizedBox) return;
-  RE.autoFitTextLayer(el, def, g, state.template, textRulesFor);
+  fitTextToFixedBox(el, g, def);
 }
 
 function fontAudit(){
@@ -2295,68 +2296,126 @@ function applyTextBoxAlign(el, def, g){
     flow.style.textAlign=align;
   }
 }
-/** Apply width/height for text boxes; fixedBox = user-resized container (font size independent). */
+/** Apply width/height for text boxes — height stays fixed; font autofit handles overflow. */
 function applyTextBoxSize(el, def, g){
   if(!el || def.type!=="text") return;
-  el.style.width=(g.w)+"px";
-  const fixed=!!g.fixedBox;
-  el.classList.toggle("fixed-box", fixed);
-  if(fixed){
-    const h=Math.max(12, g.h ?? def.h ?? Math.round((g.size??def.size??30)*1.35));
-    g.h=h;
-    el.style.height=h+"px";
-    el.style.overflow="hidden";
-  } else {
-    const textH=g.h ?? def.h ?? null;
-    if(textH && !g.manualSize){
-      el.style.height=textH+"px";
-      el.style.overflow="hidden";
-    } else {
-      el.style.height=textH ? textH+"px" : "auto";
-      el.style.overflow="visible";
-    }
-  }
+  const w=g.w ?? def.w ?? 100;
+  const h=textBoxFixedH(g, def);
+  g.w=w;
+  g.h=h;
+  g.fixedBox=true;
+  el.style.width=w+"px";
+  el.style.height=h+"px";
+  el.style.overflow="hidden";
+  el.classList.add("fixed-box");
   applyTextBoxAlign(el, def, g);
 }
 function textBoxMinH(g, def){
-  return g.boxMinH ?? def.h ?? Math.round((g.size ?? def.size ?? 30) * 1.25);
+  return g.boxMinH ?? def.h ?? Math.round((g.baseSize ?? g.size ?? def.size ?? 30) * 1.25);
+}
+function textBoxFixedH(g, def){
+  // User-dragged box → keep that height; otherwise lock to template design height
+  if(g.userResizedBox && g.h!=null && g.h>0) return Math.max(12, Math.round(g.h));
+  if(g.boxMinH!=null) return Math.max(12, Math.round(g.boxMinH));
+  if(def.h!=null) return Math.max(12, Math.round(def.h));
+  if(g.h!=null && g.h>0) return Math.max(12, Math.round(g.h));
+  return Math.max(12, Math.round((g.baseSize ?? g.size ?? def.size ?? 30) * 1.25));
 }
 function textBoxMaxH(g, def){
-  if(g.boxMaxH!=null) return g.boxMaxH;
-  if(def.maxH!=null) return def.maxH;
-  const minH=textBoxMinH(g, def);
-  const y=g.y ?? def.y ?? 0;
-  const canvasRoom=Math.max(minH, SH-y-12);
-  return Math.min(canvasRoom, Math.max(minH*3, minH+Math.round(minH*1.5)));
+  return textBoxFixedH(g, def);
 }
-/** Grow text box height when content exceeds template min; cap at max. User-resized boxes stay fixed. */
-function syncTextBoxGrow(el, g, def){
+/** Preferred/max font size for autofit (slider or template). */
+function textPreferredSize(g, def){
+  if(g.baseSize!=null && g.baseSize>0) return Math.max(8, +g.baseSize);
+  if(def.size!=null && def.size>0) return Math.max(8, +def.size);
+  if(g.size!=null && g.size>0) return Math.max(8, +g.size);
+  return 30;
+}
+/**
+ * Measure only the text content (.txt-flow), never the layer chrome (resize handles),
+ * which sit outside the box and would fake "overflow".
+ */
+function textContentOverflows(el, w, h){
+  const flow=el.querySelector(":scope > .txt-flow") || el;
+  // Content size with current font; parent width must already be set for wrapping
+  const contentW=flow.scrollWidth;
+  const contentH=flow.scrollHeight;
+  return contentW > w + 1 || contentH > h + 1;
+}
+/**
+ * Canva-style text box:
+ * - Box W×H stays fixed (container only)
+ * - Font size (px) is what you set — applied inside the box
+ * - If text can't fit at that px, font shrinks just enough to fit
+ * - If text gets shorter, font grows back up to your px size
+ */
+function fitTextToFixedBox(el, g, def){
   if(!el || def.type!=="text" || def.kind==="stat") return;
-  if(g.userResizedBox){
-    applyTextBoxSize(el, def, g);
+
+  // Lock box to template/user size — never grow with content
+  if(!g.userResizedBox){
+    if(g.boxMinH==null && def.h!=null) g.boxMinH=def.h;
+    g.h=textBoxFixedH(g, def);
+  }
+  const w=Math.max(8, Math.round(g.w ?? def.w ?? 100));
+  const h=textBoxFixedH(g, def);
+  g.w=w;
+  g.h=h;
+  g.fixedBox=true;
+
+  // User/template font size in px (the size you "gave")
+  const px=textPreferredSize(g, def);
+  g.size=px;
+  g.baseSize=px;
+
+  el.style.boxSizing="border-box";
+  el.style.width=w+"px";
+  el.style.height=h+"px";
+  el.style.maxWidth=w+"px";
+  el.style.maxHeight=h+"px";
+  el.style.overflow="hidden";
+  el.classList.add("fixed-box");
+  el.style.overflowWrap="anywhere";
+  el.style.wordBreak="break-word";
+  const nowrap=def.bind==="heroNumber";
+  el.style.whiteSpace=nowrap?"nowrap":"normal";
+  applyTextBoxAlign(el, def, g);
+
+  const flow=el.querySelector(":scope > .txt-flow");
+  if(flow){
+    flow.style.width="100%";
+    flow.style.maxWidth="100%";
+    flow.style.boxSizing="border-box";
+  }
+
+  // 1) Try the exact px the user set
+  el.style.fontSize=px+"px";
+  void (flow||el).offsetHeight;
+  if(!textContentOverflows(el, w, h)){
+    g.fitSize=px;
     return;
   }
-  const minH=textBoxMinH(g, def);
-  const maxH=textBoxMaxH(g, def);
-  const w=g.w ?? def.w ?? 100;
-  el.style.width=w+"px";
-  el.style.overflowWrap="break-word";
-  el.style.wordBreak="break-word";
-  el.style.whiteSpace="normal";
-  el.classList.add("fixed-box");
-  el.style.height="auto";
-  el.style.overflow="visible";
-  applyTextBoxAlign(el, def, g);
-  const needed=Math.max(12, Math.ceil(el.scrollHeight));
-  const targetH=needed<=minH ? minH : Math.min(maxH, needed);
-  g.h=targetH;
-  g.fixedBox=true;
-  el.style.height=targetH+"px";
-  el.style.overflow=needed>maxH ? "hidden" : "hidden";
-  applyTextBoxAlign(el, def, g);
+
+  // 2) Text doesn't fit at that px → shrink only as much as needed
+  const minSize=Math.max(8, Math.min(px, Math.round(px*0.25)));
+  let lo=minSize, hi=px-1, best=minSize;
+  while(lo<=hi){
+    const mid=(lo+hi)>>1;
+    el.style.fontSize=mid+"px";
+    void (flow||el).offsetHeight;
+    if(!textContentOverflows(el, w, h)){
+      best=mid;
+      lo=mid+1;
+    } else {
+      hi=mid-1;
+    }
+  }
+  el.style.fontSize=best+"px";
+  g.fitSize=best;
 }
-/** @deprecated use syncTextBoxGrow */
-function syncTextLayerHeight(el, g, def){ syncTextBoxGrow(el, g, def); }
+/** @deprecated name — fits font into a fixed box instead of growing the box */
+function syncTextBoxGrow(el, g, def){ fitTextToFixedBox(el, g, def); }
+function syncTextLayerHeight(el, g, def){ fitTextToFixedBox(el, g, def); }
 
 /** Soft opposite-value halo on Magazine header glyphs for busy photo backgrounds. */
 function magazineHeaderTextShadow(fontSize, textColor){
@@ -2541,15 +2600,9 @@ function render(){
     if(state.selected===id) el.classList.add("sel");
     deco.after(el); // keep order; appended to stage
     stage.appendChild(el);
-    if(def.type==="text" && el.querySelector("sup") && !g.fixedBox) el.style.overflow="visible";
+    // Fit after the layer is in the DOM so font metrics are real
     if(def.type==="text" && def.kind!=="stat"){
-      if(g.userResizedBox) applyTextBoxSize(el, def, g);
-      else{
-        syncTextBoxGrow(el, g, def);
-        if(!g.manualSize && templateAutoFitBinds().has(def.bind) && Math.ceil(el.scrollHeight)>textBoxMaxH(g, def)+2){
-          autoFitTextLayer(el, def, g);
-        }
-      }
+      fitTextToFixedBox(el, g, def);
     }
     if(def.kind==="stat"&&templateStatAutoFit()){
       if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
@@ -2772,7 +2825,9 @@ function attachLayerEvents(el, def, g){
         gg.manualSize=true;
         gg.userResizedBox=true;
         if(e.shiftKey && corner){
-          gg.size=Math.max(8, Math.round(d.osize*(nw/d.ow)));
+          const next=Math.max(8, Math.round(d.osize*(nw/d.ow)));
+          gg.size=next;
+          gg.baseSize=next;
         }
       } else {
         if(dir.includes("w")) nx=d.ox+(d.ow-nw);
@@ -2886,8 +2941,7 @@ function applyTextLayerVisuals(el, def, g, layerId){
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
   applyTextBoxAlign(el, def, g);
-  if(g.userResizedBox) applyTextBoxSize(el, def, g);
-  else syncTextBoxGrow(el, g, def);
+  if(def.kind!=="stat") fitTextToFixedBox(el, g, def);
 }
 function applyGeo(el, def, g){
   el.style.left=g.x+"px"; el.style.top=g.y+"px"; el.style.width=g.w+"px";
@@ -3083,8 +3137,18 @@ function syncInspector(){
       h+=`<label class="fld">Font</label>
           <select id="iFont">${FONT_OPTS.map(([nm,stk])=>`<option value="${stk.replace(/"/g,'&quot;')}" ${(g.font||def.font||F.sans)===stk?'selected':''}>${nm}</option>`).join('')}</select>`;
     }
-    h+=`<label class="fld">Font size: <b id="ivs">${g.size ?? def.size}</b></label>
-        <input type="range" id="iFs" min="10" max="380" value="${g.size ?? def.size}">`;
+    const fontPx=g.baseSize ?? g.size ?? def.size ?? 30;
+    const fitPx=g.fitSize!=null?g.fitSize:fontPx;
+    h+=`<label class="fld">Font size (px): <b id="ivs">${fontPx}</b></label>
+        <div class="row" style="align-items:center;gap:8px">
+          <input type="range" id="iFs" min="10" max="380" value="${fontPx}" style="flex:1">
+          <input type="number" id="iFsNum" class="num" min="8" max="400" value="${fontPx}" style="width:64px;flex:none" title="Exact size in px">
+        </div>`;
+    h+=`<div class="mini" id="iFsHint" style="margin:4px 0 8px">${
+      fitPx<fontPx
+        ? `Set to <b>${fontPx}px</b> — using <b>${fitPx}px</b> so text fits this box (like Canva autofit).`
+        : `Text uses <b>${fontPx}px</b> inside the fixed box. Longer text will auto-shrink to fit.`
+    }</div>`;
     h+=`<label class="fld">Weight</label>
         <select id="iFw">${[300,400,600,700,800,900].map(w=>`<option ${(g.weight ?? def.weight)==w?'selected':''}>${w}</option>`).join('')}</select>`;
     const colorRole=captionColorRoleSelectValue(g, def);
@@ -3114,7 +3178,7 @@ function syncInspector(){
           <button type="button" data-valign="middle" class="${(g.vAlign??def.vAlign??"middle")==="middle"?"on":""}">Middle</button>
           <button type="button" data-valign="bottom" class="${(g.vAlign??def.vAlign??"middle")==="bottom"?"on":""}">Bottom</button>
         </div>`;
-    h+=`<div class="mini" style="margin:6px 0 8px">Drag any edge/corner of the blue box to resize it. Text stays aligned inside; font size is separate (slider above). Hold <b>Shift</b> on a corner to also scale font.</div>`;
+    h+=`<div class="mini" style="margin:6px 0 8px">Like Canva: the blue box is fixed. Font size is in <b>px</b> inside that box. If text is too long for the box, it shrinks automatically; shorter text grows back to your px size.</div>`;
     h+=`<div class="row" style="margin-top:6px">
           <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
           <div><label class="fld">Y</label><input class="num" type="number" id="iY" value="${Math.round(g.y)}"></div>
@@ -3246,21 +3310,34 @@ function syncInspector(){
     });
     const iFont=$("iFont");
     if(iFont) iFont.onchange=e=>{ g.font=e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
-    $("iFs").oninput=e=>{
-      g.size=+e.target.value;
+    const applyFontPx=(px)=>{
+      px=Math.max(8, Math.min(400, Math.round(+px||30)));
+      g.size=px;
+      g.baseSize=px;
       g.manualSize=true;
-      $("ivs").textContent=g.size;
-      if(def.kind==="stat"&&templateStatAutoFit()){ render(); scheduleSave(); }
-      else {
-        const layerEl=el();
-        if(layerEl){
-          layerEl.style.fontSize=g.size+"px";
-          if(g.userResizedBox) applyTextBoxSize(layerEl, def, g);
-          else syncTextBoxGrow(layerEl, def, g);
+      if($("ivs")) $("ivs").textContent=String(px);
+      if($("iFs") && document.activeElement!==$("iFs")) $("iFs").value=String(px);
+      if($("iFsNum") && document.activeElement!==$("iFsNum")) $("iFsNum").value=String(px);
+      if(def.kind==="stat"&&templateStatAutoFit()){ render(); scheduleSave(); return; }
+      const layerEl=el();
+      if(layerEl){
+        layerEl.style.fontSize=px+"px";
+        fitTextToFixedBox(layerEl, g, def);
+        const hint=$("iFsHint");
+        if(hint){
+          const used=g.fitSize??px;
+          hint.innerHTML=used<px
+            ? `Set to <b>${px}px</b> — using <b>${used}px</b> so text fits this box (like Canva autofit).`
+            : `Text uses <b>${px}px</b> inside the fixed box. Longer text will auto-shrink to fit.`;
         }
-        scheduleSave();
       }
+      scheduleSave();
     };
+    $("iFs").oninput=e=>applyFontPx(e.target.value);
+    if($("iFsNum")){
+      $("iFsNum").oninput=e=>applyFontPx(e.target.value);
+      $("iFsNum").onchange=e=>applyFontPx(e.target.value);
+    }
     $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
     $("iAlign")?.querySelectorAll("[data-align]").forEach(b=>{
       b.onclick=()=>withUndo(()=>{
@@ -4040,6 +4117,15 @@ function queueTextPreview(){
     _textRenderFrame=0;
     render._skipInspector=true;
     render();
+    // Second pass after layout/paint so font fit uses real metrics
+    requestAnimationFrame(()=>{
+      document.querySelectorAll("#stage .layer.txt").forEach(el=>{
+        const id=el.dataset.id;
+        const def=layersOf()[id];
+        const g=id?geo(id):null;
+        if(def && g && def.type==="text" && def.kind!=="stat") fitTextToFixedBox(el, g, def);
+      });
+    });
   });
 }
 function buildCaptionColorControls(){
@@ -4352,7 +4438,7 @@ function layerDefToJson(id, def, g){
   }
 
   if(def.type==="text"){
-    const size=g.size??def.size;
+    const size=g.baseSize??g.size??def.size;
     if(size!=null) out.size=size;
     const color=g.color||def.color;
     if(color) out.color=color;
