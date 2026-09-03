@@ -11,6 +11,7 @@ assets/
   sponsor/       → Sponsor marks
   shape/         → Canva-style shape SVGs
   library.json   → Catalog shown in the editor
+  fonts/         → Local @font-face files (e.g. Avenir Regular)
 ```
 
 ## Shapes

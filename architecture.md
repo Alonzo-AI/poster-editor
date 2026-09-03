@@ -263,6 +263,11 @@ Optional auto palettes:
 
 `{{primary}}` / `{{secondary}}` in `canvas.background` and `deco.html` are interpolated by the loader.
 
+**Text fill & stroke (Editor inspector)**
+
+- Fill: role (`primary`, `white`, …) **or** `#RRGGBB` via Hex / swatch → stored on layer as `color`.
+- Stroke: optional outline (`stroke` + `strokeW`) with the same role-or-hex pattern → `webkitTextStroke` at paint time; baked into frozen JSON when enabled.
+
 ---
 
 ## 9. Persistence
@@ -357,6 +362,10 @@ Add a `type: "text"` layer with a new `bind`. Automate picks it up via `swapFiel
 **New shape preset**
 
 Add an entry to `SHAPE_PRESETS` (w/h, radius, optional `clip` polygon). Optionally add an SVG + `library.json` row.
+
+**New font**
+
+Add `@font-face` (file under `assets/fonts/`), a key on `F` / `FONT_OPTS` in `index.html`, and the same key in `renderer/template-loader.js` `FONT_KEYS` so bake/load round-trips. Existing families stay Google Fonts.
 
 **Headless / pipeline**
 

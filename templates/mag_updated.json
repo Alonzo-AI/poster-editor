@@ -1,7 +1,7 @@
 {
   "id": "mag_updated",
   "name": "mag_updated",
-  "version": 39,
+  "version": 41,
   "canvas": {
     "width": 1080,
     "height": 1350,
@@ -143,7 +143,9 @@
       "align": "center",
       "label": "stat value",
       "lh": 0.84,
-      "manualSize": true
+      "manualSize": true,
+      "stroke": "#fe6767",
+      "strokeW": 10
     },
     {
       "id": "heroDesc",
@@ -272,7 +274,7 @@
     "note": "Frozen layout from editor. Default player/background images are baked in; Automate may override via API."
   },
   "_bakeMeta": {
-    "bakedAt": "2026-09-02T11:40:58.764Z",
+    "bakedAt": "2026-09-03T10:17:14.057Z",
     "sourceTemplate": "mag_updated",
     "layerCount": 12,
     "shapeCount": 1,

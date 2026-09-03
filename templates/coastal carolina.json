@@ -1,294 +1,294 @@
 {
-    "id": "cc",
-    "name": "cc",
-    "version": 23,
-    "canvas": {
-      "width": 1080,
-      "height": 1350,
-      "background": "#E8E0D4"
+  "id": "cc",
+  "name": "cc",
+  "version": 23,
+  "canvas": {
+    "width": 1080,
+    "height": 1350,
+    "background": "#E8E0D4"
+  },
+  "deco": {
+    "html": ""
+  },
+  "textRules": {
+    "autoFit": [],
+    "stats": {
+      "autoFit": false
+    }
+  },
+  "settings": {
+    "logo": {
+      "opacity": 1,
+      "scale": 1
     },
-    "deco": {
-      "html": ""
+    "brandColors": {
+      "fromLogo": false
     },
-    "textRules": {
-      "autoFit": [],
-      "stats": {
-        "autoFit": false
-      }
+    "playerImage": {
+      "fitToFrame": false,
+      "fit": "contain",
+      "cropX": 0.55,
+      "cropY": 0.4,
+      "zoom": 1
     },
-    "settings": {
-      "logo": {
-        "opacity": 1,
-        "scale": 1
-      },
-      "brandColors": {
-        "fromLogo": false
-      },
-      "playerImage": {
-        "fitToFrame": false,
-        "fit": "contain",
-        "cropX": 0.55,
-        "cropY": 0.4,
-        "zoom": 1
-      },
-      "freezeLayout": true
+    "freezeLayout": true
+  },
+  "layers": [
+    {
+      "id": "bgImage",
+      "type": "image",
+      "bind": "background",
+      "x": 0,
+      "y": 0,
+      "w": 1080,
+      "h": 1350,
+      "z": 1,
+      "fit": "cover",
+      "cropX": 0.5,
+      "cropY": 0.5
     },
-    "layers": [
-      {
-        "id": "bgImage",
-        "type": "image",
-        "bind": "background",
-        "x": 0,
-        "y": 0,
-        "w": 1080,
-        "h": 1350,
-        "z": 1,
-        "fit": "cover",
-        "cropX": 0.5,
-        "cropY": 0.5
-      },
-      {
+    {
         "id": "player",
         "type": "image",
         "bind": "player",
-        "x": 504,
-        "y": 147,
-        "w": 562,
-        "h": 1002,
+        "x": 503,
+        "y": 132,
+        "w": 560,
+        "h": 1017,
         "z": 12,
         "fit": "contain",
         "cropX": 0.55,
         "cropY": 0.4
       },
-      {
-        "id": "shape_parallelogram_1",
-        "type": "block",
-        "x": 614,
-        "y": 1087,
-        "w": 482,
-        "h": 124,
-        "z": 18,
-        "fill": "#00565b",
-        "radius": 0,
-        "shape": "parallelogram",
-        "clip": "polygon(14% 0%, 100% 0%, 86% 100%, 0% 100%)"
-      },
-      {
-        "id": "conference",
-        "type": "image",
-        "bind": "conference",
-        "x": 270,
-        "y": 122,
-        "w": 118,
-        "h": 60,
-        "z": 21,
-        "fit": "contain",
-        "cropX": 0.5,
-        "cropY": 0.5
-      },
-      {
-        "id": "sponsor",
-        "type": "image",
-        "bind": "sponsor",
-        "x": 88,
-        "y": 1230,
-        "w": 140,
-        "h": 72,
-        "z": 22,
-        "fit": "contain",
-        "cropX": 0.5,
-        "cropY": 0.5
-      },
-      {
-        "id": "teamName",
-        "type": "text",
-        "bind": "teamName",
-        "placeholder": "VS. ULM | 23-8 |",
-        "x": 74,
-        "y": 253,
-        "w": 420,
-        "h": 36,
-        "z": 22,
-        "size": 29,
-        "color": "#00565b",
-        "font": "sans",
-        "weight": 700,
-        "align": "center",
-        "label": "Team name",
-        "italic": true,
-        "manualSize": true,
-        "textTransform": "uppercase"
-      },
-      {
-        "id": "hashtag",
-        "type": "text",
-        "bind": "hashtag",
-        "placeholder": "OCT. 11, 2025",
-        "x": 70,
-        "y": 317,
-        "w": 400,
-        "h": 50,
-        "z": 22,
-        "size": 30,
-        "color": "#ffffff",
-        "font": "sans",
-        "weight": 800,
-        "align": "center",
-        "label": "Hashtag",
-        "ls": 1,
-        "manualSize": true,
-        "textTransform": "uppercase"
-      },
-      {
-        "id": "hero",
-        "type": "text",
-        "bind": "heroNumber",
-        "placeholder": "300",
-        "x": 24,
-        "y": 360,
-        "w": 512,
-        "h": 300,
-        "z": 22,
-        "size": 240,
-        "color": "#00565b",
-        "font": "cond",
-        "weight": 700,
-        "align": "center",
-        "label": "Hero stat number",
-        "lh": 0.84,
-        "manualSize": true
-      },
-      {
-        "id": "heroDesc",
-        "type": "text",
-        "bind": "heroDesc",
-        "placeholder": "FIELD GOALS",
-        "x": 37,
-        "y": 660,
-        "w": 494,
-        "h": 293,
-        "z": 22,
-        "size": 97,
-        "color": "#00565b",
-        "font": "cond",
-        "weight": 600,
-        "align": "center",
-        "vAlign": "top",
-        "label": "Hero description",
-        "manualSize": true,
-        "textTransform": "uppercase"
-      },
-      {
-        "id": "callout",
-        "type": "text",
-        "bind": "callout",
-        "placeholder": "MOST IN THE SBC THIS WEEK",
-        "x": 24,
-        "y": 953,
-        "w": 520,
-        "h": 101,
-        "z": 22,
-        "size": 45,
-        "color": "black",
-        "font": "sans",
-        "weight": 700,
-        "align": "center",
-        "vAlign": "top",
-        "label": "Callout",
-        "ls": 1,
-        "italic": true,
-        "manualSize": true,
-        "textTransform": "uppercase"
-      },
-      {
-        "id": "playerName",
-        "type": "text",
-        "bind": "playerName",
-        "placeholder": "KIAN AFROOKHTEH",
-        "x": 628,
-        "y": 1101,
-        "w": 480,
-        "h": 48,
-        "z": 22,
-        "size": 28,
-        "color": "black",
-        "font": "sans",
-        "weight": 800,
-        "align": "center",
-        "label": "Player name",
-        "italic": true,
-        "manualSize": true,
-        "textTransform": "uppercase"
-      },
-      {
-        "id": "playerMeta",
-        "type": "text",
-        "bind": "playerMeta",
-        "placeholder": "JUNIOR | K",
-        "x": 656,
-        "y": 1149,
-        "w": 400,
-        "h": 43,
-        "z": 22,
-        "size": 24,
-        "color": "black",
-        "font": "sans",
-        "weight": 600,
-        "align": "center",
-        "italic": true,
-        "manualSize": true,
-        "textTransform": "uppercase"
-      }
+    {
+      "id": "shape_parallelogram_1",
+      "type": "block",
+      "x": 614,
+      "y": 1087,
+      "w": 482,
+      "h": 124,
+      "z": 18,
+      "fill": "#00565b",
+      "radius": 0,
+      "shape": "parallelogram",
+      "clip": "polygon(14% 0%, 100% 0%, 86% 100%, 0% 100%)"
+    },
+    {
+      "id": "conference",
+      "type": "image",
+      "bind": "conference",
+      "x": 270,
+      "y": 122,
+      "w": 118,
+      "h": 60,
+      "z": 21,
+      "fit": "contain",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "sponsor",
+      "type": "image",
+      "bind": "sponsor",
+      "x": 88,
+      "y": 1230,
+      "w": 140,
+      "h": 72,
+      "z": 22,
+      "fit": "contain",
+      "cropX": 0.5,
+      "cropY": 0.5
+    },
+    {
+      "id": "teamName",
+      "type": "text",
+      "bind": "teamName",
+      "placeholder": "VS. ULM | 23-8 |",
+      "x": 74,
+      "y": 253,
+      "w": 420,
+      "h": 36,
+      "z": 22,
+      "size": 29,
+      "color": "#00565b",
+      "font": "sans",
+      "weight": 700,
+      "align": "center",
+      "label": "Team name",
+      "italic": true,
+      "manualSize": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hashtag",
+      "type": "text",
+      "bind": "hashtag",
+      "placeholder": "OCT. 11, 2025",
+      "x": 70,
+      "y": 317,
+      "w": 400,
+      "h": 50,
+      "z": 22,
+      "size": 30,
+      "color": "#ffffff",
+      "font": "sans",
+      "weight": 800,
+      "align": "center",
+      "label": "Hashtag",
+      "ls": 1,
+      "manualSize": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "hero",
+      "type": "text",
+      "bind": "heroNumber",
+      "placeholder": "300",
+      "x": 24,
+      "y": 360,
+      "w": 512,
+      "h": 300,
+      "z": 22,
+      "size": 240,
+      "color": "#00565b",
+      "font": "cond",
+      "weight": 700,
+      "align": "center",
+      "label": "Hero stat number",
+      "lh": 0.84,
+      "manualSize": true
+    },
+    {
+      "id": "heroDesc",
+      "type": "text",
+      "bind": "heroDesc",
+      "placeholder": "FIELD GOALS",
+      "x": 37,
+      "y": 660,
+      "w": 494,
+      "h": 293,
+      "z": 22,
+      "size": 97,
+      "color": "#00565b",
+      "font": "cond",
+      "weight": 600,
+      "align": "center",
+      "vAlign": "top",
+      "label": "Hero description",
+      "manualSize": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "callout",
+      "type": "text",
+      "bind": "callout",
+      "placeholder": "MOST IN THE SBC THIS WEEK",
+      "x": 24,
+      "y": 953,
+      "w": 520,
+      "h": 101,
+      "z": 22,
+      "size": 45,
+      "color": "black",
+      "font": "sans",
+      "weight": 700,
+      "align": "center",
+      "vAlign": "top",
+      "label": "Callout",
+      "ls": 1,
+      "italic": true,
+      "manualSize": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerName",
+      "type": "text",
+      "bind": "playerName",
+      "placeholder": "KIAN AFROOKHTEH",
+      "x": 628,
+      "y": 1101,
+      "w": 480,
+      "h": 48,
+      "z": 22,
+      "size": 28,
+      "color": "black",
+      "font": "sans",
+      "weight": 800,
+      "align": "center",
+      "label": "Player name",
+      "italic": true,
+      "manualSize": true,
+      "textTransform": "uppercase"
+    },
+    {
+      "id": "playerMeta",
+      "type": "text",
+      "bind": "playerMeta",
+      "placeholder": "JUNIOR | K",
+      "x": 656,
+      "y": 1149,
+      "w": 400,
+      "h": 43,
+      "z": 22,
+      "size": 24,
+      "color": "black",
+      "font": "sans",
+      "weight": 600,
+      "align": "center",
+      "italic": true,
+      "manualSize": true,
+      "textTransform": "uppercase"
+    }
+  ],
+  "automation": {
+    "freezeLayout": true,
+    "swapFields": [
+      "teamName",
+      "hashtag",
+      "heroNumber",
+      "heroDesc",
+      "callout",
+      "playerName",
+      "position",
+      "playerClass",
+      "eyebrow"
     ],
-    "automation": {
-      "freezeLayout": true,
-      "swapFields": [
-        "teamName",
-        "hashtag",
-        "heroNumber",
-        "heroDesc",
-        "callout",
-        "playerName",
-        "position",
-        "playerClass",
-        "eyebrow"
-      ],
-      "swapImages": [
-        "player",
-        "logo",
-        "conference",
-        "sponsor",
-        "background"
-      ],
-      "fieldLabels": {
-        "teamName": "Team name",
-        "hashtag": "Hashtag",
-        "heroNumber": "Hero stat number",
-        "heroDesc": "Hero description",
-        "callout": "Callout",
-        "playerName": "Player name",
-        "position": "Position (e.g. RB, WR)",
-        "playerClass": "Class / Year",
-        "eyebrow": "Eyebrow"
-      },
-      "note": "Frozen layout from editor. Default player/background images are baked in; Automate may override via API."
+    "swapImages": [
+      "player",
+      "logo",
+      "conference",
+      "sponsor",
+      "background"
+    ],
+    "fieldLabels": {
+      "teamName": "Team name",
+      "hashtag": "Hashtag",
+      "heroNumber": "Hero stat number",
+      "heroDesc": "Hero description",
+      "callout": "Callout",
+      "playerName": "Player name",
+      "position": "Position (e.g. RB, WR)",
+      "playerClass": "Class / Year",
+      "eyebrow": "Eyebrow"
     },
-    "_bakeMeta": {
-      "bakedAt": "2026-09-03T06:46:57.677Z",
-      "sourceTemplate": "cc",
-      "layerCount": 12,
-      "shapeCount": 1,
-      "imageSlots": [
-        "background"
-      ]
-    },
-    "defaults": {
-      "images": {
-        "background": {
-          "src": "assets/background/ccbg.png",
-          "natW": 1080,
-          "natH": 1350
-        }
+    "note": "Frozen layout from editor. Default player/background images are baked in; Automate may override via API."
+  },
+  "_bakeMeta": {
+    "bakedAt": "2026-09-03T06:46:57.677Z",
+    "sourceTemplate": "cc",
+    "layerCount": 12,
+    "shapeCount": 1,
+    "imageSlots": [
+      "background"
+    ]
+  },
+  "defaults": {
+    "images": {
+      "background": {
+        "src": "assets/background/ccbg.png",
+        "natW": 1080,
+        "natH": 1350
       }
     }
   }
+}

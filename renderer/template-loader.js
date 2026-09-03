@@ -16,6 +16,11 @@
     chalk: "'Permanent Marker',cursive",
     type: "'Special Elite',monospace",
     comic: "'Bangers',cursive",
+    avenir: "'Avenir Regular',sans-serif",
+    avenirBook: "'Avenir Book',sans-serif",
+    avenirLight: "'Avenir Light',sans-serif",
+    avenirMedium: "'Avenir Medium',sans-serif",
+    avenirHeavy: "'Avenir Heavy',sans-serif",
   };
 
   function resolveFont(v) {

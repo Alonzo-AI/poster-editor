@@ -17,6 +17,41 @@
 <script src="renderer/magazine-header-colors.js"></script>
 <script src="stories.players.js"></script>
 <style>
+  @font-face{
+    font-family:"Avenir Regular";
+    src:url("assets/fonts/Avenir-Regular.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Avenir Book";
+    src:url("assets/fonts/Avenir-Book.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Avenir Light";
+    src:url("assets/fonts/Avenir-Light.ttf") format("truetype");
+    font-weight:300;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Avenir Medium";
+    src:url("assets/fonts/Avenir-Medium.ttf") format("truetype");
+    font-weight:500;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Avenir Heavy";
+    src:url("assets/fonts/Avenir-Heavy.ttf") format("truetype");
+    font-weight:800;
+    font-style:normal;
+    font-display:swap;
+  }
   :root{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
     --txt:#e8eaed; --dim:#9aa0a6; --accent:#4f8cff; --accent2:#2d6cff;
@@ -667,6 +702,45 @@ function captionColorRoleSelectValue(g, def){
   if(isKnownColorRole(c)) return c;
   return "__custom__";
 }
+function resolveStrokeColor(g, def){
+  const c=("stroke" in (g||{})) ? g.stroke : def?.stroke;
+  if(c==null || c==="") return null;
+  return roleColor(c);
+}
+function resolvedStrokeColorHex(g, def){
+  return resolveStrokeColor(g, def) || "#000000";
+}
+function strokeColorRoleSelectValue(g, def){
+  const c=("stroke" in (g||{})) ? g.stroke : def?.stroke;
+  if(c==null || c==="") return "__none__";
+  if(isKnownColorRole(c)) return c;
+  return "__custom__";
+}
+function textStrokeWidth(g, def){
+  const w=("strokeW" in (g||{})) ? g.strokeW : def?.strokeW;
+  const stroke=("stroke" in (g||{})) ? g.stroke : def?.stroke;
+  if(w==null) return stroke ? 2 : 0;
+  return Math.max(0, +w||0);
+}
+/** Apply outline stroke to a text node (role or #hex). */
+function applyTextStrokePaint(node, def, g, fillColor){
+  if(!node) return;
+  const hollow=!!(g.hollow ?? def.hollow);
+  const strokeW=textStrokeWidth(g, def);
+  const strokeHex=resolveStrokeColor(g, def);
+  if(hollow){
+    node.style.webkitTextStroke=`${Math.max(1, strokeW||2)}px ${fillColor||"#ffffff"}`;
+    node.style.paintOrder="stroke fill";
+    return;
+  }
+  if(strokeHex && strokeW>0){
+    node.style.webkitTextStroke=`${strokeW}px ${strokeHex}`;
+    node.style.paintOrder="stroke fill";
+  } else {
+    node.style.webkitTextStroke="";
+    node.style.paintOrder="";
+  }
+}
 function resolveTextLayerColor(id, def, g){
   const hasUserOverride=g.color!=null && g.color!==def.color;
   const hexOverride=normalizeHex(g.color||"");
@@ -728,11 +802,16 @@ function serializeEditableText(el){
 ============================================================ */
 const F = { disp:"'Anton',sans-serif", cond:"'Oswald',sans-serif", sans:"'Archivo',sans-serif",
             bebas:"'Bebas Neue',sans-serif", serif:"'Playfair Display',serif",
-            chalk:"'Permanent Marker',cursive", type:"'Special Elite',monospace", comic:"'Bangers',cursive" };
+            chalk:"'Permanent Marker',cursive", type:"'Special Elite',monospace", comic:"'Bangers',cursive",
+            avenir:"'Avenir Regular',sans-serif", avenirBook:"'Avenir Book',sans-serif",
+            avenirLight:"'Avenir Light',sans-serif", avenirMedium:"'Avenir Medium',sans-serif",
+            avenirHeavy:"'Avenir Heavy',sans-serif" };
 const FONT_OPTS = [
   ["Anton — display",F.disp],["Oswald — condensed",F.cond],["Archivo — sans",F.sans],
   ["Bebas Neue",F.bebas],["Playfair — serif",F.serif],["Permanent Marker — chalk",F.chalk],
   ["Special Elite — typewriter",F.type],["Bangers — comic",F.comic],
+  ["Avenir Regular",F.avenir],["Avenir Book",F.avenirBook],["Avenir Light",F.avenirLight],
+  ["Avenir Medium",F.avenirMedium],["Avenir Heavy",F.avenirHeavy],
 ];
 
 /* shorthand builders */
@@ -1105,6 +1184,8 @@ function resetLayoutFromTemplate(templateId, opts={}){
     if(def.ls!=null) L[id].ls=def.ls;
     if(def.lh!=null) L[id].lh=def.lh;
     if(def.color!=null) L[id].color=def.color;
+    if(def.stroke!=null) L[id].stroke=def.stroke;
+    if(def.strokeW!=null) L[id].strokeW=def.strokeW;
     if(def.fill!=null) L[id].fill=def.fill;
     if(def.clip!=null) L[id].clip=def.clip;
     if(def.shape!=null) L[id].shape=def.shape;
@@ -1551,7 +1632,8 @@ function ensureLayout(){
                          lockAspect:def.type==="image", z:def.z ?? null,
                          fill:def.fill ?? null,
                          clip:(def.clip!=null?def.clip:(def.shape && SHAPE_PRESETS[def.shape]?.clip)||null),
-                         shape:def.shape ?? null };
+                         shape:def.shape ?? null,
+                         stroke:def.stroke ?? null, strokeW:def.strokeW ?? null, hollow:!!def.hollow };
     else {
       if(def.type==="text" && L[id].underline==null && def.underline) L[id].underline=true;
       if(def.type==="text"){
@@ -1560,6 +1642,9 @@ function ensureLayout(){
         if(L[id].boxMinH==null && def.h!=null) L[id].boxMinH=def.h;
         if(L[id].boxMaxH==null && def.maxH!=null) L[id].boxMaxH=def.maxH;
         if(L[id].baseSize==null && def.size!=null) L[id].baseSize=def.size;
+        if(L[id].stroke==null && def.stroke!=null) L[id].stroke=def.stroke;
+        if(L[id].strokeW==null && def.strokeW!=null) L[id].strokeW=def.strokeW;
+        if(L[id].hollow==null && def.hollow) L[id].hollow=true;
       }
       if((L[id].rotate==null || L[id].rotate===0) && (def.rotate || def.transform)){
         L[id].rotate=def.rotate!=null?+def.rotate:parseRotate(def.transform);
@@ -1665,6 +1750,9 @@ function wireInspectorUndoInputs(root){
 
 const FONT_KEY_MAP = {
   disp: F.disp, cond: F.cond, sans: F.sans, bebas: F.bebas, serif: F.serif,
+  chalk: F.chalk, type: F.type, comic: F.comic, avenir: F.avenir,
+  avenirBook: F.avenirBook, avenirLight: F.avenirLight,
+  avenirMedium: F.avenirMedium, avenirHeavy: F.avenirHeavy,
 };
 
 function applyLayoutOverrides(templateId, overrides){
@@ -1684,6 +1772,7 @@ function applyLayoutOverrides(templateId, overrides){
     if(patch.lh!=null) g.lh=patch.lh;
     if(patch.italic!=null) g.italic=!!patch.italic;
     if(patch.hollow!=null) g.hollow=!!patch.hollow;
+    if(patch.stroke!=null) g.stroke=patch.stroke;
     if(patch.strokeW!=null) g.strokeW=patch.strokeW;
     if(patch.underline!=null) g.underline=!!patch.underline;
     if(patch.textTransform!=null) g.textTransform=patch.textTransform;
@@ -1797,6 +1886,7 @@ function applyVaporMotionLayerFromDef(L, def, id){
   g.italic=!!d.italic;
   g.underline=!!d.underline;
   g.hollow=!!d.hollow;
+  if(d.stroke!=null) g.stroke=d.stroke;
   if(d.strokeW!=null) g.strokeW=d.strokeW;
   g.rotate=parseRotate(d.transform);
   g.hidden=false;
@@ -1823,6 +1913,7 @@ function applySalukisLayerFromDef(L, def, id){
   if(d.color) g.color=d.color;
   if(d.z!=null) g.z=d.z;
   if(d.hollow!=null) g.hollow=!!d.hollow;
+  if(d.stroke!=null) g.stroke=d.stroke;
   if(d.strokeW!=null) g.strokeW=d.strokeW;
   if(d.textTransform) g.textTransform=d.textTransform;
   if(d.fill) g.fill=d.fill;
@@ -2522,11 +2613,9 @@ function render(){
       el.style.fontStyle = (g.italic ?? def.italic) ? "italic":"normal";
       applyTextUnderline(el, def, g);
       const hollow=!!(g.hollow ?? def.hollow);
-      const strokeW=g.strokeW ?? def.strokeW ?? 2;
       const textColor=resolveTextLayerColor(id, def, g);
       if(hollow){
         el.style.color="transparent";
-        el.style.webkitTextStroke=`${strokeW}px ${textColor}`;
         el.style.textShadow="";
       } else {
         el.style.color = textColor;
@@ -2537,12 +2626,10 @@ function render(){
         } else {
           el.style.textShadow="";
         }
-        const strokeRole=g.stroke || def.stroke;
-        if(strokeRole){
-          el.style.webkitTextStroke=`${strokeW}px ${roleColor(strokeRole)}`;
-          el.style.paintOrder="stroke fill";
-        }
       }
+      applyTextStrokePaint(el, def, g, textColor);
+      const flow=el.querySelector(":scope > .txt-flow");
+      if(flow) applyTextStrokePaint(flow, def, g, textColor);
       el.style.textAlign = g.align ?? def.align ?? "left";
       el.style.lineHeight = def.lh ?? 1.0;
       el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
@@ -2905,21 +2992,26 @@ function applyTextLayerVisuals(el, def, g, layerId){
   el.style.fontStyle=(g.italic ?? def.italic) ? "italic" : "normal";
   applyTextUnderline(el, def, g);
   const hollow=!!(g.hollow ?? def.hollow);
-  const strokeW=g.strokeW ?? def.strokeW ?? 2;
   const textColor=resolveTextLayerColor(id, def, g);
   if(def.kind==="stat"){
     const n=el.querySelector(".s-n"), l=el.querySelector(".s-l");
     const vaporStatColor=state.template==="vapor_motion" ? vaporMotionTextColorForLayer(id) : null;
     const vaporStatLabelColor=state.template==="vapor_motion" ? vaporMotionLayerTokens().muted : null;
-    if(n) n.style.color=vaporStatColor || textColor;
-    if(l) l.style.color=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
+    if(n){
+      n.style.color=vaporStatColor || textColor;
+      applyTextStrokePaint(n, def, g, vaporStatColor || textColor);
+    }
+    if(l){
+      const lc=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
+      l.style.color=lc;
+      applyTextStrokePaint(l, def, g, lc);
+    }
     if(g.manualSize) syncTextLayerHeight(el, g, def);
     else applyTextBoxAlign(el, def, g);
     return;
   }
   if(hollow){
     el.style.color="transparent";
-    el.style.webkitTextStroke=`${strokeW}px ${textColor}`;
     el.style.textShadow="";
   } else {
     el.style.color=textColor;
@@ -2930,14 +3022,10 @@ function applyTextLayerVisuals(el, def, g, layerId){
     } else {
       el.style.textShadow="";
     }
-    const strokeRole=g.stroke || def.stroke;
-    if(strokeRole){
-      el.style.webkitTextStroke=`${strokeW}px ${roleColor(strokeRole)}`;
-      el.style.paintOrder="stroke fill";
-    } else {
-      el.style.webkitTextStroke="";
-    }
   }
+  applyTextStrokePaint(el, def, g, textColor);
+  const flow=el.querySelector(":scope > .txt-flow");
+  if(flow) applyTextStrokePaint(flow, def, g, textColor);
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
   applyTextBoxAlign(el, def, g);
@@ -3161,6 +3249,25 @@ function syncInspector(){
         <div class="row" style="margin-top:6px;align-items:flex-end">
           <div style="flex:1.2"><label class="fld">Hex</label><input type="text" id="iColHex" class="num" value="${esc(colorHex)}" placeholder="#RRGGBB" spellcheck="false" autocomplete="off"></div>
           <div style="flex:0.7"><label class="fld">Swatch</label><input type="color" id="iColPick" value="${esc(colorHex)}" style="width:100%;height:34px;padding:2px;cursor:pointer"></div>
+        </div>`;
+    const strokeOn=!!resolveStrokeColor(g, def) && textStrokeWidth(g, def)>0;
+    const strokeRole=strokeColorRoleSelectValue(g, def);
+    const strokeHex=resolvedStrokeColorHex(g, def);
+    const strokeWVal=strokeOn ? Math.max(1, textStrokeWidth(g, def)||2) : 2;
+    h+=`<label class="fld" style="margin-top:10px"><input type="checkbox" id="iStrokeOn" ${strokeOn?'checked':''} style="width:auto"> Text stroke</label>`;
+    h+=`<div id="iStrokeFields" style="${strokeOn?'':'display:none'}">
+          <label class="fld">Stroke width: <b id="ivsw">${strokeWVal}</b>px</label>
+          <input type="range" id="iStrokeW" min="1" max="24" value="${strokeWVal}">
+          <label class="fld">Stroke color</label>
+          <select id="iStrokeCol">
+            <option value="__none__" ${strokeRole==="__none__"?'selected':''}>None</option>
+            ${CAPTION_COLOR_OPTIONS.filter(([v])=>v!=="__default").map(([c,name])=>`<option value="${c}" ${strokeRole===c?'selected':''}>${name}</option>`).join('')}
+            <option value="__custom__" ${strokeRole==="__custom__"?'selected':''}>Custom hex</option>
+          </select>
+          <div class="row" style="margin-top:6px;align-items:flex-end">
+            <div style="flex:1.2"><label class="fld">Stroke hex</label><input type="text" id="iStrokeHex" class="num" value="${esc(strokeHex)}" placeholder="#RRGGBB" spellcheck="false" autocomplete="off"></div>
+            <div style="flex:0.7"><label class="fld">Swatch</label><input type="color" id="iStrokePick" value="${esc(strokeHex)}" style="width:100%;height:34px;padding:2px;cursor:pointer"></div>
+          </div>
         </div>`;
     h+=`<div class="row"><div><label class="fld">Letter spacing</label><input type="range" id="iLs" min="0" max="14" value="${(g.ls ?? def.ls)||0}"></div>
         <div><label class="fld">Rotation: <b id="ivr2">${g.rotate||0}°</b></label><input type="range" id="iRot" min="-90" max="90" value="${g.rotate||0}"></div></div>`;
@@ -3411,6 +3518,91 @@ function syncInspector(){
         buildCaptionColorControls();
       };
       iColHex.onkeydown=e=>{ if(e.key==="Enter") e.target.blur(); };
+    }
+    const syncInspectorStrokeFields=()=>{
+      const on=!!resolveStrokeColor(g, def) && textStrokeWidth(g, def)>0;
+      const fields=$("iStrokeFields");
+      if(fields) fields.style.display=on?"":"none";
+      const onCb=$("iStrokeOn");
+      if(onCb) onCb.checked=on;
+      const hex=resolvedStrokeColorHex(g, def);
+      const pick=$("iStrokePick"), hexIn=$("iStrokeHex"), roleSel=$("iStrokeCol"), wIn=$("iStrokeW"), wLab=$("ivsw");
+      if(pick) pick.value=hex;
+      if(hexIn && document.activeElement!==hexIn) hexIn.value=hex;
+      if(roleSel) roleSel.value=strokeColorRoleSelectValue(g, def);
+      const w=Math.max(1, textStrokeWidth(g, def)||2);
+      if(wIn && document.activeElement!==wIn) wIn.value=String(w);
+      if(wLab) wLab.textContent=String(w);
+    };
+    const iStrokeOn=$("iStrokeOn");
+    if(iStrokeOn){
+      iStrokeOn.onchange=e=>{
+        if(e.target.checked){
+          if(!g.stroke) g.stroke="black";
+          if(!(g.strokeW>0)) g.strokeW=2;
+        } else {
+          g.stroke=null;
+          g.strokeW=0;
+        }
+        markTextStyleCustom(g);
+        syncInspectorStrokeFields();
+        commitInspectorTextColor();
+      };
+    }
+    const iStrokeW=$("iStrokeW");
+    if(iStrokeW){
+      iStrokeW.oninput=e=>{
+        g.strokeW=Math.max(1, +e.target.value||1);
+        if(!g.stroke) g.stroke="black";
+        if($("ivsw")) $("ivsw").textContent=String(g.strokeW);
+        markTextStyleCustom(g);
+        commitInspectorTextColor();
+      };
+    }
+    const iStrokeCol=$("iStrokeCol");
+    if(iStrokeCol){
+      iStrokeCol.onchange=e=>{
+        const v=e.target.value;
+        if(v==="__custom__") return;
+        if(v==="__none__"){ g.stroke=null; g.strokeW=0; }
+        else {
+          g.stroke=v;
+          if(!(g.strokeW>0)) g.strokeW=2;
+        }
+        markTextStyleCustom(g);
+        syncInspectorStrokeFields();
+        commitInspectorTextColor();
+      };
+    }
+    const iStrokePick=$("iStrokePick");
+    if(iStrokePick){
+      iStrokePick.oninput=e=>{
+        g.stroke=e.target.value;
+        if(!(g.strokeW>0)) g.strokeW=2;
+        markTextStyleCustom(g);
+        if($("iStrokeCol")) $("iStrokeCol").value="__custom__";
+        if($("iStrokeHex")) $("iStrokeHex").value=g.stroke;
+        if($("iStrokeOn")) $("iStrokeOn").checked=true;
+        if($("iStrokeFields")) $("iStrokeFields").style.display="";
+        commitInspectorTextColor();
+      };
+    }
+    const iStrokeHex=$("iStrokeHex");
+    if(iStrokeHex){
+      iStrokeHex.onchange=e=>{
+        const hex=normalizeHex(e.target.value);
+        if(!hex){ syncInspectorStrokeFields(); return; }
+        g.stroke=hex;
+        if(!(g.strokeW>0)) g.strokeW=2;
+        markTextStyleCustom(g);
+        if($("iStrokeCol")) $("iStrokeCol").value="__custom__";
+        if($("iStrokePick")) $("iStrokePick").value=hex;
+        if($("iStrokeOn")) $("iStrokeOn").checked=true;
+        if($("iStrokeFields")) $("iStrokeFields").style.display="";
+        e.target.value=hex;
+        commitInspectorTextColor();
+      };
+      iStrokeHex.onkeydown=e=>{ if(e.key==="Enter") e.target.blur(); };
     }
     $("iLs").oninput=e=>{ g.ls=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); };
     $("iRot").oninput=e=>{ g.rotate=+e.target.value; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
@@ -3995,6 +4187,7 @@ function applySessionLayoutsToTemplateDefs(){
     "x","y","w","h","size","weight","align","vAlign","color","italic","underline",
     "ls","lh","textTransform","opacity","z","rotate","hidden","manualSize","fixedBox",
     "boxMinH","boxMaxH","fit","zoom","cropX","cropY","fill","clip","shape","radius",
+    "stroke","strokeW","hollow",
   ];
   for(const [tid, L] of Object.entries(state.layouts||{})){
     const t=TEMPLATES[tid];
@@ -4413,6 +4606,11 @@ function fontKeyFromValue(font){
   if(s.includes("permanent")) return "chalk";
   if(s.includes("special elite")) return "type";
   if(s.includes("bangers")) return "comic";
+  if(s.includes("avenir book")) return "avenirBook";
+  if(s.includes("avenir light")) return "avenirLight";
+  if(s.includes("avenir medium")) return "avenirMedium";
+  if(s.includes("avenir heavy")) return "avenirHeavy";
+  if(s.includes("avenir")) return "avenir";
   return undefined;
 }
 
@@ -4476,8 +4674,15 @@ function layerDefToJson(id, def, g){
     if(tt) out.textTransform=tt;
     if(def.bg) out.bg=def.bg;
     if(def.pad) out.pad=def.pad;
-    if(def.stroke||g.stroke) out.stroke=g.stroke||def.stroke;
-    if(def.strokeW!=null||g.strokeW!=null) out.strokeW=g.strokeW??def.strokeW;
+    {
+      const strokeVal=("stroke" in g) ? g.stroke : def.stroke;
+      const strokeWVal=("strokeW" in g) ? g.strokeW : def.strokeW;
+      if(strokeVal){
+        out.stroke=strokeVal;
+        const w=strokeWVal!=null ? +strokeWVal : 2;
+        if(w>0) out.strokeW=w;
+      }
+    }
     if(def.hollow||g.hollow) out.hollow=true;
     if(!out.placeholder && def.bind && state.text[def.bind]) out.placeholder=String(state.text[def.bind]);
   } else if(def.type==="image"){
