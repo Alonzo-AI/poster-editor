@@ -1,18 +1,20 @@
 @import "tailwindcss";
 
+/* Studio shell — dark, quiet, one accent (Abyssale-like) */
 @theme {
-  --color-ink: #0c0d10;
-  --color-panel: #14161c;
-  --color-panel2: #1a1d25;
-  --color-line: #2c313c;
-  --color-paper: #f1efe8;
-  --color-dim: #8b919c;
-  --color-blaze: #ff5c2e;
-  --color-blaze2: #e84a1c;
-  --color-inset: #0a0b0e;
-  --color-guide: #00e5ff;
-  --font-sans: "Barlow", system-ui, sans-serif;
-  --font-display: "Barlow Condensed", Impact, sans-serif;
+  --color-ink: #141414;
+  --color-panel: #1c1c1c;
+  --color-panel2: #222222;
+  --color-line: #2e2e2e;
+  --color-paper: #ececec;
+  --color-dim: #8a8a8a;
+  --color-muted: #5c5c5c;
+  --color-blaze: #7dff3a;
+  --color-blaze2: #6ae32e;
+  --color-inset: #181818;
+  --color-guide: #4d8ef7;
+  --font-sans: "IBM Plex Sans", system-ui, sans-serif;
+  --font-display: "IBM Plex Sans", system-ui, sans-serif;
 }
 
 html,
@@ -26,8 +28,82 @@ body {
   font-family: var(--font-sans);
   background: var(--color-ink);
   color: var(--color-paper);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
 }
 
 .font-display {
   font-family: var(--font-display);
+}
+
+/* Quiet form controls */
+.ui-input {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--color-line);
+  background: var(--color-inset);
+  padding: 6px 10px;
+  color: var(--color-paper);
+  font-size: 13px;
+  outline: none;
+}
+.ui-input:focus {
+  border-color: #4a4a4a;
+}
+
+.ui-btn {
+  border-radius: 6px;
+  border: 1px solid var(--color-line);
+  background: var(--color-panel2);
+  padding: 7px 12px;
+  color: var(--color-paper);
+  font-size: 12px;
+  font-weight: 500;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.ui-btn:hover {
+  background: #2a2a2a;
+  border-color: #3a3a3a;
+}
+.ui-btn:disabled {
+  opacity: 0.45;
+}
+
+.ui-btn-primary {
+  border: none;
+  background: var(--color-blaze);
+  color: #0d0d0d;
+  font-weight: 600;
+}
+.ui-btn-primary:hover {
+  background: var(--color-blaze2);
+}
+
+.ui-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-dim);
+  padding: 10px 12px 6px;
+}
+
+.ui-icon-btn {
+  display: inline-flex;
+  height: 32px;
+  width: 32px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  color: var(--color-dim);
+  background: transparent;
+}
+.ui-icon-btn:hover {
+  background: var(--color-panel2);
+  color: var(--color-paper);
+  border-color: var(--color-line);
+}
+
+input[type='range'] {
+  accent-color: var(--color-blaze);
 }

@@ -3,8 +3,20 @@ import StageHost from '../components/StageHost.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import { apiHealth, syncDbTemplatesIntoEngine } from '../api/templatesApi.js'
 
-const inputClass =
-  'w-full rounded border border-line bg-inset px-2 py-1.5 text-sm text-paper outline-none focus:border-blaze'
+const inputClass = 'ui-input'
+
+function pickDefaultTemplate(list) {
+  if (!list?.length) return null
+  const usable = (t) => (t.fields?.length || 0) > 0 || (t.images?.length || 0) > 0
+  return (
+    list.find((t) => t.id === 'richmond') ||
+    list.find((t) => t.id === 'magazine') ||
+    list.find((t) => t.frozen && usable(t)) ||
+    list.find((t) => usable(t)) ||
+    list.find((t) => t.frozen) ||
+    list[0]
+  )
+}
 
 export default function AutomatePage({ Nav }) {
   const { iframeRef, src, api, ready, error, onLoad } = usePosterEngine({ headless: true })
@@ -57,6 +69,9 @@ export default function AutomatePage({ Nav }) {
         try {
           api.freezeCurrentLayout?.()
         } catch (_) {}
+        try {
+          api.zoomFit?.()
+        } catch (_) {}
         setStatus(
           (current?.frozen ? 'Live · layout frozen · ' : 'Live · ') + `“${templateId}”`,
         )
@@ -87,13 +102,17 @@ export default function AutomatePage({ Nav }) {
       setTemplates(list)
       if (!pickDefault) return
       setTemplateId((prev) => {
-        if (prev && list.some((t) => t.id === prev)) return prev
-        const preferred =
-          list.find((t) => t.frozen) ||
-          list.find((t) => t.id === 'richmond') ||
-          list.find((t) => t.id === 'magazine') ||
-          list[0]
-        return preferred?.id || null
+        if (prev && list.some((t) => t.id === prev)) {
+          // Drop empty probe templates if a real poster exists
+          const cur = list.find((t) => t.id === prev)
+          const hasContent =
+            (cur?.fields?.length || 0) > 0 || (cur?.images?.length || 0) > 0
+          if (hasContent) return prev
+          const better = pickDefaultTemplate(list)
+          if (better && better.id !== prev) return better.id
+          return prev
+        }
+        return pickDefaultTemplate(list)?.id || null
       })
     }
 
@@ -160,37 +179,38 @@ export default function AutomatePage({ Nav }) {
   }
 
   return (
-    <div className="flex h-full min-h-0">
-      <aside className="flex w-[360px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel p-3">
-        <div className="mb-3">
-          <div className="mb-1 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-blaze">
-            Narrative Styles
-          </div>
-          <h1 className="font-display text-2xl font-extrabold uppercase leading-none">Automate</h1>
-          <p className="mt-1 text-xs text-dim">Pick a frozen template · fill · export PNG</p>
-          <p
-            className={`mt-1 text-[10px] ${
-              apiOnline === true
-                ? 'text-emerald-400'
-                : apiOnline === false
-                  ? 'text-amber-400'
-                  : 'text-dim'
+    <div className="flex h-full min-h-0 flex-col bg-ink">
+      <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-3">
+        <div>
+          <div className="text-sm font-medium text-paper">Automate</div>
+          <div className="text-[11px] text-muted">Fill frozen template · export PNG</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-[10px] ${
+              apiOnline === true ? 'text-blaze' : 'text-dim'
             }`}
           >
-            {apiOnline === true
-              ? 'DB connected · templates from Mongo + files'
-              : apiOnline === false
-                ? 'DB offline · file templates only'
-                : 'Checking DB…'}
-          </p>
+            {apiOnline === true ? 'DB' : apiOnline === false ? 'Offline' : '…'}
+          </span>
+          <Nav />
+          <button type="button" className="ui-btn ui-btn-primary" disabled={!ready} onClick={onExport}>
+            Export PNG
+          </button>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+      <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel p-3">
+        <div className="mb-1 hidden">
           <div className="mt-3">
             <Nav />
           </div>
         </div>
 
-        <section className="mb-3 rounded border border-line border-l-[3px] border-l-blaze bg-panel2 p-3">
+        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="font-display text-xs font-bold uppercase tracking-widest">Template</h2>
+            <h2 className="text-[11px] font-semibold text-dim">Template</h2>
             <button
               type="button"
               className="rounded border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-dim hover:border-blaze hover:text-paper"
@@ -213,14 +233,15 @@ export default function AutomatePage({ Nav }) {
                 key={t.id}
                 type="button"
                 onClick={() => setTemplateId(t.id)}
-                className={`rounded border px-2 py-2 font-display text-xs font-semibold ${
+                className={`rounded-md border px-2 py-2 text-left text-xs font-medium ${
                   templateId === t.id
-                    ? 'border-blaze bg-blaze/15 text-white'
+                    ? 'border-line bg-panel text-paper'
                     : 'border-line bg-inset text-dim hover:text-paper'
                 }`}
               >
-                {t.name}
-                {t.frozen ? ' ✓' : ''}
+                <span className="block truncate">{t.name}</span>
+                <span className="block truncate text-[9px] font-medium opacity-60">{t.id}</span>
+                {t.frozen ? <span className="text-[9px] text-blaze">frozen</span> : null}
               </button>
             ))}
           </div>
@@ -234,10 +255,8 @@ export default function AutomatePage({ Nav }) {
             frozen.
           </p>
         </section>
-        <section className="mb-3 rounded border border-line border-l-[3px] border-l-blaze bg-panel2 p-3">
-          <h2 className="font-display mb-2 text-xs font-bold uppercase tracking-widest">
-            Brand colors
-          </h2>
+        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
+          <h2 className="mb-2 text-[11px] font-semibold text-dim">Brand colors</h2>
           <div className="flex gap-2">
             <label className="flex-1 text-[11px] text-dim">
               Primary
@@ -260,10 +279,8 @@ export default function AutomatePage({ Nav }) {
           </div>
         </section>
 
-        <section className="mb-3 rounded border border-line border-l-[3px] border-l-blaze bg-panel2 p-3">
-          <h2 className="font-display mb-2 text-xs font-bold uppercase tracking-widest">
-            Text fields
-          </h2>
+        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
+          <h2 className="mb-2 text-[11px] font-semibold text-dim">Text fields</h2>
           {fields.map((f) => {
             const long = /desc|callout|title/i.test(f.key)
             const Tag = long ? 'textarea' : 'input'
@@ -281,8 +298,8 @@ export default function AutomatePage({ Nav }) {
           })}
         </section>
 
-        <section className="mb-3 rounded border border-line border-l-[3px] border-l-blaze bg-panel2 p-3">
-          <h2 className="font-display mb-2 text-xs font-bold uppercase tracking-widest">Images</h2>
+        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
+          <h2 className="mb-2 text-[11px] font-semibold text-dim">Images</h2>
           {imageSlots.map((slot) => (
             <div key={slot.key} className="mb-2 flex items-center gap-2">
               <div
@@ -333,31 +350,34 @@ export default function AutomatePage({ Nav }) {
 
         <button
           type="button"
-          className="w-full rounded bg-blaze py-3 font-display text-sm font-bold uppercase tracking-wide text-white hover:bg-blaze2 disabled:opacity-55"
+          className="ui-btn ui-btn-primary w-full disabled:opacity-55"
           disabled={!ready}
           onClick={onExport}
         >
           Export PNG
         </button>
-        <p className="mt-2 text-[11px] text-dim">
-          Templates refresh from the database every few seconds after Editor Save. Preview updates
-          live; layout stays frozen.
+        <p className="mt-2 text-[11px] text-muted">
+          Templates refresh from the database after Editor Save. Layout stays frozen.
         </p>
-        <p className="mt-1 font-display text-xs tracking-wide text-[#ffb896]">{status}</p>
+        <p className="mt-1 text-xs text-dim">{status}</p>
       </aside>
 
-      <main className="relative flex min-w-0 flex-1 items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_70%_50%_at_50%_40%,#1a1520_0%,transparent_55%),linear-gradient(160deg,#12141a_0%,#0a0b0e_55%,#101218_100%)]">
-        <div className="relative aspect-[1080/1350] h-[min(92vh,92%)] max-h-[92vh] w-[min(92%,520px)] shadow-[0_28px_90px_#000c]">
-          <div className="pointer-events-none absolute -left-1.5 -top-1.5 z-10 h-[18px] w-[18px] border-l-2 border-t-2 border-blaze opacity-85" />
-          <div className="pointer-events-none absolute -bottom-1.5 -right-1.5 z-10 h-[18px] w-[18px] border-b-2 border-r-2 border-blaze opacity-85" />
+      <main className="relative flex min-w-0 flex-1 items-center justify-center overflow-hidden bg-[#121212]">
+        <div className="relative aspect-[1080/1350] h-[min(92vh,920px)] max-h-[92vh] w-auto max-w-[min(92%,520px)] shadow-[0_20px_60px_#000a]">
           {!ready && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-ink/90 font-display text-xs uppercase tracking-widest text-dim">
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-ink/90 text-xs text-dim">
               {error || 'Starting poster engine…'}
             </div>
           )}
-          <StageHost iframeRef={iframeRef} src={src} onLoad={onLoad} className="rounded-sm" />
+          <StageHost
+            iframeRef={iframeRef}
+            src={src}
+            onLoad={onLoad}
+            className="!absolute inset-0 !flex-none rounded-sm"
+          />
         </div>
       </main>
+      </div>
     </div>
   )
 }

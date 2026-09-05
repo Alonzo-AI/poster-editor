@@ -17,6 +17,8 @@ mongodb+srv://USER:<password>@CLUSTER.mongodb.net/?retryWrites=true&w=majority
 mongodb+srv://USER:PASSWORD@CLUSTER.mongodb.net/narrative_styles?retryWrites=true&w=majority
 ```
 
+If the path is missing, Atlas stores documents under the **`test`** database — Browse Collections → `narrative_styles` → `templates` is where Editor Save lands now (server also forces `dbName: narrative_styles`).
+
 4. Configure the API:
 
 ```bash

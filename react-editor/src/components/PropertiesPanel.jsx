@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react'
 
-const inputClass =
-  'w-full rounded border border-line bg-inset px-2 py-1.5 text-sm text-paper outline-none focus:border-blaze'
+const inputClass = 'ui-input'
 
 function Field({ label, children }) {
   return (
-    <label className="mb-2 block">
+    <label className="mb-2.5 block">
       <span className="mb-1 block text-[11px] text-dim">{label}</span>
       {children}
     </label>
@@ -14,13 +13,13 @@ function Field({ label, children }) {
 
 function Seg({ value, options, onChange }) {
   return (
-    <div className="flex overflow-hidden rounded border border-line">
+    <div className="flex overflow-hidden rounded-md border border-line">
       {options.map((o) => (
         <button
           key={o.value}
           type="button"
-          className={`flex-1 py-1.5 text-xs capitalize ${
-            value === o.value ? 'bg-blaze text-white' : 'bg-inset text-dim'
+          className={`flex-1 py-1.5 text-[11px] capitalize ${
+            value === o.value ? 'bg-panel2 text-paper' : 'bg-inset text-dim hover:text-paper'
           }`}
           onClick={() => onChange(o.value)}
         >
@@ -184,9 +183,9 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
                 <button
                   key={s.id}
                   type="button"
-                  className={`rounded border px-2 py-1.5 font-display text-[11px] font-semibold ${
+                  className={`rounded-md border px-2 py-1.5 text-[11px] font-medium ${
                     selected.textStyle === s.id
-                      ? 'border-blaze bg-blaze/20 text-white'
+                      ? 'border-line bg-panel2 text-paper'
                       : 'border-line bg-inset text-dim hover:text-paper'
                   }`}
                   onClick={() => api?.applyTextStyle?.(s.id)}
@@ -315,9 +314,7 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
           </Field>
 
           <div className="my-3 border-t border-line pt-3">
-            <h3 className="font-display mb-2 text-[11px] font-bold uppercase tracking-widest text-dim">
-              Text effects
-            </h3>
+            <h3 className="mb-2 text-[11px] font-semibold text-dim">Text effects</h3>
 
             <label className="mb-2 flex items-center gap-2 text-sm text-dim">
               <input
@@ -545,8 +542,8 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
           </Field>
           <button
             type="button"
-            className={`mb-2 w-full rounded py-2 font-display text-xs font-bold uppercase tracking-wide ${
-              selected.cropping ? 'bg-blaze text-white' : 'border border-line bg-inset text-dim'
+            className={`mb-2 w-full rounded-md py-2 text-xs font-medium ${
+              selected.cropping ? 'ui-btn-primary' : 'ui-btn'
             }`}
             onClick={() => patch({ cropping: !selected.cropping })}
           >

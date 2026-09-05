@@ -88,7 +88,7 @@ templates / renderer / html2canvas
 - **UI only:** Abyssale-like layout (layers | canvas | properties). No groups / Auto Layout / multi-format.
 - **Do not** reimplement `render()` or pointer handles in React.
 - Embed CSS: `body.embed` hides `#side` / banners; headless unchanged for Automate.
-- Bridge extras: `subscribe`, `listLayers`, `selectLayer`, `setLayerGeometry`, `bakeTemplate`, etc. (see `react-editor/README.md`).
+- Bridge extras: `subscribe`, `listLayers`, `selectLayer`, `setLayerGeometry`, `bakeTemplate`, `createTemplate`, `addTextField`, etc. (see `react-editor/README.md`).
 - Cutover: use React when smoke checklist passes; keep vanilla URLs as rollback.
 
 ---
@@ -400,9 +400,13 @@ Editor can cycle bundled stories; Automate can pass `payload.story`.
 2. Add the filename to `templates/manifest.json`
 3. Refresh Editor
 
+**New template (in Editor)**
+
+React **+ Create template** → `__RENDER_API_V3__.createTemplate({ name })` builds a blank 1080×1350 (player + background + title). Edit, then **Save** to upsert Atlas.
+
 **New text field**
 
-Add a `type: "text"` layer with a new `bind`. Automate picks it up via `swapFields` / layer binds after Save.
+React **+ Add text field** → `__RENDER_API_V3__.addTextField({ label })` adds a `type:"text"` layer with a new `bind` (also listed in Automate after Save). Or hand-edit JSON layers the same way.
 
 **New shape preset**
 

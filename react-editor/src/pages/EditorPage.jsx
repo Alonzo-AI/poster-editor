@@ -4,18 +4,18 @@ import PropertiesPanel from '../components/PropertiesPanel.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import {
   apiHealth,
-  fetchDbTemplates,
   saveTemplateToDb,
   syncDbTemplatesIntoEngine,
 } from '../api/templatesApi.js'
 
-function Panel({ title, children, className = '' }) {
+function Panel({ title, children, className = '', action = null }) {
   return (
     <section className={`border-b border-line ${className}`}>
       {title ? (
-        <h2 className="font-display px-3 py-2 text-xs font-bold uppercase tracking-widest text-dim">
-          {title}
-        </h2>
+        <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-1">
+          <h2 className="text-[11px] font-semibold text-dim">{title}</h2>
+          {action}
+        </div>
       ) : null}
       <div className="px-3 pb-3">{children}</div>
     </section>
@@ -31,8 +31,7 @@ function Field({ label, children }) {
   )
 }
 
-const inputClass =
-  'w-full rounded border border-line bg-inset px-2 py-1.5 text-sm text-paper outline-none focus:border-blaze'
+const inputClass = 'ui-input'
 
 export default function EditorPage({ Nav }) {
   const { iframeRef, src, api, snapshot, ready, error, onLoad } = usePosterEngine({
@@ -97,8 +96,9 @@ export default function EditorPage({ Nav }) {
 
   useEffect(() => {
     if (!snapshot) return
-    setBakeId((v) => v || snapshot.template || '')
-    setBakeName((v) => v || snapshot.templateName || '')
+    // Keep Save id locked to the active template so Mongo overwrites the same doc
+    setBakeId(snapshot.template || '')
+    setBakeName(snapshot.templateName || snapshot.template || '')
   }, [snapshot?.template, snapshot?.templateName])
 
   const selected = snapshot?.selected
@@ -149,19 +149,47 @@ export default function EditorPage({ Nav }) {
 
   async function onBake(download) {
     if (!api?.bakeTemplate) return
-    setStatus(download ? 'Downloading…' : 'Saving…')
+    // Always overwrite the *current* template id in Mongo (not a new document)
+    const id = (snapshot?.template || bakeId || '').trim()
+    if (!id) {
+      setStatus('No template selected')
+      return
+    }
+    // Keep this template's own display name — never reuse another chip's name
+    // (stale "Magazine" in the name field made mag_updated look like it vanished).
+    const listed = (api.listTemplates?.() || []).find((t) => t.id === id)
+    const name = listed?.name || snapshot?.templateName || id
+    setBakeId(id)
+    setBakeName(name)
+    setStatus(download ? 'Downloading…' : `Saving “${id}”…`)
     try {
-      const result = await api.bakeTemplate({ id: bakeId, name: bakeName, download })
+      const result = await api.bakeTemplate({ id, name, download })
       const json = result?.json
+      if (json) {
+        json.id = id
+        json.name = name
+      }
       if (json && !download) {
         try {
-          const saved = await saveTemplateToDb(json)
+          const saved = await saveTemplateToDb(json, { id })
           setApiOnline(true)
-          setStatus(`Saved to DB · “${saved.name || saved.id}” — Automate will pick it up`)
-          // Refresh local chip list
+          setStatus(
+            saved.updated
+              ? `Updated “${name}” (id: ${saved.id}) · JSON overwritten`
+              : `Created “${name}” (id: ${saved.id}) · later Saves overwrite this id`,
+          )
           try {
-            const list = await fetchDbTemplates()
-            api.injectRemoteTemplates?.(list)
+            api.injectRemoteTemplates?.(
+              [
+                {
+                  id: saved.id,
+                  name,
+                  frozen: true,
+                  json: { ...json, id: saved.id, name },
+                },
+              ],
+              { sync: false },
+            )
           } catch (_) {}
           if (api.listTemplates) setTemplates(api.listTemplates() || [])
           return
@@ -192,62 +220,161 @@ export default function EditorPage({ Nav }) {
     }
   }
 
+
   return (
-    <div className="flex h-full min-h-0">
-      {/* Left — layers & tools */}
-      <aside className="flex w-[300px] shrink-0 flex-col border-r border-line bg-panel">
-        <div className="border-b border-line p-3">
-          <div className="mb-1 font-display text-[11px] font-bold uppercase tracking-[0.18em] text-blaze">
-            Narrative Styles
-          </div>
-          <h1 className="font-display text-2xl font-extrabold uppercase leading-none tracking-wide">
-            Poster Lab
-          </h1>
-          <p className="mt-1 text-xs text-dim">Design · freeze · export 4:5</p>
-          <p
-            className={`mt-1 text-[10px] ${
-              apiOnline === true
-                ? 'text-emerald-400'
-                : apiOnline === false
-                  ? 'text-amber-400'
-                  : 'text-dim'
+    <div className="flex h-full min-h-0 flex-col bg-ink">
+      {/* Top bar */}
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium text-paper">
+            {bakeName || snapshot?.templateName || 'Untitled'}
+          </span>
+          <span className="hidden text-[11px] text-muted sm:inline">1080 × 1350</span>
+        </div>
+        <div className="mx-auto flex items-center gap-1">
+          <button type="button" className="ui-icon-btn" title="Fit" onClick={() => api?.zoomFit?.()}>
+            Fit
+          </button>
+          <button type="button" className="ui-icon-btn" title="Zoom in" onClick={() => api?.zoomIn?.()}>
+            +
+          </button>
+          <button type="button" className="ui-icon-btn" title="Zoom out" onClick={() => api?.zoomOut?.()}>
+            −
+          </button>
+          <button
+            type="button"
+            className="ui-icon-btn"
+            title="Add text"
+            disabled={!ready}
+            onClick={() => {
+              const label = window.prompt('Text field label', 'New text')
+              if (label == null || !String(label).trim()) return
+              try {
+                const res = api?.addTextField?.({ label: String(label).trim() })
+                setStatus(res?.field?.bind ? `Added “${res.field.label}”` : 'Add text failed')
+              } catch (e) {
+                setStatus(e.message || 'Add text failed')
+              }
+            }}
+          >
+            T
+          </button>
+          <button
+            type="button"
+            className="ui-icon-btn"
+            title="Frame guide"
+            onClick={() => api?.toggleFrameGuide?.()}
+          >
+            ⌗
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <Nav />
+          <span
+            className={`text-[10px] ${
+              apiOnline === true ? 'text-blaze' : apiOnline === false ? 'text-dim' : 'text-muted'
             }`}
           >
-            {apiOnline === true
-              ? 'DB connected · Save writes to Mongo'
-              : apiOnline === false
-                ? 'DB offline · Save stays in browser (start server/)'
-                : 'Checking DB…'}
-          </p>
-          <div className="mt-3">
-            <Nav />
-          </div>
+            {apiOnline === true ? 'DB' : apiOnline === false ? 'Offline' : '…'}
+          </span>
+          <button type="button" className="ui-btn" onClick={() => onBake(true)} disabled={!ready}>
+            Download
+          </button>
+          <button
+            type="button"
+            className="ui-btn ui-btn-primary"
+            onClick={() => onBake(false)}
+            disabled={!ready}
+          >
+            Save
+          </button>
         </div>
+      </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <Panel title="Template">
-            <div className="grid grid-cols-2 gap-1.5">
-              {templates.map((t) => (
+      <div className="flex min-h-0 flex-1">
+        {/* Left */}
+        <aside className="flex w-[280px] shrink-0 flex-col border-r border-line bg-panel">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <Panel
+              title="Formats"
+              action={
                 <button
-                  key={t.id}
                   type="button"
-                  onClick={() => api?.switchTemplate?.(t.id)}
-                  className={`rounded border px-2 py-2 font-display text-xs font-semibold ${
-                    snapshot?.template === t.id
-                      ? 'border-blaze bg-blaze/15 text-white'
-                      : 'border-line bg-inset text-dim hover:text-paper'
-                  }`}
+                  className="text-[11px] font-medium text-paper hover:text-blaze"
+                  disabled={!ready}
+                  onClick={() => {
+                    const name = window.prompt('New template name', 'New template')
+                    if (name == null || !String(name).trim()) return
+                    try {
+                      const res = api?.createTemplate?.({ name: String(name).trim() })
+                      const id = res?.template?.id
+                      if (api.listTemplates) setTemplates(api.listTemplates() || [])
+                      setStatus(id ? `Created “${name}”` : 'Create failed')
+                    } catch (e) {
+                      setStatus(e.message || 'Create failed')
+                    }
+                  }}
                 >
-                  {t.name}
-                  {t.frozen ? ' ✓' : ''}
+                  + Add
                 </button>
-              ))}
-            </div>
-          </Panel>
+              }
+            >
+              <ul className="space-y-0.5">
+                {templates.map((t) => (
+                  <li key={t.id}>
+                    <button
+                      type="button"
+                      onClick={() => api?.switchTemplate?.(t.id)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left ${
+                        snapshot?.template === t.id
+                          ? 'bg-panel2 text-paper'
+                          : 'text-dim hover:bg-inset hover:text-paper'
+                      }`}
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-inset text-[9px] text-muted">
+                        4:5
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[12px] font-medium">{t.name}</span>
+                        <span className="block truncate text-[10px] text-muted">
+                          {t.id}
+                          {t.frozen ? ' · frozen' : ''}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </Panel>
 
-          <Panel title="Stories">
-            {stories.length ? (
-              <>
+            <Panel title="Layers">
+              <ul className="space-y-0.5">
+                {layers.map((layer) => (
+                  <li key={layer.id}>
+                    <button
+                      type="button"
+                      onClick={() => api?.selectLayer?.(layer.id)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] ${
+                        snapshot?.selectedId === layer.id
+                          ? 'bg-panel2 text-paper'
+                          : 'text-dim hover:bg-inset hover:text-paper'
+                      }`}
+                    >
+                      <span className="w-10 shrink-0 text-[10px] uppercase text-muted">
+                        {layer.type}
+                      </span>
+                      <span className="truncate">{layer.label}</span>
+                    </button>
+                  </li>
+                ))}
+                {!layers.length && (
+                  <li className="px-2 text-[11px] text-muted">{ready ? 'No layers' : 'Loading…'}</li>
+                )}
+              </ul>
+            </Panel>
+
+            <Panel title="Stories">
+              {stories.length ? (
                 <select
                   className={inputClass}
                   value={snapshot?.storyIndex ?? 0}
@@ -259,36 +386,20 @@ export default function EditorPage({ Nav }) {
                     </option>
                   ))}
                 </select>
-                <div className="mt-2 flex gap-1.5">
-                  <button
-                    type="button"
-                    className="flex-1 rounded border border-line bg-inset py-1.5 font-display text-xs font-semibold uppercase text-dim hover:text-paper"
-                    onClick={() => api?.gotoStory?.(-1)}
-                  >
-                    Prev
-                  </button>
-                  <button
-                    type="button"
-                    className="flex-1 rounded border border-line bg-inset py-1.5 font-display text-xs font-semibold uppercase text-dim hover:text-paper"
-                    onClick={() => api?.gotoStory?.(1)}
-                  >
-                    Next
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="text-xs text-dim">No stories loaded yet.</p>
-            )}
-          </Panel>
+              ) : (
+                <p className="text-[11px] text-muted">No stories</p>
+              )}
+            </Panel>
 
-          <Panel title="Images">
-            {imageSlots.map((slot) => (
-              <div key={slot.key} className="mb-2 flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm">{slot.label}</div>
-                  <div className="text-[10px] text-dim">{slot.loaded ? 'loaded' : 'none'}</div>
-                  <label className="cursor-pointer text-[11px] text-blaze underline">
-                    {slot.loaded ? 'replace' : 'upload'}
+            <Panel title="Images">
+              {imageSlots.map((slot) => (
+                <div key={slot.key} className="mb-2 flex items-center gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[12px]">{slot.label}</div>
+                    <div className="text-[10px] text-muted">{slot.loaded ? 'loaded' : 'empty'}</div>
+                  </div>
+                  <label className="cursor-pointer text-[11px] text-paper underline decoration-line underline-offset-2">
+                    {slot.loaded ? 'Replace' : 'Upload'}
                     <input
                       type="file"
                       accept="image/*"
@@ -298,247 +409,120 @@ export default function EditorPage({ Nav }) {
                         if (!file || !api?.setImageSlot) return
                         const url = await readFileAsDataURL(file)
                         await api.setImageSlot(slot.key, url)
-                        setImageSlots(api.listImageSlots?.() || [])
+                        if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
                       }}
                     />
                   </label>
-                  {slot.loaded ? (
-                    <>
-                      {' · '}
-                      <button
-                        type="button"
-                        className="text-[11px] text-red-400 underline"
-                        onClick={() => {
-                          api?.clearImageSlot?.(slot.key)
-                          setImageSlots(api?.listImageSlots?.() || [])
-                        }}
-                      >
-                        remove
-                      </button>
-                    </>
-                  ) : null}
                 </div>
-              </div>
-            ))}
-          </Panel>
-
-          <Panel title="Asset library">
-            <div className="mb-2 flex flex-wrap gap-1">
-              {['all', 'player', 'logo', 'background', 'shape'].map((f) => (
-                <button
-                  key={f}
-                  type="button"
-                  onClick={() => setAssetFilter(f)}
-                  className={`rounded px-2 py-1 font-display text-[10px] font-semibold uppercase ${
-                    assetFilter === f ? 'bg-blaze/20 text-white' : 'bg-inset text-dim'
-                  }`}
-                >
-                  {f}
-                </button>
               ))}
-            </div>
-            <div className="grid max-h-48 grid-cols-2 gap-1.5 overflow-y-auto">
-              {filteredAssets.map((a) => (
-                <button
-                  key={a.id}
-                  type="button"
-                  title={a.name}
-                  onClick={() => onApplyAsset(a.id)}
-                  className="overflow-hidden rounded border border-line bg-inset text-left hover:border-blaze"
-                >
-                  <div
-                    className="h-14 bg-contain bg-center bg-no-repeat"
-                    style={{ backgroundImage: a.thumb ? `url(${a.thumb})` : undefined }}
-                  />
-                  <div className="truncate px-1.5 py-1 text-[10px] text-dim">{a.name}</div>
-                </button>
-              ))}
-              {!filteredAssets.length && (
-                <p className="col-span-2 text-xs text-dim">No assets in this filter.</p>
-              )}
-            </div>
-          </Panel>
+            </Panel>
 
-          <Panel title="Layers">
-            <ul className="space-y-0.5">
-              {layers.map((layer) => (
-                <li key={layer.id}>
+            <Panel title="Assets">
+              <select
+                className={`${inputClass} mb-2`}
+                value={assetFilter}
+                onChange={(e) => setAssetFilter(e.target.value)}
+              >
+                <option value="all">All</option>
+                <option value="player">Player</option>
+                <option value="background">Background</option>
+                <option value="logo">Logo</option>
+                <option value="conference">Conference</option>
+                <option value="sponsor">Sponsor</option>
+                <option value="shape">Shapes</option>
+              </select>
+              <div className="grid max-h-40 grid-cols-3 gap-1 overflow-y-auto">
+                {filteredAssets.slice(0, 24).map((a) => (
                   <button
+                    key={a.id}
                     type="button"
-                    onClick={() => api?.selectLayer?.(layer.id)}
-                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
-                      snapshot?.selectedId === layer.id
-                        ? 'bg-blaze/20 text-white'
-                        : 'text-dim hover:bg-inset hover:text-paper'
-                    }`}
+                    title={a.name}
+                    onClick={() => onApplyAsset(a.id)}
+                    className="overflow-hidden rounded border border-line bg-inset hover:border-muted"
                   >
-                    <span className="w-14 shrink-0 font-display text-[10px] uppercase tracking-wide opacity-70">
-                      {layer.type}
-                    </span>
-                    <span className="truncate">{layer.label}</span>
+                    <div
+                      className="h-10 bg-contain bg-center bg-no-repeat"
+                      style={{ backgroundImage: a.thumb ? `url(${a.thumb})` : undefined }}
+                    />
                   </button>
-                </li>
-              ))}
-              {!layers.length && (
-                <li className="text-xs text-dim">{ready ? 'No layers' : 'Loading engine…'}</li>
-              )}
-            </ul>
-          </Panel>
+                ))}
+              </div>
+            </Panel>
 
-          <Panel title="Shapes">
-            <div className="grid grid-cols-3 gap-1.5">
-              {shapePresets.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => api?.addShape?.(p.id)}
-                  className="rounded border border-line bg-inset px-1 py-2 font-display text-[11px] font-semibold uppercase text-dim hover:border-blaze hover:text-paper"
-                >
-                  {p.label || p.id}
-                </button>
-              ))}
-            </div>
-          </Panel>
+            <Panel title="Shapes">
+              <div className="grid grid-cols-3 gap-1">
+                {shapePresets.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => api?.addShape?.(p.id)}
+                    className="ui-btn px-1 py-2 text-[11px]"
+                  >
+                    {p.label || p.id}
+                  </button>
+                ))}
+              </div>
+            </Panel>
 
-          <Panel title="Brand colors">
-            <div className="flex gap-2">
-              <Field label="Primary">
-                <input
-                  type="color"
-                  className="h-9 w-full cursor-pointer rounded border border-line bg-inset"
-                  value={snapshot?.colors?.primary || '#006F73'}
-                  onChange={(e) => api?.setBrandColors?.({ primary: e.target.value })}
-                />
-              </Field>
-              <Field label="Secondary">
-                <input
-                  type="color"
-                  className="h-9 w-full cursor-pointer rounded border border-line bg-inset"
-                  value={snapshot?.colors?.secondary || '#C5B358'}
-                  onChange={(e) => api?.setBrandColors?.({ secondary: e.target.value })}
-                />
-              </Field>
-            </div>
-          </Panel>
-
-          <Panel title="Text fields">
-            {Object.entries(snapshot?.text || {})
-              .slice(0, 12)
-              .map(([key, val]) => (
-                <Field key={key} label={key}>
+            <Panel title="Brand">
+              <div className="flex gap-2">
+                <Field label="Primary">
                   <input
-                    className={inputClass}
-                    value={val ?? ''}
-                    onChange={(e) => api?.setTextValue?.(key, e.target.value)}
+                    type="color"
+                    className="h-8 w-full cursor-pointer rounded border border-line bg-inset"
+                    value={snapshot?.colors?.primary || '#006F73'}
+                    onChange={(e) => api?.setBrandColors?.({ primary: e.target.value })}
                   />
                 </Field>
-              ))}
-          </Panel>
-        </div>
-      </aside>
-
-      {/* Center — canvas */}
-      <main className="relative flex min-w-0 flex-1 flex-col bg-ink">
-        <div className="absolute left-3 top-3 z-10 flex gap-1">
-          <button
-            type="button"
-            className="rounded border border-line bg-panel/90 px-2.5 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-paper backdrop-blur"
-            onClick={() => api?.zoomFit?.()}
-          >
-            Fit
-          </button>
-          <button
-            type="button"
-            className="rounded border border-line bg-panel/90 px-2.5 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-paper backdrop-blur"
-            onClick={() => api?.zoomIn?.()}
-          >
-            +
-          </button>
-          <button
-            type="button"
-            className="rounded border border-line bg-panel/90 px-2.5 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-paper backdrop-blur"
-            onClick={() => api?.zoomOut?.()}
-          >
-            −
-          </button>
-          <button
-            type="button"
-            className="rounded border border-line bg-panel/90 px-2.5 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-paper backdrop-blur"
-            onClick={() => api?.toggleFrameGuide?.()}
-          >
-            Frame
-          </button>
-          <button
-            type="button"
-            className="rounded border border-line bg-panel/90 px-2.5 py-1.5 font-display text-xs font-semibold uppercase tracking-wide text-paper backdrop-blur"
-            onClick={() => api?.deselect?.()}
-          >
-            Deselect
-          </button>
-        </div>
-        {!ready && (
-          <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ink/80 font-display text-sm uppercase tracking-widest text-dim">
-            {error || 'Starting engine…'}
+                <Field label="Secondary">
+                  <input
+                    type="color"
+                    className="h-8 w-full cursor-pointer rounded border border-line bg-inset"
+                    value={snapshot?.colors?.secondary || '#C5B358'}
+                    onChange={(e) => api?.setBrandColors?.({ secondary: e.target.value })}
+                  />
+                </Field>
+              </div>
+            </Panel>
           </div>
-        )}
-        <StageHost iframeRef={iframeRef} src={src} onLoad={onLoad} />
-      </main>
+        </aside>
 
-      {/* Right — properties */}
-      <aside className="flex w-[320px] shrink-0 flex-col border-l border-line bg-panel">
-        <div className="border-b border-line p-3">
-          <h2 className="font-display text-sm font-bold uppercase tracking-widest text-paper">
-            Properties
-          </h2>
-          <p className="mt-0.5 truncate text-xs text-dim">
-            {selected ? `${selected.type} · ${selected.id}` : 'Select a layer'}
-          </p>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto p-3">
-          <PropertiesPanel api={api} selected={selected} snapshot={snapshot} />
-        </div>
+        {/* Center canvas */}
+        <main className="relative flex min-w-0 flex-1 flex-col bg-[#121212]">
+          {!ready && (
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ink/80 text-xs text-dim">
+              {error || 'Starting engine…'}
+            </div>
+          )}
+          <StageHost iframeRef={iframeRef} src={src} onLoad={onLoad} />
+          {status ? (
+            <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-line bg-panel/95 px-3 py-1.5 text-[11px] text-dim backdrop-blur">
+              {status}
+            </div>
+          ) : null}
+        </main>
 
-        <div className="space-y-2 border-t border-line p-3">
-          <Field label="Save as id">
-            <input className={inputClass} value={bakeId} onChange={(e) => setBakeId(e.target.value)} />
-          </Field>
-          <Field label="Display name">
-            <input
-              className={inputClass}
-              value={bakeName}
-              onChange={(e) => setBakeName(e.target.value)}
-            />
-          </Field>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="flex-1 rounded bg-blaze py-2.5 font-display text-sm font-bold uppercase tracking-wide text-white hover:bg-blaze2"
-              onClick={() => onBake(false)}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className="flex-1 rounded border border-line bg-panel2 py-2.5 font-display text-sm font-bold uppercase tracking-wide text-paper hover:bg-inset"
-              onClick={() => onBake(true)}
-            >
-              Download
-            </button>
+        {/* Right properties */}
+        <aside className="flex w-[300px] shrink-0 flex-col border-l border-line bg-panel">
+          <div className="border-b border-line px-3 py-2.5">
+            <div className="text-[12px] font-semibold text-paper">Styles</div>
+            <div className="truncate text-[11px] text-muted">
+              {selected ? `${selected.type} · ${selected.id}` : 'Select a layer'}
+            </div>
           </div>
-          <button
-            type="button"
-            className="w-full rounded bg-blaze py-2.5 font-display text-sm font-bold uppercase tracking-wide text-white hover:bg-blaze2"
-            onClick={onExport}
-          >
-            Export PNG
-          </button>
-          {status ? <p className="font-display text-xs tracking-wide text-blaze">{status}</p> : null}
-          <p className="text-[10px] leading-snug text-dim">
-            Vanilla fallback: open <code className="text-paper/80">../index.html</code>. Engine paint
-            stays in the iframe.
-          </p>
-        </div>
-      </aside>
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            <PropertiesPanel api={api} selected={selected} snapshot={snapshot} />
+          </div>
+          <div className="space-y-2 border-t border-line p-3">
+            <button type="button" className="ui-btn ui-btn-primary w-full" onClick={onExport}>
+              Export PNG
+            </button>
+            <p className="text-[10px] leading-snug text-muted">
+              Save writes id <span className="text-dim">{bakeId || '—'}</span> to Atlas.
+            </p>
+          </div>
+        </aside>
+      </div>
     </div>
   )
 }

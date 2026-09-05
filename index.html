@@ -734,6 +734,7 @@ function ensurePosterTemplatesLoaded() {
     try {
       loaded = await window.PosterTemplateLoader.loadAll();
       syncEnabledTemplateList(loaded);
+      DISK_TEMPLATE_IDS=new Set(loaded||[]);
     } catch (e) {
       _posterTemplatesLoadError = e;
       console.warn("Template JSON load:", e);
@@ -2280,6 +2281,120 @@ function addShapeLayer(presetId, opts={}){
   select(nid); render(); scheduleSave();
   return nid;
 }
+
+/** New editable text layer (+ Automate bind). Architecture: type:"text" + bind. */
+function addTextFieldLayer(opts={}){
+  pushUndo();
+  const t=state.template;
+  if(!t) return null;
+  if(!state.extraLayers[t]) state.extraLayers[t]={};
+  const label=String(opts.label||opts.bind||"New text").trim()||"New text";
+  let bind=String(opts.bind||label).trim().replace(/[^\w]+/g,"_")||"customText";
+  if(/^\d/.test(bind)) bind="_"+bind;
+  const used=new Set(
+    Object.values(layersOf())
+      .filter(d=>d&&d.type==="text"&&d.bind)
+      .map(d=>d.bind)
+  );
+  let base=bind, n=2;
+  while(used.has(bind)) bind=base+"_"+n++;
+  let i=1, nid;
+  do{ nid="text_"+bind+"_"+(i++); }while(layersOf()[nid]);
+  const w=opts.w??720, h=opts.h??90;
+  const x=opts.x!=null?+opts.x:Math.round((SW-w)/2);
+  const y=opts.y!=null?+opts.y:Math.round(SH*0.42);
+  const size=Math.max(12, Math.min(200, +opts.size||48));
+  state.extraLayers[t][nid]=txt({
+    bind, label, placeholder:label,
+    x, y, w, h, size, weight:700, align:"center", color:"white",
+    font:F.sans, z:22, manualSize:true,
+  });
+  const L=ensureLayout();
+  Object.assign(L[nid], {
+    x, y, w, h, size, baseSize:size, manualSize:true,
+    weight:700, align:"center", color:"white", z:22, hidden:false, opacity:1,
+  });
+  if(state.text[bind]==null || state.text[bind]===""){
+    state.text[bind]=String(opts.text||label).toUpperCase();
+  }
+  if(!state.fieldLabels[t]) state.fieldLabels[t]={};
+  state.fieldLabels[t][bind]=label;
+  const json=TEMPLATES[t]?._json;
+  if(json){
+    if(!json.automation) json.automation={ swapFields:[], swapImages:["player","logo","conference","sponsor","background"] };
+    if(!Array.isArray(json.automation.swapFields)) json.automation.swapFields=[];
+    if(!json.automation.swapFields.includes(bind)) json.automation.swapFields.push(bind);
+    if(!json.automation.fieldLabels) json.automation.fieldLabels={};
+    json.automation.fieldLabels[bind]=label;
+  }
+  buildTextFields();
+  buildCaptionColorControls();
+  select(nid);
+  render();
+  scheduleSave();
+  notifyEditorBridge("text-field");
+  return { id:nid, bind, label };
+}
+
+/** Blank 1080×1350 template the user can edit, then Save to Atlas. */
+function createBlankTemplate(opts={}){
+  const rawName=String(opts.name||"New template").trim()||"New template";
+  let id=String(opts.id||rawName).trim().replace(/[^\w-]+/g,"_")||("custom_"+Date.now().toString(36));
+  if(/^\d/.test(id)) id="_"+id;
+  let base=id, n=2;
+  while(TEMPLATES[id] || ENABLED_TEMPLATES.includes(id)) id=base+"_"+n++;
+  const name=rawName;
+  const json={
+    id, name, version:1,
+    canvas:{ width:SW, height:SH, background:"#12141a" },
+    deco:{ html:"" },
+    textRules:{ autoFit:[], stats:{ autoFit:false } },
+    settings:{
+      freezeLayout:false,
+      logo:{ opacity:1, scale:1 },
+      brandColors:{ fromLogo:false },
+      playerImage:{ fitToFrame:false, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
+    },
+    layers:[
+      { id:"bgImage", type:"image", bind:"background", x:0, y:0, w:SW, h:SH, z:1, fit:"cover", cropX:0.5, cropY:0.5 },
+      { id:"player", type:"image", bind:"player", x:240, y:180, w:600, h:900, z:12, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
+      { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:1120, w:960, h:100, size:56, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
+    ],
+    automation:{
+      freezeLayout:false,
+      swapFields:["playerName"],
+      swapImages:["player","logo","conference","sponsor","background"],
+      fieldLabels:{ playerName:"Player name" },
+    },
+  };
+  const loader=window.PosterTemplateLoader;
+  if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
+  else {
+    TEMPLATES[id]={
+      name:json.name,
+      _json:json,
+      stageBg:()=>json.canvas?.background||"#000",
+      deco:()=>json.deco?.html||"",
+      layers:Object.fromEntries((json.layers||[]).map(l=>{
+        const {id:lid, font, ...rest}=l;
+        return [lid, { ...rest, font:F[font]||font }];
+      })),
+    };
+  }
+  if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
+  state.extraLayers[id]={};
+  state.layouts[id]={};
+  state.logoSettings[id]={ opacity:1, scale:1 };
+  if(!state.fieldLabels[id]) state.fieldLabels[id]={};
+  state.fieldLabels[id].playerName="Player name";
+  if(!state.text.playerName) state.text.playerName="PLAYER NAME";
+  switchTemplate(id);
+  try{ buildTplChips(); }catch(_){}
+  buildTextFields();
+  buildCaptionColorControls();
+  notifyEditorBridge("create-template");
+  return { id, name, json };
+}
 /** Drop a library shape onto the canvas (not into conference/logo slots). */
 async function placeLibraryShapeAsset(asset){
   const preset=asset.preset
@@ -2417,7 +2532,7 @@ function updateTestBanner(){
   b.innerHTML=`<b>${esc(t.name)}</b> · story ${idx}<br>${esc(slug)}<br>${esc(name)}`;
 }
 
-function switchTemplate(id){
+function doSwitchTemplate(id){
   clearUndoHistory();
   const next=ensureEnabledTemplate(id);
   const prev=state.template;
@@ -2458,6 +2573,7 @@ function switchTemplate(id){
   refreshEditorUI();
   scheduleSave();
 }
+function switchTemplate(id){ doSwitchTemplate(id); }
 function gotoTemplate(d){
   const ready=templateIdsReady();
   if(!ready.length) return;
@@ -5024,6 +5140,11 @@ function setBakeStatus(msg){
 }
 
 const LS_BAKED_KEY="posterEditor.v3.bakedTemplates";
+/** Ids that came from templates/manifest.json (never auto-deleted when Atlas drops a doc). */
+let DISK_TEMPLATE_IDS=new Set();
+/** Ids last injected from Mongo — pruned when missing from the next sync. */
+let REMOTE_TEMPLATE_IDS=new Set();
+
 function loadBakedTemplatesMap(){
   try{
     const raw=localStorage.getItem(LS_BAKED_KEY);
@@ -5060,6 +5181,35 @@ function saveBakedTemplateJson(json){
       console.warn("Could not persist baked template", e2);
     }
   }
+}
+function removeBakedTemplateJson(id){
+  if(!id) return;
+  try{
+    const map=loadBakedTemplatesMap();
+    if(!(id in map)) return;
+    delete map[id];
+    localStorage.setItem(LS_BAKED_KEY, JSON.stringify(map));
+    const last=localStorage.getItem(LS_BAKED_KEY+".lastId");
+    if(last===id) localStorage.removeItem(LS_BAKED_KEY+".lastId");
+  }catch(_){}
+}
+/** Drop a DB/session template from memory + localStorage (keeps disk seeds). */
+function uninstallTemplateId(id){
+  if(!id) return false;
+  removeBakedTemplateJson(id);
+  REMOTE_TEMPLATE_IDS.delete(id);
+  if(DISK_TEMPLATE_IDS.has(id)){
+    // Disk seed stays listed; baked override removed so next reload uses file JSON
+    return false;
+  }
+  try{ delete TEMPLATES[id]; }catch(_){}
+  const ix=ENABLED_TEMPLATES.indexOf(id);
+  if(ix>=0) ENABLED_TEMPLATES.splice(ix,1);
+  if(state.template===id){
+    const next=ENABLED_TEMPLATES[0]||null;
+    if(next) state.template=next;
+  }
+  return true;
 }
 function getLastBakedTemplateId(){
   try{ return localStorage.getItem(LS_BAKED_KEY+".lastId")||null; }catch(_){ return null; }
@@ -5810,7 +5960,7 @@ window.__RENDER_API_V3__={
     return ()=>_editorSubs.delete(cb);
   },
   switchTemplate(id){
-    switchTemplate(id);
+    doSwitchTemplate(id);
     notifyEditorBridge("template");
     return buildEditorSnapshot();
   },
@@ -5943,6 +6093,14 @@ window.__RENDER_API_V3__={
     if(nid){ select(nid); render(); scheduleSave(); }
     return buildEditorSnapshot();
   },
+  addTextField(opts={}){
+    const created=addTextFieldLayer(opts);
+    return { snapshot:buildEditorSnapshot(), field:created };
+  },
+  createTemplate(opts={}){
+    const created=createBlankTemplate(opts);
+    return { snapshot:buildEditorSnapshot(), template:created };
+  },
   listShapePresets(){
     return Object.entries(SHAPE_PRESETS).map(([id,p])=>({ id, label:p.label }));
   },
@@ -5955,10 +6113,15 @@ window.__RENDER_API_V3__={
     notifyEditorBridge("bake");
     return { snapshot:buildEditorSnapshot(), json };
   },
-  /** Inject saved DB templates into the live TEMPLATES map (Automate/Editor). */
-  injectRemoteTemplates(list=[]){
+  /** Inject saved DB templates into the live TEMPLATES map (Automate/Editor).
+   *  Pass { sync:true } after a full GET /api/templates to drop Atlas-deleted ghosts.
+   *  Pass { sync:false } when injecting a single Save so other templates stay.
+   */
+  injectRemoteTemplates(list=[], opts={}){
     const loader=window.PosterTemplateLoader;
+    const sync=!!opts.sync;
     const ids=[];
+    const incoming=new Set();
     for(const item of list){
       const json=item?.json || item;
       if(!json || typeof json!=="object" || !json.id) continue;
@@ -5976,12 +6139,30 @@ window.__RENDER_API_V3__={
         };
       }
       if(!ENABLED_TEMPLATES.includes(json.id)) ENABLED_TEMPLATES.push(json.id);
+      REMOTE_TEMPLATE_IDS.add(json.id);
+      incoming.add(json.id);
       try{ saveBakedTemplateJson(json); }catch(_){}
       ids.push(json.id);
+    }
+    if(sync){
+      // Remove templates that exist only from old Atlas/localStorage bakes
+      for(const id of [...REMOTE_TEMPLATE_IDS]){
+        if(!incoming.has(id)) uninstallTemplateId(id);
+      }
+      for(const id of Object.keys(loadBakedTemplatesMap())){
+        if(incoming.has(id) || DISK_TEMPLATE_IDS.has(id)) continue;
+        uninstallTemplateId(id);
+      }
     }
     try{ buildTplChips(); }catch(_){}
     notifyEditorBridge("remote-templates");
     return { count:ids.length, ids, templates:window.__RENDER_API_V3__.listTemplates() };
+  },
+  removeRemoteTemplate(id){
+    uninstallTemplateId(id);
+    try{ buildTplChips(); }catch(_){}
+    notifyEditorBridge("remote-templates");
+    return { ok:true, templates:window.__RENDER_API_V3__.listTemplates() };
   },
   zoomFit(){ document.getElementById("zoomFit")?.click(); return buildEditorSnapshot(); },
   zoomIn(){ document.getElementById("zoomIn")?.click(); return buildEditorSnapshot(); },
@@ -6147,7 +6328,7 @@ window.__TEST_V3__={
     spotlightLayouts:state.spotlightLayouts, spotlightLayout:state.layouts.spotlight,
     storyIndex:state.storyIndex,
     slug:state.stories[state.storyIndex]?.slug||null, playerName:state.text.playerName }; },
-  setTemplate(id){ switchTemplate(id); },
+  setTemplate(id){ doSwitchTemplate(id); },
   applySpotlightVariant,
   snapshotSpotlightLayout,
   restoreSpotlightLayout,
