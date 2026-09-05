@@ -1,32 +1,58 @@
-# React + TypeScript + Vite
+# React Poster Lab (strangler)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + Tailwind + JavaScript shell around the existing vanilla stage engine.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+cd narrative-styles-portal/react-editor
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Open http://127.0.0.1:5173/
+
+- `/` — Editor (Abyssale-style: layers left, canvas center, properties right)
+- `/automate` — Automate fill + PNG export
+
+The canvas is an iframe to `/portal/index.html?embed=1` (Editor) or `?headless=1` (Automate). Vite serves the parent portal folder under `/portal/*` and proxies `/api` → `http://127.0.0.1:8787`.
+
+## Persist templates (Mongo)
+
+You no longer need to download JSON into `templates/` for Automate to see edits.
+
+1. Start Mongo + API (see [`../server/README.md`](../server/README.md)):
+
+```bash
+cd narrative-styles-portal/server && npm i && npm run dev
+```
+
+2. In Editor: set **Save as id / name** → **Save**. Status should say `Saved to DB`.
+3. Open **Automate** (or hit **Refresh**) — the template chip appears and stays frozen for fill/export.
+
+**Download** still exports a file for git/`templates/manifest.json` if you want a seed on disk.
+
+## Engine bridge
+
+`window.__RENDER_API_V3__` (existing Automate API) plus editor helpers:
+
+- `subscribe`, `getEditorSnapshot`, `listLayers`, `selectLayer`
+- `switchTemplate`, `setTextValue`, `setBrandColors`, `setLayerGeometry`
+- `addShape`, `listShapePresets`, `bakeTemplate` (returns `{ snapshot, json }`)
+- `injectRemoteTemplates` (merge DB JSON into the live engine)
+- `zoomFit` / `zoomIn` / `zoomOut` / `toggleFrameGuide` / `deselect`
+- existing `setPayload`, `exportPng`, `listTemplates`, …
+
+## Rollback
+
+Vanilla remains the live fallback:
+
+- Editor: `narrative-styles-portal/index.html`
+- Automate: `narrative-styles-portal/automate.html`
+
+See [SMOKE_CHECKLIST.md](./SMOKE_CHECKLIST.md).
+
+## Stack
+
+- React 19, Vite 8, Tailwind 4, react-router-dom
+- No second paint engine — drag / autofit / bake / html2canvas stay in `index.html`

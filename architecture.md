@@ -4,7 +4,7 @@
 
 Sports poster lab: design a **1080×1350 (4:5)** layout in the Editor, freeze it as JSON, then fill text/images in Automate and export PNG. There is no backend. The browser is the runtime.
 
-This document describes the **vanilla JS app** in this folder. `react-editor/` is an unused Vite scaffold and is not on the live path.
+This document describes the **vanilla JS app** in this folder and the **React shell** strangler in `react-editor/`. Vanilla `index.html` / `automate.html` remain the fallback until React parity soak is complete.
 
 ---
 
@@ -14,10 +14,10 @@ Two human surfaces, one render engine:
 
 | Surface | File | Job |
 |---|---|---|
-| **Editor** | `index.html` | Place layers, drag geometry, colors, shapes, save a frozen template |
-| **Automate** | `automate.html` | Pick a frozen template, swap copy + images, export PNG |
+| **Editor** | `index.html` (vanilla) or `react-editor/` `/` | Place layers, drag geometry, colors, shapes, save a frozen template |
+| **Automate** | `automate.html` (vanilla) or `react-editor/` `/automate` | Pick a frozen template, swap copy + images, export PNG |
 
-Automate does **not** re-implement drawing. It loads the Editor in a headless iframe (`index.html?headless=1`) and talks to `window.__RENDER_API_V3__`.
+Automate does **not** re-implement drawing. It loads the Editor in a headless iframe (`index.html?headless=1`) and talks to `window.__RENDER_API_V3__`. The React Editor uses `index.html?embed=1` (hides vanilla chrome; keeps `#stage`) and the same API plus editor bridge methods.
 
 ```
 ┌─────────────┐     iframe ?headless=1      ┌──────────────────────┐
@@ -50,8 +50,11 @@ narrative-styles-portal/
 │   └── index.html             Legacy redirect (stale; points at index_2.html)
 │
 ├── templates/
-│   ├── manifest.json          Only files listed here are loaded
+│   ├── manifest.json          Seed files listed here are loaded
 │   └── *.json                 Frozen layouts (layers, automation, defaults)
+│
+├── server/                    Express + MongoDB template API (port 8787)
+│   └── server.js              GET/POST /api/templates — durable Save for Automate
 │
 ├── assets/
 │   ├── library.json           Sidebar asset catalog
@@ -60,10 +63,33 @@ narrative-styles-portal/
 ├── stories.players.js         Bundled sample stories (window.__BUNDLED_STORIES__)
 ├── stories.players.json       Same data as JSON (optional fetch)
 │
-└── react-editor/              Unused React/Vite scaffold
+└── react-editor/              React + Tailwind shell (strangler); iframe → engine
+    ├── src/pages/             EditorPage, AutomatePage
+    ├── src/engine/            usePosterEngine.js (API wait + subscribe)
+    └── README.md              npm run dev; /portal/* proxy to this folder
 ```
 
-Must be served over HTTP (not `file://`) so `fetch` can load `templates/manifest.json`.
+Must be served over HTTP (not `file://`) so `fetch` can load `templates/manifest.json`. For the React app: `cd react-editor && npm run dev` (Vite serves parent files under `/portal/`).
+
+---
+
+## 2b. React shell (strangler)
+
+```
+react-editor (UI chrome)
+    │  iframe ?embed=1 | ?headless=1
+    ▼
+index.html engine (#stage + paint/drag/bake)
+    │  __RENDER_API_V3__
+    ▼
+templates / renderer / html2canvas
+```
+
+- **UI only:** Abyssale-like layout (layers | canvas | properties). No groups / Auto Layout / multi-format.
+- **Do not** reimplement `render()` or pointer handles in React.
+- Embed CSS: `body.embed` hides `#side` / banners; headless unchanged for Automate.
+- Bridge extras: `subscribe`, `listLayers`, `selectLayer`, `setLayerGeometry`, `bakeTemplate`, etc. (see `react-editor/README.md`).
+- Cutover: use React when smoke checklist passes; keep vanilla URLs as rollback.
 
 ---
 
@@ -135,7 +161,7 @@ ensureLayout()[id]                 // per-layer geo the user can drag
 
 ## 5. Template JSON (source of truth)
 
-Disk files listed in `templates/manifest.json` are the only load source. Inline / localStorage templates are not a load path (bakes are a **session overlay**).
+Disk files listed in `templates/manifest.json` seed the engine. Editor **Save** also upserts to Mongo via `server/` (`POST /api/templates`). React Editor/Automate call `injectRemoteTemplates` so DB templates appear without committing JSON to disk. localStorage bakes remain a session overlay.
 
 ### 5.1 Shape of a file
 
@@ -276,18 +302,20 @@ Optional auto palettes:
 |---|---|---|
 | Editor session | `posterEditor.v3` | template, colors, text, layouts, extraLayers, fieldLabels, images |
 | Baked templates | `posterEditor.v3.bakedTemplates` | Full JSON copies so Automate sees last Save without a disk write |
-| Disk | `templates/*.json` + `manifest.json` | Durable source of truth (commit / share) |
+| Disk | `templates/*.json` + `manifest.json` | Seed / shareable source (git) |
+| MongoDB | `narrative_styles.templates` | Durable Save from React Editor → listed dynamically in Automate |
 
-**Save editor → template** (`buildFrozenTemplateJSON`):
+**Save editor → template** (`buildFrozenTemplateJSON` + React `saveTemplateToDb`):
 
 1. Merge template layers + extras + current geo
 2. Set `freezeLayout: true`, `automation.swapFields` / `swapImages`
 3. Embed durable default images (data URLs)
 4. `PosterTemplateLoader.rebuildFromJson` (live)
 5. Write `localStorage` bake map
-6. Optionally download `{id}.json` for `templates/`
+6. React Editor: `POST /api/templates` (upsert); Automate refreshes via `GET /api/templates` + `injectRemoteTemplates`
+7. Optionally download `{id}.json` for `templates/` (git / offline)
 
-Quota: oversized images are dropped from session save; bake retries with player+background only.
+Quota: oversized images are dropped from session save; bake retries with player+background only. Mongo docs max ~16MB — huge embedded data-URLs can fail Save.
 
 ---
 
@@ -301,6 +329,8 @@ __RENDER_API_V3__ = {
   freezeCurrentLayout(),
   listTemplates(),          // id, name, frozen, fields, images, automation
   getTemplateFields(id),
+  bakeTemplate,             // bake + return { snapshot, json }
+  injectRemoteTemplates,    // merge DB / remote JSON into TEMPLATES
   exportPng(),              // data URL
   exportPngBuffer(),
   render(),
@@ -311,6 +341,8 @@ __RENDER_API_V3__ = {
 ```
 
 `setPayload` image aliases: `player_image` / `playerImageUrl`, `logo_url`, `conference_logo`, `sponsor_logo`, `background_image`.
+
+React Automate loads file templates from the iframe, then merges Mongo via `GET /api/templates` → `injectRemoteTemplates`. Use **Refresh** on Automate if you Saved in another tab.
 
 Export: park `#stage` off-screen at native 1080×1350, `html2canvas` scale 2, download PNG. Clipped shapes already have SVG `<img>` children so clip-path is not required.
 
@@ -341,9 +373,22 @@ Editor can cycle bundled stories; Automate can pass `payload.story`.
 - **Canvas is always 1080×1350.** Zoom is CSS transform on `#stage`; export ignores zoom.
 - **No server.** Serve static files; JSON load requires HTTP.
 - **JSON-only templates.** `manifest.json` is the allow-list.
-- **Editor is one HTML file.** Shared math lives in `renderer/`; UI and paint live in `index.html`.
+- **Paint stays in the engine HTML.** Shared math lives in `renderer/`; stage paint/drag/bake live in `index.html`. React only wraps chrome via iframe + `__RENDER_API_V3__`.
 - **html2canvas is the PNG path.** Prefer DOM the library can rasterize (inline SVG images for shapes, real `<img>` for photos).
-- **`react-editor/` is not wired.** Do not treat it as the product.
+- **Vanilla remains rollback.** Prefer `react-editor` for UI work after soak; keep `index.html` / `automate.html` until cutover is explicit.
+
+---
+
+## 13b. Migration progress
+
+```
+- [x] Phase 0 baseline checklist (react-editor/SMOKE_CHECKLIST.md)
+- [x] Phase 1 embed mode + bridge
+- [x] Phase 2 React JS + Tailwind Abyssale shell + StageHost
+- [x] Phase 3 Editor actions via bridge
+- [x] Phase 4 Automate React page
+- [x] Phase 5 architecture + README; vanilla rollback retained
+```
 
 ---
 

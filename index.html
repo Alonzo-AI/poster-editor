@@ -300,6 +300,12 @@
   body.headless #main{width:100%;height:100%;padding:0;background:#0a0b0e;}
   body.headless #stageWrap{box-shadow:none;}
   body.headless #stage{box-shadow:none;}
+  /* React shell embed: hide vanilla chrome; keep stage + zoom toolbar */
+  body.embed #side,body.embed .hint,body.embed #testBanner,body.embed #labBanner,body.embed #templateLoadBanner{display:none!important;}
+  body.embed #app{grid-template-columns:1fr;width:100%;height:100%;}
+  body.embed html,body.embed body{width:100%;height:100%;overflow:hidden;}
+  body.embed #main{width:100%;height:100%;padding:0;background:transparent;}
+  body.embed #zoomlabel{display:none!important;}
   #labBanner{
     margin:0 0 12px;padding:11px 12px;border-radius:var(--radius);
     border:1px solid rgba(255,92,46,.35);background:var(--accent-soft);color:#ffe8de;
@@ -1739,7 +1745,12 @@ function ensureLayout(){
                          fill:def.fill ?? null,
                          clip:(def.clip!=null?def.clip:(def.shape && SHAPE_PRESETS[def.shape]?.clip)||null),
                          shape:def.shape ?? null,
-                         stroke:def.stroke ?? null, strokeW:def.strokeW ?? null, hollow:!!def.hollow };
+                         stroke:def.stroke ?? null, strokeW:def.strokeW ?? null, hollow:!!def.hollow,
+                         bg:def.bg ?? null, pad:def.pad ?? null,
+                         shadow:!!def.shadow, shadowColor:def.shadowColor || "black",
+                         shadowBlur:def.shadowBlur ?? 8, shadowX:def.shadowX ?? 0, shadowY:def.shadowY ?? 3,
+                         textBorderOn:!!(def.border || def.outline), textBorderColor:def.borderColor || def.color || "white",
+                         textBorderW:def.borderW ?? 2 };
     else {
       if(def.type==="text" && L[id].underline==null && def.underline) L[id].underline=true;
       if(def.type==="text"){
@@ -1751,6 +1762,9 @@ function ensureLayout(){
         if(L[id].stroke==null && def.stroke!=null) L[id].stroke=def.stroke;
         if(L[id].strokeW==null && def.strokeW!=null) L[id].strokeW=def.strokeW;
         if(L[id].hollow==null && def.hollow) L[id].hollow=true;
+        if(L[id].bg==null && def.bg!=null) L[id].bg=def.bg;
+        if(L[id].pad==null && def.pad!=null) L[id].pad=def.pad;
+        if(L[id].shadow==null && def.shadow) L[id].shadow=true;
       }
       if((L[id].rotate==null || L[id].rotate===0) && (def.rotate || def.transform)){
         L[id].rotate=def.rotate!=null?+def.rotate:parseRotate(def.transform);
@@ -2477,6 +2491,64 @@ function applyTextUnderline(el, def, g){
   }
 }
 
+/** Background chip, pad, radius, CSS box border around text. */
+function applyTextChrome(el, def, g, layerId){
+  if(!el) return;
+  const id=layerId || el.dataset.id;
+  const bg=g.bg ?? def.bg ?? null;
+  const pad=g.pad ?? def.pad ?? null;
+  const rad=g.radius ?? def.radius ?? null;
+  if(bg){
+    const vapor=typeof vaporMotionBgColorForLayer==="function" ? vaporMotionBgColorForLayer(id) : null;
+    el.style.background=vapor || roleColor(bg);
+  } else {
+    el.style.background="";
+  }
+  if(pad!=null && pad!==""){
+    el.style.padding=typeof pad==="number" ? pad+"px" : String(pad);
+  } else if(bg){
+    if(!el.style.padding) el.style.padding="8px 14px";
+  } else {
+    el.style.padding="";
+  }
+  if(rad!=null && rad!=="" && (+rad)>0){
+    el.style.borderRadius=(+rad)+"px";
+  } else if(bg){
+    el.style.borderRadius="6px";
+  } else {
+    el.style.borderRadius="";
+  }
+  if(g.textBorderOn || def.outline){
+    const bw=Math.max(1, +(g.textBorderW ?? def.borderW ?? 2) || 2);
+    const bc=roleColor(g.textBorderColor || def.borderColor || def.color || "white");
+    el.style.border=`${bw}px solid ${bc}`;
+    if(!bg && def.outline) el.style.background="transparent";
+  } else {
+    el.style.border="";
+  }
+}
+
+function resolveTextShadow(g, def, size, textColor, layerId){
+  if(g.shadow===false) return "";
+  if(g.shadow || def.shadow){
+    const x=g.shadowX ?? def.shadowX ?? 0;
+    const y=g.shadowY ?? def.shadowY ?? 3;
+    const blur=g.shadowBlur ?? def.shadowBlur ?? 8;
+    const col=roleColor(g.shadowColor || def.shadowColor || "black");
+    const a=g.shadowOpacity!=null ? g.shadowOpacity : 0.55;
+    const hex=normalizeHex(col) || (typeof col==="string" && col.startsWith("#") ? col : null);
+    const shadowCol=hex ? rgba(hex, a) : col;
+    return `${x}px ${y}px ${blur}px ${shadowCol}`;
+  }
+  if(state.template==="magazine" && ["playerName","playerMeta","eyebrow"].includes(layerId)){
+    return magazineHeaderTextShadow(size, textColor);
+  }
+  if(state.template==="salukis_dark" && ["playerName","playerMeta"].includes(layerId)){
+    return salukisDarkHeaderTextShadow(size, textColor);
+  }
+  return "";
+}
+
 /** Horizontal + vertical placement of text inside its box. */
 function applyTextBoxAlign(el, def, g){
   if(!el || def.type!=="text") return;
@@ -2725,13 +2797,7 @@ function render(){
         el.style.textShadow="";
       } else {
         el.style.color = textColor;
-        if(state.template==="magazine" && ["playerName","playerMeta","eyebrow"].includes(id)){
-          el.style.textShadow=magazineHeaderTextShadow(size, textColor);
-        } else if(state.template==="salukis_dark" && ["playerName","playerMeta"].includes(id)){
-          el.style.textShadow=salukisDarkHeaderTextShadow(size, textColor);
-        } else {
-          el.style.textShadow="";
-        }
+        el.style.textShadow=resolveTextShadow(g, def, size, textColor, id);
       }
       applyTextStrokePaint(el, def, g, textColor);
       const flow=el.querySelector(":scope > .txt-flow");
@@ -2740,10 +2806,7 @@ function render(){
       el.style.lineHeight = def.lh ?? 1.0;
       el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
       el.style.textTransform = g.textTransform ?? def.textTransform ?? "none";
-      if(def.bg){ el.style.background = vaporMotionBgColorForLayer(id) || roleColor(def.bg); }
-      if(def.pad){ el.style.padding = def.pad; }
-      if(def.radius){ el.style.borderRadius = def.radius+"px"; }
-      if(def.outline){ el.style.border = `3px solid ${roleColor(def.color)}`; el.style.background="transparent"; }
+      applyTextChrome(el, def, g, id);
       // stat inner styling
       if(def.kind==="stat"){
         const stacked=!!(def.statStack);
@@ -2806,6 +2869,7 @@ function render(){
   updateTestBanner();
   if(!render._skipInspector) syncInspector();
   render._skipInspector=false;
+  notifyEditorBridge("render");
 }
 
 function labelFor(bind){
@@ -3121,19 +3185,14 @@ function applyTextLayerVisuals(el, def, g, layerId){
     el.style.textShadow="";
   } else {
     el.style.color=textColor;
-    if(state.template==="magazine" && ["playerName","playerMeta","eyebrow"].includes(id)){
-      el.style.textShadow=magazineHeaderTextShadow(size, textColor);
-    } else if(state.template==="salukis_dark" && ["playerName","playerMeta"].includes(id)){
-      el.style.textShadow=salukisDarkHeaderTextShadow(size, textColor);
-    } else {
-      el.style.textShadow="";
-    }
+    el.style.textShadow=resolveTextShadow(g, def, size, textColor, id);
   }
   applyTextStrokePaint(el, def, g, textColor);
   const flow=el.querySelector(":scope > .txt-flow");
   if(flow) applyTextStrokePaint(flow, def, g, textColor);
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
+  applyTextChrome(el, def, g, id);
   applyTextBoxAlign(el, def, g);
   if(def.kind!=="stat") fitTextToFixedBox(el, g, def);
 }
@@ -3185,6 +3244,7 @@ function select(id){
   state.selected=id;
   document.querySelectorAll(".layer").forEach(l=>l.classList.toggle("sel", l.dataset.id===id));
   syncInspector();
+  notifyEditorBridge("select");
   const def=id && layersOf()[id];
   if(def && def.type==="text" && def.kind!=="stat" && def.bind!=="footer"){
     const focusEl=document.getElementById("iTxt")||document.getElementById("iTxtClass");
@@ -4778,8 +4838,22 @@ function layerDefToJson(id, def, g){
     }
     const tt=g.textTransform??def.textTransform;
     if(tt) out.textTransform=tt;
-    if(def.bg) out.bg=def.bg;
-    if(def.pad) out.pad=def.pad;
+    const bg=g.bg??def.bg;
+    if(bg) out.bg=bg;
+    const pad=g.pad??def.pad;
+    if(pad) out.pad=pad;
+    if(g.shadow||def.shadow){
+      out.shadow=true;
+      if(g.shadowColor||def.shadowColor) out.shadowColor=g.shadowColor||def.shadowColor;
+      if(g.shadowBlur!=null||def.shadowBlur!=null) out.shadowBlur=g.shadowBlur??def.shadowBlur;
+      if(g.shadowX!=null||def.shadowX!=null) out.shadowX=g.shadowX??def.shadowX;
+      if(g.shadowY!=null||def.shadowY!=null) out.shadowY=g.shadowY??def.shadowY;
+    }
+    if(g.textBorderOn||def.outline){
+      out.border=true;
+      out.borderColor=g.textBorderColor||def.borderColor||"white";
+      out.borderW=g.textBorderW??def.borderW??2;
+    }
     {
       const strokeVal=("stroke" in g) ? g.stroke : def.stroke;
       const strokeWVal=("strokeW" in g) ? g.strokeW : def.strokeW;
@@ -5482,6 +5556,129 @@ function shouldUseLogoPalette(payload, templateId){
   return state.autoPalette;
 }
 
+/* ---------- React embed bridge ---------- */
+const _editorSubs=new Set();
+let _editorNotifyTimer=0;
+function buildEditorSnapshot(){
+  const layers=[];
+  const L=(()=>{ try{ return ensureLayout(); }catch(_){ return {}; }})();
+  for(const [id,def] of Object.entries(layersOf())){
+    const g=L[id]||{};
+    if(g.hidden) continue;
+    layers.push({
+      id,
+      type:def.type||(def.shape?"block":"unknown"),
+      bind:def.bind||null,
+      shape:def.shape||g.shape||null,
+      label:def.type==="image"?labelFor(def.bind)
+        :(def.type==="block"||def.shape||/^shape_/.test(id))?(def.shape||g.shape||"shape")
+        :(def.bind||id),
+      z:g.z??def.z??0,
+    });
+  }
+  layers.sort((a,b)=>(a.z||0)-(b.z||0));
+  const sel=state.selected;
+  const def=sel?layersOf()[sel]:null;
+  const g=sel?geo(sel):null;
+  let selected=null;
+  if(sel && def && g){
+    const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(sel);
+    const fontPx=g.baseSize ?? g.size ?? def.size ?? 30;
+    const strokeOn=!!(typeof resolveStrokeColor==="function" && resolveStrokeColor(g, def)) && (typeof textStrokeWidth==="function"?textStrokeWidth(g, def):0)>0;
+    selected={
+      id:sel,
+      type:isBlock?"block":(def.type||"unknown"),
+      bind:def.bind||null,
+      shape:def.shape||g.shape||null,
+      kind:def.kind||null,
+      isImage:def.type==="image",
+      isText:def.type==="text" && !isBlock,
+      isBlock,
+      isGlass:def.type==="glass",
+      cropping:state.cropMode===sel,
+      lockFonts:!!state.lockTemplateFonts,
+      textStyle:typeof detectTextStylePreset==="function"?detectTextStylePreset(g,def):null,
+      geo:{
+        x:g.x, y:g.y, w:g.w, h:g.h,
+        rotate:g.rotate||0,
+        opacity:g.opacity!=null?g.opacity:1,
+        fill:g.fill||def.fill||null,
+        color:g.color||def.color||null,
+        colorHex:typeof resolvedLayerColorHex==="function"?resolvedLayerColorHex(g,def):(g.color||"#ffffff"),
+        fillHex:typeof resolvedBlockFillHex==="function"?resolvedBlockFillHex(g,def):(g.fill||g.color||"#ffffff"),
+        align:g.align??def.align??"left",
+        vAlign:g.vAlign??def.vAlign??"middle",
+        weight:g.weight??def.weight??700,
+        font:g.font||def.font||F.sans,
+        size:fontPx,
+        fitSize:g.fitSize??null,
+        ls:g.ls??def.ls??0,
+        italic:!!(g.italic??def.italic),
+        underline:!!(g.underline??def.underline),
+        textTransform:g.textTransform??def.textTransform??null,
+        stroke:g.stroke??def.stroke??null,
+        strokeW:strokeOn?(typeof textStrokeWidth==="function"?textStrokeWidth(g,def):g.strokeW)||2:0,
+        strokeOn,
+        strokeHex:typeof resolvedStrokeColorHex==="function"?resolvedStrokeColorHex(g,def):"#000000",
+        bg:g.bg??def.bg??null,
+        bgOn:!!(g.bg??def.bg),
+        bgHex:roleColor(g.bg||def.bg||"primary"),
+        pad:g.pad??def.pad??(g.bg||def.bg?"8px 14px":null),
+        shadow:!!(g.shadow||def.shadow),
+        shadowColor:g.shadowColor||def.shadowColor||"black",
+        shadowHex:roleColor(g.shadowColor||def.shadowColor||"black"),
+        shadowBlur:g.shadowBlur??def.shadowBlur??8,
+        shadowX:g.shadowX??def.shadowX??0,
+        shadowY:g.shadowY??def.shadowY??3,
+        textBorderOn:!!(g.textBorderOn||def.outline),
+        textBorderColor:g.textBorderColor||def.borderColor||"white",
+        textBorderHex:roleColor(g.textBorderColor||def.borderColor||"white"),
+        textBorderW:g.textBorderW??def.borderW??2,
+        bold:((g.weight??def.weight??700)>=700),
+        radius:g.radius??def.radius??0,
+        hasClip:!!(g.clip||def.clip),
+        fit:def.type==="image"?(typeof imgFit==="function"?imgFit(def,g):(g.fit||def.fit||"contain")):null,
+        zoom:g.zoom||1,
+        flipH:!!g.flipH,
+        flipV:!!g.flipV,
+        lockAspect:!!g.lockAspect,
+        borderOn:!!g.borderOn,
+        borderW:g.borderW||6,
+        borderColor:g.borderColor||"primary",
+      },
+      text:def.bind!=null?(state.text[def.bind]??""):null,
+      playerClass:state.text.playerClass??"",
+      position:state.text.position??"",
+    };
+  }
+  return {
+    template:state.template,
+    templateName:TEMPLATES[state.template]?.name||state.template,
+    selectedId:sel,
+    selected,
+    layers,
+    text:{...state.text},
+    colors:{ primary:state.colors.primary, secondary:state.colors.secondary },
+    zoom:state.zoom,
+    shapePresets:Object.keys(SHAPE_PRESETS),
+    storyIndex:state.storyIndex,
+    storyCount:state.stories?.length||0,
+    storyLabel:state.stories?.[state.storyIndex]?.player_name
+      || state.stories?.[state.storyIndex]?.slug
+      || null,
+    lockTemplateFonts:!!state.lockTemplateFonts,
+    ready:true,
+  };
+}
+function notifyEditorBridge(reason){
+  if(!_editorSubs.size) return;
+  clearTimeout(_editorNotifyTimer);
+  _editorNotifyTimer=setTimeout(()=>{
+    const snap=buildEditorSnapshot();
+    _editorSubs.forEach(cb=>{ try{ cb(snap, reason||"update"); }catch(e){ console.warn(e); } });
+  }, 40);
+}
+
 window.__RENDER_API_V3__={
   async setPayload(payload){
     const styleId=payload.style||payload.template;
@@ -5601,6 +5798,264 @@ window.__RENDER_API_V3__={
   getState(){ return serializable(); },
   applyStory,
   loadImageFromUrl,
+  /* Editor bridge for React shell */
+  getEditorSnapshot(){ return buildEditorSnapshot(); },
+  listLayers(){ return buildEditorSnapshot().layers; },
+  getSelection(){ return buildEditorSnapshot().selected; },
+  selectLayer(id){ select(id||null); return buildEditorSnapshot(); },
+  subscribe(cb){
+    if(typeof cb!=="function") return ()=>{};
+    _editorSubs.add(cb);
+    try{ cb(buildEditorSnapshot(), "subscribe"); }catch(_){}
+    return ()=>_editorSubs.delete(cb);
+  },
+  switchTemplate(id){
+    switchTemplate(id);
+    notifyEditorBridge("template");
+    return buildEditorSnapshot();
+  },
+  setTextValue(key, value){
+    if(!key) return buildEditorSnapshot();
+    state.text[key]=value??"";
+    try{ buildTextFields(); }catch(_){}
+    render();
+    scheduleSave();
+    return buildEditorSnapshot();
+  },
+  setBrandColors(colors={}){
+    if(colors.primary) state.colors.primary=colors.primary;
+    if(colors.secondary) state.colors.secondary=colors.secondary;
+    state.colors=PosterRenderEngine.enrichThemeColors(state.colors);
+    if(cP) cP.value=state.colors.primary;
+    if(cS) cS.value=state.colors.secondary;
+    render();
+    scheduleSave();
+    return buildEditorSnapshot();
+  },
+  setLayerGeometry(id, patch={}){
+    return window.__RENDER_API_V3__.patchLayerStyle(id, patch);
+  },
+  patchLayerStyle(id, patch={}){
+    const lid=id||state.selected;
+    if(!lid || !layersOf()[lid]) return buildEditorSnapshot();
+    const def=layersOf()[lid];
+    const g=geo(lid);
+    const mark=()=>{ try{ markTextStyleCustom(g); }catch(_){} };
+
+    for(const k of ["x","y","w","h","rotate","opacity","radius","ls","zoom","borderW","borderColor"]){
+      if(patch[k]!=null) g[k]=patch[k];
+    }
+    if(patch.lockAspect!=null) g.lockAspect=!!patch.lockAspect;
+    if(patch.borderOn!=null) g.borderOn=!!patch.borderOn;
+    if(patch.flipH!=null) g.flipH=!!patch.flipH;
+    if(patch.flipV!=null) g.flipV=!!patch.flipV;
+    if(patch.fit!=null) g.fit=patch.fit;
+    if(patch.align!=null){
+      g.align=patch.align;
+      mark();
+      const runtime=TEMPLATES[state.template]?.layers?.[lid];
+      if(runtime) runtime.align=g.align;
+      const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===lid);
+      if(jl) jl.align=g.align;
+    }
+    if(patch.vAlign!=null){
+      g.vAlign=patch.vAlign;
+      const runtime=TEMPLATES[state.template]?.layers?.[lid];
+      if(runtime) runtime.vAlign=g.vAlign;
+      const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===lid);
+      if(jl) jl.vAlign=g.vAlign;
+    }
+    if(patch.weight!=null){ g.weight=+patch.weight; mark(); }
+    if(patch.italic!=null){ g.italic=!!patch.italic; mark(); }
+    if(patch.underline!=null){ g.underline=!!patch.underline; mark(); }
+    if(patch.font!=null){ g.font=patch.font; mark(); }
+    if(patch.textTransform!==undefined){ g.textTransform=patch.textTransform; mark(); }
+    if(patch.color!=null){ g.color=patch.color; mark(); }
+    if(patch.fill!=null){ g.fill=patch.fill; g.color=patch.fill; }
+    if(patch.bold===true){ g.weight=800; mark(); }
+    if(patch.bold===false){ g.weight=400; mark(); }
+    if(patch.bgOn===false){ g.bg=null; }
+    if(patch.bgOn===true && !g.bg){ g.bg="primary"; if(g.pad==null) g.pad="8px 14px"; }
+    if(patch.bg!==undefined){ g.bg=patch.bg; if(patch.bg && g.pad==null) g.pad="8px 14px"; }
+    if(patch.pad!==undefined){ g.pad=patch.pad; }
+    if(patch.shadow!=null){ g.shadow=!!patch.shadow; }
+    if(patch.shadowColor!=null){ g.shadowColor=patch.shadowColor; g.shadow=true; }
+    if(patch.shadowBlur!=null){ g.shadowBlur=+patch.shadowBlur; g.shadow=true; }
+    if(patch.shadowX!=null){ g.shadowX=+patch.shadowX; }
+    if(patch.shadowY!=null){ g.shadowY=+patch.shadowY; }
+    if(patch.textBorderOn!=null){ g.textBorderOn=!!patch.textBorderOn; }
+    if(patch.textBorderColor!=null){ g.textBorderColor=patch.textBorderColor; g.textBorderOn=true; }
+    if(patch.textBorderW!=null){ g.textBorderW=Math.max(1, +patch.textBorderW||1); g.textBorderOn=true; }
+    if(patch.size!=null || patch.baseSize!=null){
+      const px=Math.max(8, Math.min(400, Math.round(+(patch.size??patch.baseSize)||30)));
+      g.size=px; g.baseSize=px; g.manualSize=true;
+    }
+    if(patch.strokeOn===false){ g.stroke=null; g.strokeW=0; mark(); }
+    if(patch.strokeOn===true){
+      if(!(g.strokeW>0)) g.strokeW=2;
+      if(!g.stroke) g.stroke="black";
+      mark();
+    }
+    if(patch.stroke!=null){ g.stroke=patch.stroke; if(!(g.strokeW>0)) g.strokeW=2; mark(); }
+    if(patch.strokeW!=null){ g.strokeW=Math.max(0, +patch.strokeW||0); mark(); }
+    if(patch.textStyle!=null){
+      applyTextStylePreset(g, def, patch.textStyle);
+    }
+    if(patch.cropping===true){ state.cropMode=lid; }
+    if(patch.cropping===false && state.cropMode===lid){ state.cropMode=null; }
+    if(patch.resetCrop){ g.zoom=1; g.cropX=.5; g.cropY=.5; g.flipH=false; g.flipV=false; }
+
+    render();
+    scheduleSave();
+    notifyEditorBridge("style");
+    return buildEditorSnapshot();
+  },
+  listFontOptions(){
+    return FONT_OPTS.map(([label, value])=>({ label, value }));
+  },
+  listColorRoles(){
+    return (CAPTION_COLOR_OPTIONS||[])
+      .filter(([v])=>v!=="__default")
+      .map(([value, label])=>({ value, label }));
+  },
+  listTextStylePresets(){
+    return Object.entries(TEXT_STYLE_PRESETS).map(([id,p])=>({ id, label:p.label }));
+  },
+  applyTextStyle(presetId){
+    const lid=state.selected;
+    if(!lid || !layersOf()[lid]) return buildEditorSnapshot();
+    applyTextStylePreset(geo(lid), layersOf()[lid], presetId);
+    render();
+    scheduleSave();
+    notifyEditorBridge("style");
+    return buildEditorSnapshot();
+  },
+  setLockTemplateFonts(on){
+    state.lockTemplateFonts=!!on;
+    const lf=document.getElementById("lockFonts");
+    if(lf) lf.checked=state.lockTemplateFonts;
+    render();
+    scheduleSave();
+    return buildEditorSnapshot();
+  },
+  addShape(presetId){
+    const nid=addShapeLayer(presetId);
+    if(nid){ select(nid); render(); scheduleSave(); }
+    return buildEditorSnapshot();
+  },
+  listShapePresets(){
+    return Object.entries(SHAPE_PRESETS).map(([id,p])=>({ id, label:p.label }));
+  },
+  async bakeTemplate(opts={}){
+    const idInput=document.getElementById("bakeTemplateId");
+    const nameInput=document.getElementById("bakeTemplateName");
+    if(opts.id && idInput) idInput.value=opts.id;
+    if(opts.name && nameInput) nameInput.value=opts.name;
+    const json=await bakeEditorIntoTemplate(!!opts.download);
+    notifyEditorBridge("bake");
+    return { snapshot:buildEditorSnapshot(), json };
+  },
+  /** Inject saved DB templates into the live TEMPLATES map (Automate/Editor). */
+  injectRemoteTemplates(list=[]){
+    const loader=window.PosterTemplateLoader;
+    const ids=[];
+    for(const item of list){
+      const json=item?.json || item;
+      if(!json || typeof json!=="object" || !json.id) continue;
+      if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
+      else {
+        TEMPLATES[json.id]={
+          name:json.name||json.id,
+          _json:json,
+          stageBg:()=>json.canvas?.background||"#000",
+          deco:()=>json.deco?.html||"",
+          layers:Object.fromEntries((json.layers||[]).map(l=>{
+            const {id:lid, font, ...rest}=l;
+            return [lid, { ...rest, font:(typeof F!=="undefined" && F[font])||font }];
+          })),
+        };
+      }
+      if(!ENABLED_TEMPLATES.includes(json.id)) ENABLED_TEMPLATES.push(json.id);
+      try{ saveBakedTemplateJson(json); }catch(_){}
+      ids.push(json.id);
+    }
+    try{ buildTplChips(); }catch(_){}
+    notifyEditorBridge("remote-templates");
+    return { count:ids.length, ids, templates:window.__RENDER_API_V3__.listTemplates() };
+  },
+  zoomFit(){ document.getElementById("zoomFit")?.click(); return buildEditorSnapshot(); },
+  zoomIn(){ document.getElementById("zoomIn")?.click(); return buildEditorSnapshot(); },
+  zoomOut(){ document.getElementById("zoomOut")?.click(); return buildEditorSnapshot(); },
+  toggleFrameGuide(){ document.getElementById("frameGuideBtn")?.click(); return buildEditorSnapshot(); },
+  deselect(){ select(null); return buildEditorSnapshot(); },
+  listStories(){
+    return (state.stories||[]).map((s,i)=>({
+      index:i,
+      label:`${i+1}. ${s.player_name||s.slug||"story"}${s.team_name?" — "+s.team_name:""}`,
+      player_name:s.player_name||null,
+      slug:s.slug||null,
+    }));
+  },
+  setStoryIndex(i){
+    if(!state.stories?.length) return buildEditorSnapshot();
+    state.storyIndex=Math.max(0, Math.min(+i, state.stories.length-1));
+    applyStory(state.stories[state.storyIndex]);
+    try{
+      const sel=document.getElementById("storySelect");
+      if(sel) sel.value=String(state.storyIndex);
+    }catch(_){}
+    scheduleSave();
+    notifyEditorBridge("story");
+    return buildEditorSnapshot();
+  },
+  gotoStory(delta){
+    gotoStory(+delta||0);
+    notifyEditorBridge("story");
+    return buildEditorSnapshot();
+  },
+  listAssetLibrary(){
+    return (_assetLibrary||[]).map(a=>({
+      id:a.id,
+      name:a.name||a.id,
+      slot:a.slot||null,
+      src:a.src,
+      preset:a.preset||null,
+      tags:a.tags||[],
+      isShape:a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-"),
+    }));
+  },
+  async applyLibraryAsset(assetId){
+    const a=(_assetLibrary||[]).find(x=>x.id===assetId);
+    if(!a) throw new Error("Asset not found: "+assetId);
+    const isShape=a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-");
+    if(isShape) await placeLibraryShapeAsset(a);
+    else await loadImageFromUrl(a.slot||"player", a.src);
+    notifyEditorBridge("asset");
+    return buildEditorSnapshot();
+  },
+  listImageSlots(){
+    return [["player","Player image"],["background","Background"],["logo","Team logo"],["conference","Conference logo"],["sponsor","Sponsor logo"]]
+      .map(([key,label])=>{
+        const slot=imagesOf()?.[key];
+        return { key, label, loaded:!!slot?.src };
+      });
+  },
+  async setImageSlot(key, dataUrl){
+    if(!key || !dataUrl) return buildEditorSnapshot();
+    await loadImageFromUrl(key, dataUrl);
+    notifyEditorBridge("image");
+    return buildEditorSnapshot();
+  },
+  clearImageSlot(key){
+    if(key && imagesOf()?.[key]){
+      delete imagesOf()[key];
+      try{ buildAssets(); buildLogoControls(); }catch(_){}
+      render();
+      scheduleSave();
+      notifyEditorBridge("image");
+    }
+    return buildEditorSnapshot();
+  },
 };
 
 function templateImageSlots(templateId){
@@ -5636,10 +6091,13 @@ function templateInputFields(templateId){
 async function init(){
   const qs=new URLSearchParams(location.search);
   const headless=qs.get("headless")==="1";
+  const embed=qs.get("embed")==="1";
   if(headless) document.body.classList.add("headless");
+  if(embed) document.body.classList.add("embed");
   // Never persist / restore canvas zoom — always start from fit (stops growth across navigations)
   state.zoom=null;
   // Headless / automate preview should start clean (no editor localStorage)
+  // Embed keeps editor session so React shell shares freeze/bake state
   if(!headless) loadState();
   state.zoom=null;
   const qp=qs.get("tpl");
