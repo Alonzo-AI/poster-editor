@@ -80,6 +80,72 @@ function ColorFields({ role, hex, roles, onRole, onHex }) {
   )
 }
 
+function SliderStepper({ label, value, min, max, step = 1, onChange }) {
+  const v = Number.isFinite(+value) ? +value : min
+  return (
+    <div className="mb-2.5">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-dim">{label}</span>
+        <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            className="ui-icon-btn h-6 w-6 px-0 text-[11px]"
+            onClick={() => onChange(Math.max(min, v - step))}
+          >
+            −
+          </button>
+          <input
+            type="number"
+            className={`${inputClass} w-14 py-0.5 text-center text-[11px]`}
+            value={v}
+            min={min}
+            max={max}
+            step={step}
+            onChange={(e) => onChange(+e.target.value)}
+          />
+          <button
+            type="button"
+            className="ui-icon-btn h-6 w-6 px-0 text-[11px]"
+            onClick={() => onChange(Math.min(max, v + step))}
+          >
+            +
+          </button>
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={Math.min(max, Math.max(min, v))}
+        className="w-full accent-blaze"
+        onChange={(e) => onChange(+e.target.value)}
+      />
+    </div>
+  )
+}
+
+function EffectPreset({ id, label, active, previewStyle, onClick }) {
+  return (
+    <button
+      type="button"
+      title={label}
+      onClick={onClick}
+      className={`flex flex-col items-center gap-1 rounded-md border p-2 ${
+        active ? 'border-blaze bg-panel2' : 'border-line bg-inset hover:border-muted'
+      }`}
+    >
+      <span
+        className="flex h-10 w-12 items-center justify-center text-[18px] font-bold text-paper"
+        style={{ textShadow: previewStyle, fontFamily: 'Georgia, serif' }}
+      >
+        Ag
+      </span>
+      <span className="text-[10px] text-dim">{label}</span>
+    </button>
+  )
+}
+
 /**
  * Full layer properties: geometry, font, size, color, stroke, image crop, shape fill.
  */
@@ -414,53 +480,97 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
               </>
             )}
 
-            <label className="mb-2 flex items-center gap-2 text-sm text-dim">
-              <input
-                type="checkbox"
-                checked={!!g.shadow}
-                onChange={(e) => patch({ shadow: e.target.checked })}
-              />
-              Text shadow
-            </label>
-            {g.shadow && (
-              <>
-                <ColorFields
-                  role={g.shadowColor}
-                  hex={g.shadowHex}
-                  roles={roles}
-                  onRole={(v) => patch({ shadowColor: v })}
-                  onHex={(v) => patch({ shadowColor: v })}
+            <div className="mt-3 border-t border-line pt-3">
+              <h3 className="mb-2 text-[11px] font-semibold text-dim">Effects</h3>
+              <div className="mb-3 grid grid-cols-3 gap-1.5">
+                <EffectPreset
+                  id="drop"
+                  label="Drop"
+                  active={!!g.shadow && (g.shadowEffect || 'drop') === 'drop'}
+                  previewStyle="3px 3px 4px rgba(0,0,0,.55)"
+                  onClick={() => patch({ shadowEffect: 'drop' })}
                 />
-                <Field label={`Blur: ${g.shadowBlur ?? 8}px`}>
-                  <input
-                    type="range"
+                <EffectPreset
+                  id="glow"
+                  label="Glow"
+                  active={!!g.shadow && g.shadowEffect === 'glow'}
+                  previewStyle="0 0 6px #fff, 0 0 12px #fff"
+                  onClick={() => patch({ shadowEffect: 'glow' })}
+                />
+                <EffectPreset
+                  id="echo"
+                  label="Echo"
+                  active={!!g.shadow && g.shadowEffect === 'echo'}
+                  previewStyle="3px 3px 0 rgba(0,0,0,.9), 6px 6px 0 rgba(0,0,0,.7), 9px 9px 0 rgba(0,0,0,.5)"
+                  onClick={() => patch({ shadowEffect: 'echo' })}
+                />
+              </div>
+              {g.shadow && (
+                <>
+                  {(g.shadowEffect || 'drop') !== 'glow' && (
+                    <>
+                      <SliderStepper
+                        label="Direction"
+                        value={g.shadowDir ?? -45}
+                        min={-180}
+                        max={180}
+                        onChange={(v) => patch({ shadowDir: v })}
+                      />
+                      <SliderStepper
+                        label="Offset"
+                        value={g.shadowOffset ?? 12}
+                        min={0}
+                        max={80}
+                        onChange={(v) => patch({ shadowOffset: v })}
+                      />
+                    </>
+                  )}
+                  {(g.shadowEffect || 'drop') !== 'echo' && (
+                    <SliderStepper
+                      label="Blur"
+                      value={g.shadowBlur ?? 8}
+                      min={0}
+                      max={60}
+                      onChange={(v) => patch({ shadowBlur: v })}
+                    />
+                  )}
+                  <SliderStepper
+                    label="Transparency"
+                    value={g.shadowTransparency ?? Math.round(100 * (g.shadowOpacity ?? 0.55))}
                     min={0}
-                    max={40}
-                    value={g.shadowBlur ?? 8}
-                    className="w-full accent-blaze"
-                    onChange={(e) => patch({ shadowBlur: +e.target.value })}
+                    max={100}
+                    onChange={(v) => patch({ shadowTransparency: v })}
                   />
-                </Field>
-                <div className="grid grid-cols-2 gap-2">
-                  <Field label="Offset X">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="text-[11px] text-dim">Colour</span>
                     <input
-                      type="number"
-                      className={inputClass}
-                      value={g.shadowX ?? 0}
-                      onChange={(e) => patch({ shadowX: +e.target.value })}
+                      type="color"
+                      className="h-8 w-8 cursor-pointer rounded-full border border-line bg-inset p-0"
+                      value={/^#[0-9a-fA-F]{6}$/.test(g.shadowHex || '') ? g.shadowHex : '#000000'}
+                      onChange={(e) => patch({ shadowColor: e.target.value })}
                     />
-                  </Field>
-                  <Field label="Offset Y">
                     <input
-                      type="number"
-                      className={inputClass}
-                      value={g.shadowY ?? 3}
-                      onChange={(e) => patch({ shadowY: +e.target.value })}
+                      className={`${inputClass} flex-1`}
+                      value={g.shadowHex || ''}
+                      spellCheck={false}
+                      onChange={(e) => patch({ shadowColor: e.target.value })}
+                      onBlur={(e) => {
+                        let v = e.target.value.trim()
+                        if (/^[0-9a-fA-F]{6}$/.test(v)) v = `#${v}`
+                        if (/^#[0-9a-fA-F]{6}$/.test(v)) patch({ shadowColor: v })
+                      }}
                     />
-                  </Field>
-                </div>
-              </>
-            )}
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn-primary mt-1 w-full"
+                    onClick={() => patch({ shadowEffect: 'none' })}
+                  >
+                    Remove effect
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
           <Field label="Align">

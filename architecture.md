@@ -293,6 +293,7 @@ Optional auto palettes:
 
 - Fill: role (`primary`, `white`, …) **or** `#RRGGBB` via Hex / swatch → stored on layer as `color`.
 - Stroke: optional outline (`stroke` + `strokeW`) with the same role-or-hex pattern → `webkitTextStroke` at paint time; baked into frozen JSON when enabled.
+- Effects (React Styles panel): **Drop** / **Glow** / **Echo** → CSS `text-shadow` via `shadowEffect`, `shadowDir`, `shadowOffset`, `shadowBlur`, `shadowOpacity`, `shadowColor`. Baked on Save; Automate keeps them frozen.
 
 ---
 

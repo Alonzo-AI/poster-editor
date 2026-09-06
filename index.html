@@ -1780,6 +1780,9 @@ function ensureLayout(){
                          bg:def.bg ?? null, pad:def.pad ?? null,
                          shadow:!!def.shadow, shadowColor:def.shadowColor || "black",
                          shadowBlur:def.shadowBlur ?? 8, shadowX:def.shadowX ?? 0, shadowY:def.shadowY ?? 3,
+                         shadowOpacity:def.shadowOpacity ?? null,
+                         shadowEffect:def.shadowEffect || (def.shadow?"drop":null),
+                         shadowDir:def.shadowDir ?? null, shadowOffset:def.shadowOffset ?? null,
                          textBorderOn:!!(def.border || def.outline), textBorderColor:def.borderColor || def.color || "white",
                          textBorderW:def.borderW ?? 2 };
     else {
@@ -1796,6 +1799,10 @@ function ensureLayout(){
         if(L[id].bg==null && def.bg!=null) L[id].bg=def.bg;
         if(L[id].pad==null && def.pad!=null) L[id].pad=def.pad;
         if(L[id].shadow==null && def.shadow) L[id].shadow=true;
+      if(L[id].shadow && L[id].shadowEffect==null) L[id].shadowEffect=def.shadowEffect||"drop";
+      if(L[id].shadow && L[id].shadowDir==null && L[id].shadowOffset==null){
+        syncShadowPolarFromXY(L[id]);
+      }
       }
       if((L[id].rotate==null || L[id].rotate===0) && (def.rotate || def.transform)){
         L[id].rotate=def.rotate!=null?+def.rotate:parseRotate(def.transform);
@@ -2684,25 +2691,91 @@ function applyTextChrome(el, def, g, layerId){
   }
 }
 
+/** Polar shadow → CSS x/y (0° = right, +° clockwise; CSS y grows down). */
+function shadowOffsetXY(dirDeg, offset){
+  const rad=(+dirDeg||0)*Math.PI/180;
+  const d=Math.max(0, +offset||0);
+  return { x:Math.round(Math.cos(rad)*d), y:Math.round(Math.sin(rad)*d) };
+}
+function shadowDirFromXY(x, y){
+  if(!(+x||0) && !(+y||0)) return -45;
+  return Math.round(Math.atan2(+y||0, +x||0)*180/Math.PI);
+}
+function shadowColorCss(g, def, alpha){
+  const col=roleColor(g.shadowColor || def.shadowColor || "black");
+  const a=alpha!=null ? alpha : (g.shadowOpacity!=null ? g.shadowOpacity : 0.55);
+  const hex=normalizeHex(col) || (typeof col==="string" && col.startsWith("#") ? col : null);
+  return hex ? rgba(hex, Math.max(0, Math.min(1, a))) : col;
+}
+function applyShadowEffectDefaults(g, effect){
+  g.shadow=true;
+  g.shadowEffect=effect;
+  if(effect==="drop"){
+    if(g.shadowDir==null) g.shadowDir=-45;
+    if(g.shadowOffset==null) g.shadowOffset=12;
+    if(g.shadowBlur==null) g.shadowBlur=8;
+    if(g.shadowOpacity==null) g.shadowOpacity=0.55;
+    if(!g.shadowColor) g.shadowColor="black";
+  } else if(effect==="glow"){
+    g.shadowDir=0;
+    g.shadowOffset=0;
+    if(g.shadowBlur==null || g.shadowBlur<8) g.shadowBlur=18;
+    if(g.shadowOpacity==null) g.shadowOpacity=0.85;
+    if(!g.shadowColor) g.shadowColor="white";
+  } else if(effect==="echo"){
+    if(g.shadowDir==null) g.shadowDir=-45;
+    if(g.shadowOffset==null) g.shadowOffset=6;
+    g.shadowBlur=0;
+    if(g.shadowOpacity==null) g.shadowOpacity=1;
+    if(!g.shadowColor) g.shadowColor="black";
+  }
+  const xy=shadowOffsetXY(g.shadowDir??-45, g.shadowOffset??0);
+  g.shadowX=xy.x; g.shadowY=xy.y;
+}
+function syncShadowPolarFromXY(g){
+  const x=g.shadowX??0, y=g.shadowY??0;
+  g.shadowOffset=Math.round(Math.hypot(x, y));
+  g.shadowDir=shadowDirFromXY(x, y);
+}
 function resolveTextShadow(g, def, size, textColor, layerId){
   if(g.shadow===false) return "";
-  if(g.shadow || def.shadow){
+  const on=!!(g.shadow || def.shadow || g.shadowEffect || def.shadowEffect);
+  if(!on){
+    if(state.template==="magazine" && ["playerName","playerMeta","eyebrow"].includes(layerId)){
+      return magazineHeaderTextShadow(size, textColor);
+    }
+    if(state.template==="salukis_dark" && ["playerName","playerMeta"].includes(layerId)){
+      return salukisDarkHeaderTextShadow(size, textColor);
+    }
+    return "";
+  }
+  const effect=g.shadowEffect || def.shadowEffect || "drop";
+  let dir=g.shadowDir, offset=g.shadowOffset;
+  if(dir==null || offset==null){
     const x=g.shadowX ?? def.shadowX ?? 0;
-    const y=g.shadowY ?? def.shadowY ?? 3;
-    const blur=g.shadowBlur ?? def.shadowBlur ?? 8;
-    const col=roleColor(g.shadowColor || def.shadowColor || "black");
-    const a=g.shadowOpacity!=null ? g.shadowOpacity : 0.55;
-    const hex=normalizeHex(col) || (typeof col==="string" && col.startsWith("#") ? col : null);
-    const shadowCol=hex ? rgba(hex, a) : col;
-    return `${x}px ${y}px ${blur}px ${shadowCol}`;
+    const y=g.shadowY ?? def.shadowY ?? (effect==="drop"?3:0);
+    if(dir==null) dir=shadowDirFromXY(x, y);
+    if(offset==null) offset=Math.round(Math.hypot(x, y)) || (effect==="glow"?0:12);
   }
-  if(state.template==="magazine" && ["playerName","playerMeta","eyebrow"].includes(layerId)){
-    return magazineHeaderTextShadow(size, textColor);
+  const blur=g.shadowBlur ?? def.shadowBlur ?? (effect==="glow"?18:effect==="echo"?0:8);
+  const a=g.shadowOpacity!=null ? g.shadowOpacity : (def.shadowOpacity!=null?def.shadowOpacity:0.55);
+  const col=shadowColorCss(g, def, a);
+  if(effect==="glow"){
+    const b=Math.max(4, +blur||18);
+    return `0 0 ${b}px ${col}, 0 0 ${Math.round(b*1.6)}px ${col}, 0 0 ${Math.round(b*2.4)}px ${col}`;
   }
-  if(state.template==="salukis_dark" && ["playerName","playerMeta"].includes(layerId)){
-    return salukisDarkHeaderTextShadow(size, textColor);
+  if(effect==="echo"){
+    const step=Math.max(1, +offset||6);
+    const parts=[];
+    for(let i=1;i<=4;i++){
+      const xy=shadowOffsetXY(dir, step*i);
+      parts.push(`${xy.x}px ${xy.y}px 0 ${col}`);
+    }
+    return parts.join(", ");
   }
-  return "";
+  // drop
+  const xy=shadowOffsetXY(dir, offset);
+  return `${xy.x}px ${xy.y}px ${Math.max(0,+blur||0)}px ${col}`;
 }
 
 /** Horizontal + vertical placement of text inside its box. */
@@ -4998,12 +5071,26 @@ function layerDefToJson(id, def, g){
     if(bg) out.bg=bg;
     const pad=g.pad??def.pad;
     if(pad) out.pad=pad;
-    if(g.shadow||def.shadow){
+    if(g.shadow||def.shadow||g.shadowEffect||def.shadowEffect){
       out.shadow=true;
+      const effect=g.shadowEffect||def.shadowEffect||"drop";
+      out.shadowEffect=effect;
       if(g.shadowColor||def.shadowColor) out.shadowColor=g.shadowColor||def.shadowColor;
       if(g.shadowBlur!=null||def.shadowBlur!=null) out.shadowBlur=g.shadowBlur??def.shadowBlur;
-      if(g.shadowX!=null||def.shadowX!=null) out.shadowX=g.shadowX??def.shadowX;
-      if(g.shadowY!=null||def.shadowY!=null) out.shadowY=g.shadowY??def.shadowY;
+      if(g.shadowOpacity!=null||def.shadowOpacity!=null) out.shadowOpacity=g.shadowOpacity??def.shadowOpacity;
+      let dir=g.shadowDir??def.shadowDir;
+      let offset=g.shadowOffset??def.shadowOffset;
+      if(dir==null || offset==null){
+        const x=g.shadowX??def.shadowX??0;
+        const y=g.shadowY??def.shadowY??0;
+        if(dir==null) dir=shadowDirFromXY(x, y);
+        if(offset==null) offset=Math.round(Math.hypot(x, y));
+      }
+      out.shadowDir=dir;
+      out.shadowOffset=offset;
+      const xy=shadowOffsetXY(dir, offset);
+      out.shadowX=xy.x;
+      out.shadowY=xy.y;
     }
     if(g.textBorderOn||def.outline){
       out.border=true;
@@ -5814,12 +5901,25 @@ function buildEditorSnapshot(){
         bgOn:!!(g.bg??def.bg),
         bgHex:roleColor(g.bg||def.bg||"primary"),
         pad:g.pad??def.pad??(g.bg||def.bg?"8px 14px":null),
-        shadow:!!(g.shadow||def.shadow),
+        shadow:!!(g.shadow||def.shadow||g.shadowEffect||def.shadowEffect),
+        shadowEffect:g.shadowEffect||def.shadowEffect||((g.shadow||def.shadow)?"drop":null),
         shadowColor:g.shadowColor||def.shadowColor||"black",
         shadowHex:roleColor(g.shadowColor||def.shadowColor||"black"),
         shadowBlur:g.shadowBlur??def.shadowBlur??8,
         shadowX:g.shadowX??def.shadowX??0,
         shadowY:g.shadowY??def.shadowY??3,
+        shadowOpacity:g.shadowOpacity!=null?g.shadowOpacity:(def.shadowOpacity!=null?def.shadowOpacity:0.55),
+        shadowTransparency:Math.round(100*(g.shadowOpacity!=null?g.shadowOpacity:(def.shadowOpacity!=null?def.shadowOpacity:0.55))),
+        shadowDir:(()=>{
+          const d=g.shadowDir??def.shadowDir;
+          if(d!=null) return d;
+          return shadowDirFromXY(g.shadowX??def.shadowX??0, g.shadowY??def.shadowY??3);
+        })(),
+        shadowOffset:(()=>{
+          const o=g.shadowOffset??def.shadowOffset;
+          if(o!=null) return o;
+          return Math.round(Math.hypot(g.shadowX??def.shadowX??0, g.shadowY??def.shadowY??3));
+        })(),
         textBorderOn:!!(g.textBorderOn||def.outline),
         textBorderColor:g.textBorderColor||def.borderColor||"white",
         textBorderHex:roleColor(g.textBorderColor||def.borderColor||"white"),
@@ -6068,11 +6168,33 @@ window.__RENDER_API_V3__={
     if(patch.bgOn===true && !g.bg){ g.bg="primary"; if(g.pad==null) g.pad="8px 14px"; }
     if(patch.bg!==undefined){ g.bg=patch.bg; if(patch.bg && g.pad==null) g.pad="8px 14px"; }
     if(patch.pad!==undefined){ g.pad=patch.pad; }
-    if(patch.shadow!=null){ g.shadow=!!patch.shadow; }
-    if(patch.shadowColor!=null){ g.shadowColor=patch.shadowColor; g.shadow=true; }
-    if(patch.shadowBlur!=null){ g.shadowBlur=+patch.shadowBlur; g.shadow=true; }
-    if(patch.shadowX!=null){ g.shadowX=+patch.shadowX; }
-    if(patch.shadowY!=null){ g.shadowY=+patch.shadowY; }
+    if(patch.shadow!=null){ g.shadow=!!patch.shadow; if(!g.shadow){ g.shadowEffect=null; } }
+    if(patch.shadowEffect!=null){
+      if(patch.shadowEffect===false || patch.shadowEffect==="" || patch.shadowEffect==="none"){
+        g.shadow=false; g.shadowEffect=null;
+      } else {
+        applyShadowEffectDefaults(g, String(patch.shadowEffect));
+      }
+    }
+    if(patch.shadowColor!=null){ g.shadowColor=patch.shadowColor; g.shadow=true; if(!g.shadowEffect) g.shadowEffect="drop"; }
+    if(patch.shadowBlur!=null){ g.shadowBlur=+patch.shadowBlur; g.shadow=true; if(!g.shadowEffect) g.shadowEffect="drop"; }
+    if(patch.shadowOpacity!=null){ g.shadowOpacity=Math.max(0, Math.min(1, +patch.shadowOpacity)); g.shadow=true; }
+    if(patch.shadowTransparency!=null){
+      g.shadowOpacity=Math.max(0, Math.min(1, (+patch.shadowTransparency)/100));
+      g.shadow=true;
+    }
+    if(patch.shadowDir!=null || patch.shadowOffset!=null){
+      if(patch.shadowDir!=null) g.shadowDir=+patch.shadowDir;
+      if(patch.shadowOffset!=null) g.shadowOffset=Math.max(0, +patch.shadowOffset);
+      if(g.shadowDir==null) g.shadowDir=-45;
+      if(g.shadowOffset==null) g.shadowOffset=12;
+      const xy=shadowOffsetXY(g.shadowDir, g.shadowOffset);
+      g.shadowX=xy.x; g.shadowY=xy.y;
+      g.shadow=true;
+      if(!g.shadowEffect) g.shadowEffect="drop";
+    }
+    if(patch.shadowX!=null){ g.shadowX=+patch.shadowX; syncShadowPolarFromXY(g); }
+    if(patch.shadowY!=null){ g.shadowY=+patch.shadowY; syncShadowPolarFromXY(g); }
     if(patch.textBorderOn!=null){ g.textBorderOn=!!patch.textBorderOn; }
     if(patch.textBorderColor!=null){ g.textBorderColor=patch.textBorderColor; g.textBorderOn=true; }
     if(patch.textBorderW!=null){ g.textBorderW=Math.max(1, +patch.textBorderW||1); g.textBorderOn=true; }
