@@ -1,9 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import StageHost from '../components/StageHost.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import { apiHealth, syncDbTemplatesIntoEngine } from '../api/templatesApi.js'
 
 const inputClass = 'ui-input'
+
+const CATEGORIES = [
+  { id: 'player', label: 'Player' },
+  { id: 'team', label: 'Team' },
+  { id: 'player_no_image', label: 'No image' },
+]
 
 function pickDefaultTemplate(list) {
   if (!list?.length) return null
@@ -22,6 +28,7 @@ export default function AutomatePage({ Nav }) {
   const { iframeRef, src, api, ready, error, onLoad } = usePosterEngine({ headless: true })
   const [templates, setTemplates] = useState([])
   const [templateId, setTemplateId] = useState(null)
+  const [formatCategory, setFormatCategory] = useState('player')
   const [text, setText] = useState({})
   const [colors, setColors] = useState({ primary: '#006F73', secondary: '#C5B358' })
   const [images, setImages] = useState({})
@@ -29,6 +36,11 @@ export default function AutomatePage({ Nav }) {
   const [fields, setFields] = useState([])
   const [imageSlots, setImageSlots] = useState([])
   const [apiOnline, setApiOnline] = useState(null)
+
+  const filteredTemplates = useMemo(
+    () => templates.filter((t) => (t.category || 'player') === formatCategory),
+    [templates, formatCategory],
+  )
 
   const current = templates.find((t) => t.id === templateId)
 
@@ -102,17 +114,18 @@ export default function AutomatePage({ Nav }) {
       setTemplates(list)
       if (!pickDefault) return
       setTemplateId((prev) => {
-        if (prev && list.some((t) => t.id === prev)) {
-          // Drop empty probe templates if a real poster exists
+        const inCat = (id) => {
+          const t = list.find((x) => x.id === id)
+          return t && (t.category || 'player') === formatCategory
+        }
+        if (prev && list.some((t) => t.id === prev) && inCat(prev)) {
           const cur = list.find((t) => t.id === prev)
           const hasContent =
             (cur?.fields?.length || 0) > 0 || (cur?.images?.length || 0) > 0
           if (hasContent) return prev
-          const better = pickDefaultTemplate(list)
-          if (better && better.id !== prev) return better.id
-          return prev
         }
-        return pickDefaultTemplate(list)?.id || null
+        const scoped = list.filter((t) => (t.category || 'player') === formatCategory)
+        return pickDefaultTemplate(scoped)?.id || pickDefaultTemplate(list)?.id || null
       })
     }
 
@@ -125,7 +138,7 @@ export default function AutomatePage({ Nav }) {
       clearInterval(timer)
       window.removeEventListener('focus', onFocus)
     }
-  }, [ready, api, refreshFromDb])
+  }, [ready, api, refreshFromDb, formatCategory])
 
   useEffect(() => {
     if (!templateId || !templates.length) return
@@ -227,8 +240,24 @@ export default function AutomatePage({ Nav }) {
               Refresh
             </button>
           </div>
+          <div className="mb-2 flex gap-0.5 rounded-md border border-line p-0.5">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                className={`flex-1 rounded px-1 py-1.5 text-[10px] font-medium ${
+                  formatCategory === c.id
+                    ? 'bg-panel text-paper'
+                    : 'text-dim hover:text-paper'
+                }`}
+                onClick={() => setFormatCategory(c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
           <div className="grid grid-cols-2 gap-1.5">
-            {templates.map((t) => (
+            {filteredTemplates.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -245,6 +274,9 @@ export default function AutomatePage({ Nav }) {
               </button>
             ))}
           </div>
+          {!filteredTemplates.length && (
+            <p className="mt-2 text-[11px] text-muted">No templates in this category</p>
+          )}
           <p className="mt-2 text-[11px] text-dim">
             {current
               ? `id: ${current.id} · ${fields.length} fields · ${imageSlots.length} images`

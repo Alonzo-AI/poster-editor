@@ -52,6 +52,76 @@
     font-style:normal;
     font-display:swap;
   }
+  @font-face{
+    font-family:"Tungsten Book";
+    src:url("assets/fonts/Tungsten-Book.otf") format("opentype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Medium";
+    src:url("assets/fonts/Tungsten-Medium.otf") format("opentype");
+    font-weight:500;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Semibold";
+    src:url("assets/fonts/Tungsten-Semibold.otf") format("opentype");
+    font-weight:600;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Bold";
+    src:url("assets/fonts/Tungsten-Bold.otf") format("opentype");
+    font-weight:700;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Black";
+    src:url("assets/fonts/Tungsten-Black.otf") format("opentype");
+    font-weight:900;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Condensed Book";
+    src:url("assets/fonts/TungstenCondensed-Book.otf") format("opentype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Condensed Medium";
+    src:url("assets/fonts/TungstenCondensed-Medium.otf") format("opentype");
+    font-weight:500;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Condensed Semibold";
+    src:url("assets/fonts/TungstenCondensed-Semibold.otf") format("opentype");
+    font-weight:600;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Condensed Bold";
+    src:url("assets/fonts/TungstenCondensed-Bold.otf") format("opentype");
+    font-weight:700;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Tungsten Condensed Black";
+    src:url("assets/fonts/TungstenCondensed-Black.otf") format("opentype");
+    font-weight:900;
+    font-style:normal;
+    font-display:swap;
+  }
   :root{
     --bg:#0c0d10;
     --panel:#14161c;
@@ -918,14 +988,84 @@ const F = { disp:"'Anton',sans-serif", cond:"'Oswald',sans-serif", sans:"'Archiv
             chalk:"'Permanent Marker',cursive", type:"'Special Elite',monospace", comic:"'Bangers',cursive",
             avenir:"'Avenir Regular',sans-serif", avenirBook:"'Avenir Book',sans-serif",
             avenirLight:"'Avenir Light',sans-serif", avenirMedium:"'Avenir Medium',sans-serif",
-            avenirHeavy:"'Avenir Heavy',sans-serif" };
+            avenirHeavy:"'Avenir Heavy',sans-serif",
+            tungsten:"'Tungsten Medium',sans-serif", tungstenBook:"'Tungsten Book',sans-serif",
+            tungstenSemibold:"'Tungsten Semibold',sans-serif", tungstenBold:"'Tungsten Bold',sans-serif",
+            tungstenBlack:"'Tungsten Black',sans-serif",
+            tungstenCond:"'Tungsten Condensed Medium',sans-serif",
+            tungstenCondBook:"'Tungsten Condensed Book',sans-serif",
+            tungstenCondSemibold:"'Tungsten Condensed Semibold',sans-serif",
+            tungstenCondBold:"'Tungsten Condensed Bold',sans-serif",
+            tungstenCondBlack:"'Tungsten Condensed Black',sans-serif" };
 const FONT_OPTS = [
   ["Anton — display",F.disp],["Oswald — condensed",F.cond],["Archivo — sans",F.sans],
   ["Bebas Neue",F.bebas],["Playfair — serif",F.serif],["Permanent Marker — chalk",F.chalk],
   ["Special Elite — typewriter",F.type],["Bangers — comic",F.comic],
   ["Avenir Regular",F.avenir],["Avenir Book",F.avenirBook],["Avenir Light",F.avenirLight],
   ["Avenir Medium",F.avenirMedium],["Avenir Heavy",F.avenirHeavy],
+  ["Tungsten Book",F.tungstenBook],["Tungsten Medium",F.tungsten],["Tungsten Semibold",F.tungstenSemibold],
+  ["Tungsten Bold",F.tungstenBold],["Tungsten Black",F.tungstenBlack],
+  ["Tungsten Condensed Book",F.tungstenCondBook],["Tungsten Condensed Medium",F.tungstenCond],
+  ["Tungsten Condensed Semibold",F.tungstenCondSemibold],["Tungsten Condensed Bold",F.tungstenCondBold],
+  ["Tungsten Condensed Black",F.tungstenCondBlack],
 ];
+
+/** Poster format categories (Editor Formats + Mongo). Legacy / missing → player. */
+const TEMPLATE_CATEGORIES = [
+  { id:"player", label:"Player poster" },
+  { id:"team", label:"Team poster" },
+  { id:"player_no_image", label:"Player (no image)" },
+];
+function normalizeTemplateCategory(raw){
+  const v=String(raw||"").trim().toLowerCase().replace(/[\s-]+/g,"_");
+  if(v==="team"||v==="team_poster") return "team";
+  if(v==="player_no_image"||v==="player_noimage"||v==="no_image"||v==="player_without_image") return "player_no_image";
+  return "player";
+}
+function templateCategoryOf(templateId){
+  const json=TEMPLATES[templateId]?._json;
+  return normalizeTemplateCategory(json?.category ?? json?.settings?.category);
+}
+function blankLayersForCategory(category){
+  const cat=normalizeTemplateCategory(category);
+  const bg={ id:"bgImage", type:"image", bind:"background", x:0, y:0, w:SW, h:SH, z:1, fit:"cover", cropX:0.5, cropY:0.5 };
+  if(cat==="team"){
+    return {
+      layers:[
+        bg,
+        { id:"logo", type:"image", bind:"logo", x:40, y:40, w:160, h:160, z:18, fit:"contain", cropX:0.5, cropY:0.5 },
+        { id:"title", type:"text", bind:"teamName", label:"Team name", x:60, y:560, w:960, h:120, size:64, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Team name" },
+      ],
+      swapFields:["teamName"],
+      swapImages:["logo","conference","sponsor","background"],
+      fieldLabels:{ teamName:"Team name" },
+      seedText:{ teamName:"TEAM NAME" },
+    };
+  }
+  if(cat==="player_no_image"){
+    return {
+      layers:[
+        bg,
+        { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:560, w:960, h:120, size:64, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
+      ],
+      swapFields:["playerName"],
+      swapImages:["logo","conference","sponsor","background"],
+      fieldLabels:{ playerName:"Player name" },
+      seedText:{ playerName:"PLAYER NAME" },
+    };
+  }
+  return {
+    layers:[
+      bg,
+      { id:"player", type:"image", bind:"player", x:240, y:180, w:600, h:900, z:12, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
+      { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:1120, w:960, h:100, size:56, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
+    ],
+    swapFields:["playerName"],
+    swapImages:["player","logo","conference","sponsor","background"],
+    fieldLabels:{ playerName:"Player name" },
+    seedText:{ playerName:"PLAYER NAME" },
+  };
+}
 
 /* shorthand builders */
 function img(o){ return Object.assign({type:"image",fit:"contain",z:5},o); }
@@ -2386,13 +2526,16 @@ function addTextFieldLayer(opts={}){
 /** Blank 1080×1350 template the user can edit, then Save to Atlas. */
 function createBlankTemplate(opts={}){
   const rawName=String(opts.name||"New template").trim()||"New template";
+  const category=normalizeTemplateCategory(opts.category);
   let id=String(opts.id||rawName).trim().replace(/[^\w-]+/g,"_")||("custom_"+Date.now().toString(36));
   if(/^\d/.test(id)) id="_"+id;
   let base=id, n=2;
   while(TEMPLATES[id] || ENABLED_TEMPLATES.includes(id)) id=base+"_"+n++;
   const name=rawName;
+  const starter=blankLayersForCategory(category);
   const json={
     id, name, version:1,
+    category,
     canvas:{ width:SW, height:SH, background:"#12141a" },
     deco:{ html:"" },
     textRules:{ autoFit:[], stats:{ autoFit:false } },
@@ -2402,16 +2545,12 @@ function createBlankTemplate(opts={}){
       brandColors:{ fromLogo:false },
       playerImage:{ fitToFrame:false, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
     },
-    layers:[
-      { id:"bgImage", type:"image", bind:"background", x:0, y:0, w:SW, h:SH, z:1, fit:"cover", cropX:0.5, cropY:0.5 },
-      { id:"player", type:"image", bind:"player", x:240, y:180, w:600, h:900, z:12, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
-      { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:1120, w:960, h:100, size:56, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
-    ],
+    layers:starter.layers,
     automation:{
       freezeLayout:false,
-      swapFields:["playerName"],
-      swapImages:["player","logo","conference","sponsor","background"],
-      fieldLabels:{ playerName:"Player name" },
+      swapFields:starter.swapFields,
+      swapImages:starter.swapImages,
+      fieldLabels:{ ...starter.fieldLabels },
     },
   };
   const loader=window.PosterTemplateLoader;
@@ -2433,14 +2572,16 @@ function createBlankTemplate(opts={}){
   state.layouts[id]={};
   state.logoSettings[id]={ opacity:1, scale:1 };
   if(!state.fieldLabels[id]) state.fieldLabels[id]={};
-  state.fieldLabels[id].playerName="Player name";
-  if(!state.text.playerName) state.text.playerName="PLAYER NAME";
+  Object.assign(state.fieldLabels[id], starter.fieldLabels);
+  for(const [k,v] of Object.entries(starter.seedText||{})){
+    if(!state.text[k]) state.text[k]=v;
+  }
   switchTemplate(id);
   try{ buildTplChips(); }catch(_){}
   buildTextFields();
   buildCaptionColorControls();
   notifyEditorBridge("create-template");
-  return { id, name, json };
+  return { id, name, category, json };
 }
 /** Drop a library shape onto the canvas (not into conference/logo slots). */
 async function placeLibraryShapeAsset(asset){
@@ -3837,8 +3978,9 @@ function syncInspector(){
     };
     $("iFs").oninput=e=>applyFontPx(e.target.value);
     if($("iFsNum")){
-      $("iFsNum").oninput=e=>applyFontPx(e.target.value);
+      // Commit on blur/Enter only — live oninput clamps mid-typing (4→8 breaks 48)
       $("iFsNum").onchange=e=>applyFontPx(e.target.value);
+      $("iFsNum").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); e.target.blur(); } };
     }
     $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
     $("iAlign")?.querySelectorAll("[data-align]").forEach(b=>{
@@ -5225,6 +5367,7 @@ function buildFrozenTemplateJSON(opts={}){
     ...base,
     id,
     name,
+    category:normalizeTemplateCategory(base.category ?? base.settings?.category ?? templateCategoryOf(srcId)),
     version:(base.version||1)+1,
     canvas:base.canvas||{ width:SW, height:SH, background:"#E8E0D4" },
     deco:base.deco||{ html:"" },
@@ -5836,6 +5979,7 @@ function shouldUseLogoPalette(payload, templateId){
 /* ---------- React embed bridge ---------- */
 const _editorSubs=new Set();
 let _editorNotifyTimer=0;
+let _textStylePreview=null;
 function buildEditorSnapshot(){
   const layers=[];
   const L=(()=>{ try{ return ensureLayout(); }catch(_){ return {}; }})();
@@ -5944,6 +6088,7 @@ function buildEditorSnapshot(){
   return {
     template:state.template,
     templateName:TEMPLATES[state.template]?.name||state.template,
+    category:templateCategoryOf(state.template),
     selectedId:sel,
     selected,
     layers,
@@ -6056,11 +6201,15 @@ window.__RENDER_API_V3__={
     return ids.map(id=>({
       id,
       name:TEMPLATES[id]?.name||id,
+      category:templateCategoryOf(id),
       frozen:isFrozenTemplate(id),
       fields:templateInputFields(id),
       images:templateImageSlots(id),
       automation:TEMPLATES[id]?._json?.automation||null,
     }));
+  },
+  listTemplateCategories(){
+    return TEMPLATE_CATEGORIES.slice();
   },
   getLastBakedTemplateId,
   getTemplateFields(id){
@@ -6217,10 +6366,38 @@ window.__RENDER_API_V3__={
     if(patch.cropping===false && state.cropMode===lid){ state.cropMode=null; }
     if(patch.resetCrop){ g.zoom=1; g.cropX=.5; g.cropY=.5; g.flipH=false; g.flipV=false; }
 
+    _textStylePreview=null; // commit wins over hover preview
     render();
     scheduleSave();
     notifyEditorBridge("style");
     return buildEditorSnapshot();
+  },
+  /** Live canvas preview (hover / drag) — no localStorage save, no React notify. */
+  previewTextStyle(patch={}){
+    const lid=state.selected;
+    if(!lid || !layersOf()[lid]) return { ok:false };
+    const g=geo(lid);
+    if(!_textStylePreview || _textStylePreview.lid!==lid){
+      _textStylePreview={ lid, font:g.font, size:g.size, baseSize:g.baseSize, manualSize:g.manualSize };
+    }
+    if(patch.font!=null) g.font=patch.font;
+    if(patch.size!=null || patch.baseSize!=null){
+      const px=Math.max(8, Math.min(400, Math.round(+(patch.size??patch.baseSize)||30)));
+      g.size=px; g.baseSize=px; g.manualSize=true;
+    }
+    render();
+    return { ok:true };
+  },
+  cancelTextStylePreview(){
+    if(!_textStylePreview) return { ok:false };
+    const { lid, font, size, baseSize, manualSize }=_textStylePreview;
+    _textStylePreview=null;
+    if(state.template && state.layouts?.[state.template]?.[lid]){
+      const g=state.layouts[state.template][lid];
+      g.font=font; g.size=size; g.baseSize=baseSize; g.manualSize=manualSize;
+    }
+    render();
+    return { ok:true };
   },
   listFontOptions(){
     return FONT_OPTS.map(([label, value])=>({ label, value }));
@@ -6303,6 +6480,8 @@ window.__RENDER_API_V3__={
     for(const item of list){
       const json=item?.json || item;
       if(!json || typeof json!=="object" || !json.id) continue;
+      // Legacy Atlas docs without category → Player poster
+      json.category=normalizeTemplateCategory(json.category ?? item?.category ?? json.settings?.category);
       if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
       else {
         TEMPLATES[json.id]={

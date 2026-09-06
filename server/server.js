@@ -30,6 +30,12 @@ const templateSchema = new mongoose.Schema(
   {
     id: { type: String, required: true, unique: true, index: true },
     name: { type: String, required: true },
+    category: {
+      type: String,
+      enum: ['player', 'team', 'player_no_image'],
+      default: 'player',
+      index: true,
+    },
     json: { type: mongoose.Schema.Types.Mixed, required: true },
     frozen: { type: Boolean, default: true },
     updatedAt: { type: Date, default: Date.now },
@@ -39,6 +45,23 @@ const templateSchema = new mongoose.Schema(
 )
 
 const Template = mongoose.model('Template', templateSchema)
+
+function normalizeCategory(raw) {
+  const v = String(raw || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+  if (v === 'team' || v === 'team_poster') return 'team'
+  if (
+    v === 'player_no_image' ||
+    v === 'player_noimage' ||
+    v === 'no_image' ||
+    v === 'player_without_image'
+  ) {
+    return 'player_no_image'
+  }
+  return 'player'
+}
 
 const app = express()
 app.use(cors())
@@ -60,9 +83,13 @@ app.get('/api/templates', async (_req, res) => {
       templates: rows.map((r) => ({
         id: r.id,
         name: r.name,
+        category: normalizeCategory(r.category ?? r.json?.category),
         frozen: r.frozen !== false,
         updatedAt: r.updatedAt,
-        json: r.json,
+        json: {
+          ...(r.json || {}),
+          category: normalizeCategory(r.category ?? r.json?.category),
+        },
       })),
     })
   } catch (err) {
@@ -93,6 +120,8 @@ async function upsertTemplateJson(rawJson, forcedId) {
     throw err
   }
   const name = String(json.name || id).trim() || id
+  const category = normalizeCategory(json.category ?? json.settings?.category)
+  json.category = category
 
   if (!json.settings) json.settings = {}
   json.settings.freezeLayout = true
@@ -117,7 +146,7 @@ async function upsertTemplateJson(rawJson, forcedId) {
 
   const existed = !!(await Template.exists({ id }))
   console.log(
-    `[api] ${existed ? 'update' : 'create'} id=${id} ~${Math.round(approx / 1024)}KB db=${mongoose.connection.name}`,
+    `[api] ${existed ? 'update' : 'create'} id=${id} category=${category} ~${Math.round(approx / 1024)}KB db=${mongoose.connection.name}`,
   )
 
   const row = await Template.findOneAndUpdate(
@@ -126,6 +155,7 @@ async function upsertTemplateJson(rawJson, forcedId) {
       $set: {
         id,
         name,
+        category,
         json,
         frozen: true,
         updatedAt: new Date(),
@@ -139,6 +169,7 @@ async function upsertTemplateJson(rawJson, forcedId) {
     ok: true,
     id: row.id,
     name: row.name,
+    category: normalizeCategory(row.category),
     updatedAt: row.updatedAt,
     db: mongoose.connection.name,
     created: !existed,

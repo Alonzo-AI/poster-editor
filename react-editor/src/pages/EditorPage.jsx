@@ -50,6 +50,19 @@ export default function EditorPage({ Nav }) {
   const [textFields, setTextFields] = useState([])
   const [renamingBind, setRenamingBind] = useState(null)
   const [renameDraft, setRenameDraft] = useState('')
+  const [formatCategory, setFormatCategory] = useState('player')
+
+  const CATEGORIES = [
+    { id: 'player', label: 'Player' },
+    { id: 'team', label: 'Team' },
+    { id: 'player_no_image', label: 'No image' },
+  ]
+
+  const filteredTemplates = useMemo(
+    () =>
+      templates.filter((t) => (t.category || 'player') === formatCategory),
+    [templates, formatCategory],
+  )
 
   useEffect(() => {
     apiHealth()
@@ -114,7 +127,8 @@ export default function EditorPage({ Nav }) {
     // Keep Save id locked to the active template so Mongo overwrites the same doc
     setBakeId(snapshot.template || '')
     setBakeName(snapshot.templateName || snapshot.template || '')
-  }, [snapshot?.template, snapshot?.templateName])
+    if (snapshot.category) setFormatCategory(snapshot.category)
+  }, [snapshot?.template, snapshot?.templateName, snapshot?.category])
 
   const selected = snapshot?.selected
   const layers = snapshot?.layers || []
@@ -183,6 +197,12 @@ export default function EditorPage({ Nav }) {
       if (json) {
         json.id = id
         json.name = name
+        json.category =
+          json.category ||
+          snapshot?.category ||
+          listed?.category ||
+          formatCategory ||
+          'player'
       }
       if (json && !download) {
         try {
@@ -199,8 +219,9 @@ export default function EditorPage({ Nav }) {
                 {
                   id: saved.id,
                   name,
+                  category: json.category || 'player',
                   frozen: true,
-                  json: { ...json, id: saved.id, name },
+                  json: { ...json, id: saved.id, name, category: json.category || 'player' },
                 },
               ],
               { sync: false },
@@ -309,10 +330,10 @@ export default function EditorPage({ Nav }) {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(200px,280px)_minmax(0,1fr)_minmax(240px,320px)] overflow-hidden">
         {/* Left */}
-        <aside className="flex w-[280px] shrink-0 flex-col border-r border-line bg-panel">
-          <div className="min-h-0 flex-1 overflow-y-auto">
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-line bg-panel">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
             <Panel
               title="Formats"
               action={
@@ -324,10 +345,17 @@ export default function EditorPage({ Nav }) {
                     const name = window.prompt('New template name', 'New template')
                     if (name == null || !String(name).trim()) return
                     try {
-                      const res = api?.createTemplate?.({ name: String(name).trim() })
+                      const res = api?.createTemplate?.({
+                        name: String(name).trim(),
+                        category: formatCategory,
+                      })
                       const id = res?.template?.id
                       if (api.listTemplates) setTemplates(api.listTemplates() || [])
-                      setStatus(id ? `Created “${name}”` : 'Create failed')
+                      setStatus(
+                        id
+                          ? `Created “${name}” · ${CATEGORIES.find((c) => c.id === formatCategory)?.label || formatCategory}`
+                          : 'Create failed',
+                      )
                     } catch (e) {
                       setStatus(e.message || 'Create failed')
                     }
@@ -337,8 +365,24 @@ export default function EditorPage({ Nav }) {
                 </button>
               }
             >
+              <div className="mb-2 flex gap-0.5 rounded-md border border-line p-0.5">
+                {CATEGORIES.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`flex-1 rounded px-1 py-1.5 text-[10px] font-medium ${
+                      formatCategory === c.id
+                        ? 'bg-panel2 text-paper'
+                        : 'text-dim hover:text-paper'
+                    }`}
+                    onClick={() => setFormatCategory(c.id)}
+                  >
+                    {c.label}
+                  </button>
+                ))}
+              </div>
               <ul className="space-y-0.5">
-                {templates.map((t) => (
+                {filteredTemplates.map((t) => (
                   <li key={t.id}>
                     <button
                       type="button"
@@ -362,6 +406,13 @@ export default function EditorPage({ Nav }) {
                     </button>
                   </li>
                 ))}
+                {!filteredTemplates.length && (
+                  <li className="px-1 text-[11px] text-muted">
+                    {ready
+                      ? `No ${CATEGORIES.find((c) => c.id === formatCategory)?.label || ''} templates — + Add`
+                      : 'Loading…'}
+                  </li>
+                )}
               </ul>
             </Panel>
 
@@ -624,7 +675,7 @@ export default function EditorPage({ Nav }) {
         </aside>
 
         {/* Center canvas */}
-        <main className="relative flex min-w-0 flex-1 flex-col bg-[#121212]">
+        <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#121212]">
           {!ready && (
             <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ink/80 text-xs text-dim">
               {error || 'Starting engine…'}
@@ -639,17 +690,17 @@ export default function EditorPage({ Nav }) {
         </main>
 
         {/* Right properties */}
-        <aside className="flex w-[300px] shrink-0 flex-col border-l border-line bg-panel">
-          <div className="border-b border-line px-3 py-2.5">
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-line bg-panel">
+          <div className="shrink-0 border-b border-line px-3 py-2.5">
             <div className="text-[12px] font-semibold text-paper">Styles</div>
             <div className="truncate text-[11px] text-muted">
               {selected ? `${selected.type} · ${selected.id}` : 'Select a layer'}
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3">
             <PropertiesPanel api={api} selected={selected} snapshot={snapshot} />
           </div>
-          <div className="space-y-2 border-t border-line p-3">
+          <div className="shrink-0 space-y-2 border-t border-line p-3">
             <button type="button" className="ui-btn ui-btn-primary w-full" onClick={onExport}>
               Export PNG
             </button>

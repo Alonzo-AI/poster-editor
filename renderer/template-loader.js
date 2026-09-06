@@ -21,6 +21,16 @@
     avenirLight: "'Avenir Light',sans-serif",
     avenirMedium: "'Avenir Medium',sans-serif",
     avenirHeavy: "'Avenir Heavy',sans-serif",
+    tungsten: "'Tungsten Medium',sans-serif",
+    tungstenBook: "'Tungsten Book',sans-serif",
+    tungstenSemibold: "'Tungsten Semibold',sans-serif",
+    tungstenBold: "'Tungsten Bold',sans-serif",
+    tungstenBlack: "'Tungsten Black',sans-serif",
+    tungstenCond: "'Tungsten Condensed Medium',sans-serif",
+    tungstenCondBook: "'Tungsten Condensed Book',sans-serif",
+    tungstenCondSemibold: "'Tungsten Condensed Semibold',sans-serif",
+    tungstenCondBold: "'Tungsten Condensed Bold',sans-serif",
+    tungstenCondBlack: "'Tungsten Condensed Black',sans-serif",
   };
 
   function resolveFont(v) {

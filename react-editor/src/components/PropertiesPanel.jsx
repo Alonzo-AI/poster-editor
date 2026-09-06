@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const inputClass = 'ui-input'
 
@@ -30,11 +30,235 @@ function Seg({ value, options, onChange }) {
   )
 }
 
-function ColorFields({ role, hex, roles, onRole, onHex }) {
-  const safeHex = /^#[0-9a-fA-F]{6}$/.test(hex || '') ? hex : '#ffffff'
-  const roleVal = roles.some((r) => r.value === role) ? role : '__custom__'
+function clamp01(n) {
+  return Math.min(1, Math.max(0, n))
+}
+
+function hexToRgb(hex) {
+  const h = String(hex || '').replace('#', '')
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) return { r: 255, g: 255, b: 255 }
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
+  }
+}
+
+function rgbToHex(r, g, b) {
+  const to = (n) => Math.round(Math.min(255, Math.max(0, n))).toString(16).padStart(2, '0')
+  return `#${to(r)}${to(g)}${to(b)}`
+}
+
+function rgbToHsv(r, g, b) {
+  r /= 255
+  g /= 255
+  b /= 255
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  const d = max - min
+  let h = 0
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6
+    else if (max === g) h = (b - r) / d + 2
+    else h = (r - g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const s = max === 0 ? 0 : d / max
+  return { h, s, v: max }
+}
+
+function hsvToRgb(h, s, v) {
+  const c = v * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = v - c
+  let r = 0
+  let g = 0
+  let b = 0
+  if (h < 60) [r, g, b] = [c, x, 0]
+  else if (h < 120) [r, g, b] = [x, c, 0]
+  else if (h < 180) [r, g, b] = [0, c, x]
+  else if (h < 240) [r, g, b] = [0, x, c]
+  else if (h < 300) [r, g, b] = [x, 0, c]
+  else [r, g, b] = [c, 0, x]
+  return {
+    r: (r + m) * 255,
+    g: (g + m) * 255,
+    b: (b + m) * 255,
+  }
+}
+
+function normalizeHexInput(raw) {
+  let v = String(raw || '').trim()
+  if (/^[0-9a-fA-F]{6}$/.test(v)) v = `#${v}`
+  if (/^#[0-9a-fA-F]{6}$/.test(v)) return v.toLowerCase()
+  return null
+}
+
+/** In-panel HSV picker — stays inside Styles (no OS popup). */
+function HexColorPicker({ hex, onHex }) {
+  const safe = normalizeHexInput(hex) || '#ffffff'
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const svRef = useRef(null)
+  const hsv0 = rgbToHsv(...Object.values(hexToRgb(safe)))
+  const [h, setH] = useState(hsv0.h)
+  const [s, setS] = useState(hsv0.s)
+  const [v, setV] = useState(hsv0.v)
+  const [draft, setDraft] = useState(safe)
+  const hsvRef = useRef({ h: hsv0.h, s: hsv0.s, v: hsv0.v })
+
+  useEffect(() => {
+    const next = normalizeHexInput(hex) || '#ffffff'
+    const hsv = rgbToHsv(...Object.values(hexToRgb(next)))
+    setH(hsv.h)
+    setS(hsv.s)
+    setV(hsv.v)
+    hsvRef.current = hsv
+    setDraft(next)
+  }, [hex])
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  function emit(nh, ns, nv) {
+    hsvRef.current = { h: nh, s: ns, v: nv }
+    const rgb = hsvToRgb(nh, ns, nv)
+    const next = rgbToHex(rgb.r, rgb.g, rgb.b)
+    setDraft(next)
+    onHex(next)
+  }
+
+  function pickSv(clientX, clientY) {
+    const el = svRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const ns = clamp01((clientX - rect.left) / rect.width)
+    const nv = clamp01(1 - (clientY - rect.top) / rect.height)
+    setS(ns)
+    setV(nv)
+    emit(hsvRef.current.h, ns, nv)
+  }
+
+  function startSvDrag(e) {
+    e.preventDefault()
+    const pt = e.touches?.[0] || e
+    pickSv(pt.clientX, pt.clientY)
+    const move = (ev) => {
+      const p = ev.touches?.[0] || ev
+      pickSv(p.clientX, p.clientY)
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      window.removeEventListener('touchmove', move)
+      window.removeEventListener('touchend', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    window.addEventListener('touchmove', move, { passive: false })
+    window.addEventListener('touchend', up)
+  }
+
+  const hueColor = (() => {
+    const rgb = hsvToRgb(h, 1, 1)
+    return rgbToHex(rgb.r, rgb.g, rgb.b)
+  })()
+
   return (
-    <>
+    <div className="relative" ref={wrapRef}>
+      <div className="flex items-stretch gap-2">
+        <button
+          type="button"
+          title="Open colour picker"
+          className="h-9 w-9 shrink-0 rounded-md border border-line"
+          style={{ background: safe }}
+          onClick={() => setOpen((o) => !o)}
+        />
+        <input
+          className={`${inputClass} min-w-0 flex-1 font-mono text-[12px]`}
+          value={draft}
+          spellCheck={false}
+          placeholder="#RRGGBB"
+          onChange={(e) => {
+            setDraft(e.target.value)
+            const n = normalizeHexInput(e.target.value)
+            if (n) onHex(n)
+          }}
+          onBlur={() => {
+            const n = normalizeHexInput(draft)
+            if (n) {
+              setDraft(n)
+              onHex(n)
+            } else setDraft(safe)
+          }}
+        />
+      </div>
+      {open ? (
+        <div className="absolute left-0 right-0 z-40 mt-2 rounded-md border border-line bg-panel2 p-2 shadow-lg">
+          <div
+            ref={svRef}
+            className="relative mb-2 h-28 w-full cursor-crosshair overflow-hidden rounded"
+            style={{
+              background: `
+                linear-gradient(to top, #000, transparent),
+                linear-gradient(to right, #fff, ${hueColor})
+              `,
+            }}
+            onMouseDown={startSvDrag}
+            onTouchStart={startSvDrag}
+          >
+            <span
+              className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow"
+              style={{ left: `${s * 100}%`, top: `${(1 - v) * 100}%` }}
+            />
+          </div>
+          <label className="mb-2 block">
+            <span className="mb-1 block text-[10px] text-dim">Hue</span>
+            <input
+              type="range"
+              min={0}
+              max={360}
+              value={Math.round(h)}
+              className="ui-hue w-full"
+              onChange={(e) => {
+                const nh = +e.target.value
+                setH(nh)
+                emit(nh, s, v)
+              }}
+            />
+          </label>
+          <div className="flex items-center gap-2">
+            <span
+              className="h-7 w-7 shrink-0 rounded border border-line"
+              style={{ background: safe }}
+            />
+            <span className="font-mono text-[11px] text-dim">{safe}</span>
+            <button
+              type="button"
+              className="ml-auto text-[11px] text-paper underline decoration-line underline-offset-2"
+              onClick={() => setOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function ColorFields({ role, hex, roles, onRole, onHex }) {
+  const roleVal = roles.some((r) => r.value === role) ? role : '__custom__'
+
+  return (
+    <div className="space-y-2">
       <Field label="Color role">
         <select
           className={inputClass}
@@ -53,30 +277,73 @@ function ColorFields({ role, hex, roles, onRole, onHex }) {
           <option value="__custom__">Custom hex</option>
         </select>
       </Field>
-      <div className="mb-2 flex gap-2">
-        <Field label="Hex">
-          <input
-            className={inputClass}
-            value={hex || ''}
-            spellCheck={false}
-            onChange={(e) => onHex(e.target.value)}
-            onBlur={(e) => {
-              let v = e.target.value.trim()
-              if (/^[0-9a-fA-F]{6}$/.test(v)) v = `#${v}`
-              if (/^#[0-9a-fA-F]{6}$/.test(v)) onHex(v)
-            }}
-          />
-        </Field>
-        <Field label="Swatch">
-          <input
-            type="color"
-            className="h-9 w-full cursor-pointer rounded border border-line bg-inset"
-            value={safeHex}
-            onChange={(e) => onHex(e.target.value)}
-          />
-        </Field>
+      <Field label="Colour">
+        <HexColorPicker hex={hex} onHex={onHex} />
+      </Field>
+    </div>
+  )
+}
+
+function SizeStepper({ value, draft, onDraft, onPreview, onCommit, onNudge }) {
+  const shown = draft !== '' && draft != null ? draft : String(value || 30)
+  return (
+    <div className="space-y-2">
+      <input
+        type="range"
+        min={10}
+        max={380}
+        value={Math.min(380, Math.max(10, Number(shown) || value || 30))}
+        className="ui-range w-full"
+        onChange={(e) => {
+          const px = +e.target.value
+          onDraft(String(px))
+          onPreview?.(px)
+        }}
+        onMouseUp={(e) => onCommit(+e.target.value)}
+        onTouchEnd={(e) => onCommit(+e.currentTarget.value)}
+        onKeyUp={(e) => onCommit(+e.target.value)}
+      />
+      <div className="grid grid-cols-[36px_1fr_36px] items-center gap-1.5">
+        <button
+          type="button"
+          className="ui-step-btn"
+          title="Decrease"
+          onClick={() => onNudge(-1)}
+        >
+          −
+        </button>
+        <input
+          type="text"
+          inputMode="numeric"
+          className={`${inputClass} ui-num text-center tabular-nums`}
+          value={shown}
+          onFocus={() => onDraft(String(shown))}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/[^\d]/g, '')
+            onDraft(raw)
+            const n = Math.round(Number(raw))
+            if (Number.isFinite(n) && n >= 8 && n <= 400 && String(n) === raw) {
+              onPreview?.(n)
+            }
+          }}
+          onBlur={(e) => onCommit(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.currentTarget.blur()
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="ui-step-btn"
+          title="Increase"
+          onClick={() => onNudge(1)}
+        >
+          +
+        </button>
       </div>
-    </>
+    </div>
   )
 }
 
@@ -146,6 +413,66 @@ function EffectPreset({ id, label, active, previewStyle, onClick }) {
   )
 }
 
+function FontPicker({ fonts, value, onCommit, onPreview, onPreviewEnd }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const current = fonts.find((f) => f.value === value) || fonts[0]
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) {
+        onPreviewEnd?.()
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open, onPreviewEnd])
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        className={`${inputClass} flex w-full items-center justify-between gap-2 text-left`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="truncate" style={{ fontFamily: value || 'inherit' }}>
+          {current?.label || 'Font'}
+        </span>
+        <span className="text-[10px] text-muted">{open ? '▲' : '▼'}</span>
+      </button>
+      {open ? (
+        <ul
+          className="absolute z-30 mt-1 max-h-56 w-full overflow-y-auto rounded-md border border-line bg-panel2 shadow-lg"
+          onMouseLeave={() => onPreviewEnd?.()}
+        >
+          {fonts.map((f) => (
+            <li key={f.value}>
+              <button
+                type="button"
+                className={`block w-full truncate px-2 py-2 text-left text-[13px] ${
+                  f.value === value
+                    ? 'bg-inset text-paper'
+                    : 'text-dim hover:bg-inset hover:text-paper'
+                }`}
+                style={{ fontFamily: f.value }}
+                onMouseEnter={() => onPreview?.(f.value)}
+                onClick={() => {
+                  onCommit?.(f.value)
+                  setOpen(false)
+                }}
+              >
+                {f.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 /**
  * Full layer properties: geometry, font, size, color, stroke, image crop, shape fill.
  */
@@ -153,6 +480,8 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
   const [fonts, setFonts] = useState([])
   const [roles, setRoles] = useState([])
   const [styles, setStyles] = useState([])
+  const [sizeDraft, setSizeDraft] = useState('')
+  const [sizeFocused, setSizeFocused] = useState(false)
 
   useEffect(() => {
     if (!api) return
@@ -163,12 +492,29 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
     } catch (_) {}
   }, [api])
 
+  useEffect(() => {
+    if (sizeFocused) return
+    const px = selected?.geo?.size ?? selected?.geo?.baseSize ?? 30
+    setSizeDraft(String(Math.round(+px || 30)))
+  }, [selected?.id, selected?.geo?.size, selected?.geo?.baseSize, sizeFocused])
+
   if (!selected) {
     return <p className="text-sm text-dim">Select a layer on the canvas or in the list.</p>
   }
 
   const g = selected.geo || {}
   const patch = (p) => api?.patchLayerStyle?.(selected.id, p) || api?.setLayerGeometry?.(selected.id, p)
+
+  function commitFontSize(raw) {
+    const n = Math.round(Number(String(raw).trim()))
+    if (!Number.isFinite(n)) {
+      setSizeDraft(String(Math.round(g.size || 30)))
+      return
+    }
+    const px = Math.max(8, Math.min(400, n))
+    setSizeDraft(String(px))
+    patch({ size: px })
+  }
 
   return (
     <div className="space-y-1">
@@ -264,39 +610,38 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
 
           {!selected.lockFonts && fonts.length > 0 && (
             <Field label="Font">
-              <select
-                className={inputClass}
+              <FontPicker
+                fonts={fonts}
                 value={g.font || ''}
-                onChange={(e) => patch({ font: e.target.value })}
-              >
-                {fonts.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
+                onPreview={(font) => api?.previewTextStyle?.({ font })}
+                onPreviewEnd={() => api?.cancelTextStylePreview?.()}
+                onCommit={(font) => {
+                  // Commit keeps the previewed face (patch clears preview without restore)
+                  patch({ font })
+                }}
+              />
             </Field>
           )}
 
           <Field label={`Font size: ${g.size || 30}px`}>
-            <div className="flex items-center gap-2">
-              <input
-                type="range"
-                min={10}
-                max={380}
-                value={g.size || 30}
-                className="min-w-0 flex-1 accent-blaze"
-                onChange={(e) => patch({ size: +e.target.value })}
-              />
-              <input
-                type="number"
-                min={8}
-                max={400}
-                className={`${inputClass} w-16 shrink-0`}
-                value={g.size || 30}
-                onChange={(e) => patch({ size: +e.target.value })}
-              />
-            </div>
+            <SizeStepper
+              value={g.size || 30}
+              draft={sizeDraft}
+              onDraft={(v) => {
+                setSizeFocused(true)
+                setSizeDraft(v)
+              }}
+              onPreview={(px) => api?.previewTextStyle?.({ size: px })}
+              onCommit={(raw) => {
+                setSizeFocused(false)
+                commitFontSize(raw)
+              }}
+              onNudge={(delta) => {
+                const next = Math.max(8, Math.min(400, Math.round(+(g.size || 30) + delta)))
+                setSizeDraft(String(next))
+                patch({ size: next })
+              }}
+            />
             {g.fitSize != null && g.fitSize < g.size ? (
               <p className="mt-1 text-[10px] text-dim">
                 Set {g.size}px — using {g.fitSize}px to fit the box.
@@ -541,24 +886,15 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
                     max={100}
                     onChange={(v) => patch({ shadowTransparency: v })}
                   />
-                  <div className="mb-2 flex items-center gap-2">
-                    <span className="text-[11px] text-dim">Colour</span>
-                    <input
-                      type="color"
-                      className="h-8 w-8 cursor-pointer rounded-full border border-line bg-inset p-0"
-                      value={/^#[0-9a-fA-F]{6}$/.test(g.shadowHex || '') ? g.shadowHex : '#000000'}
-                      onChange={(e) => patch({ shadowColor: e.target.value })}
-                    />
-                    <input
-                      className={`${inputClass} flex-1`}
-                      value={g.shadowHex || ''}
-                      spellCheck={false}
-                      onChange={(e) => patch({ shadowColor: e.target.value })}
-                      onBlur={(e) => {
-                        let v = e.target.value.trim()
-                        if (/^[0-9a-fA-F]{6}$/.test(v)) v = `#${v}`
-                        if (/^#[0-9a-fA-F]{6}$/.test(v)) patch({ shadowColor: v })
-                      }}
+                  <div className="mb-2">
+                    <span className="mb-1 block text-[11px] text-dim">Colour</span>
+                    <HexColorPicker
+                      hex={
+                        /^#[0-9a-fA-F]{6}$/.test(g.shadowHex || '')
+                          ? g.shadowHex
+                          : '#000000'
+                      }
+                      onHex={(v) => patch({ shadowColor: v })}
                     />
                   </div>
                   <button

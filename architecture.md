@@ -192,6 +192,8 @@ Disk files listed in `templates/manifest.json` seed the engine. Editor **Save** 
 
 A template is **frozen** when `settings.freezeLayout`, `automation.freezeLayout`, or `_bakeMeta` is set. Frozen templates keep Automate from running stock layout migrations (Salukis / Vapor / Magazine defaults).
 
+**Category** (`category` on JSON + Mongo): `player` | `team` | `player_no_image`. Missing / legacy docs default to **`player`** (Player poster). Editor Formats and Automate filter by category; **+ Add** creates a blank starter for the active tab; Save upserts `category` with the template.
+
 ### 5.2 Loader
 
 `PosterTemplateLoader.loadAll()`:
@@ -403,7 +405,7 @@ Editor can cycle bundled stories; Automate can pass `payload.story`.
 
 **New template (in Editor)**
 
-React **+ Create template** → `__RENDER_API_V3__.createTemplate({ name })` builds a blank 1080×1350 (player + background + title). Edit, then **Save** to upsert Atlas.
+React **+ Create template** → `__RENDER_API_V3__.createTemplate({ name, category })` builds a blank 1080×1350 for that category (`player` / `team` / `player_no_image`). Edit, then **Save** to upsert Atlas (includes `category`).
 
 **New text field**
 
