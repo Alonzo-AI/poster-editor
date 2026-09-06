@@ -348,6 +348,27 @@ export default function EditorPage({ Nav }) {
             </Panel>
 
             <Panel title="Layers">
+              <button
+                type="button"
+                className="ui-btn mb-2 w-full"
+                disabled={!ready}
+                onClick={() => {
+                  const label = window.prompt('Text field label', 'New text')
+                  if (label == null || !String(label).trim()) return
+                  try {
+                    const res = api?.addTextField?.({ label: String(label).trim() })
+                    setStatus(
+                      res?.field?.bind
+                        ? `Added “${res.field.label}” on canvas (brand color)`
+                        : 'Add text failed — hard-refresh if engine is old',
+                    )
+                  } catch (e) {
+                    setStatus(e.message || 'Add text failed')
+                  }
+                }}
+              >
+                + Add text field
+              </button>
               <ul className="space-y-0.5">
                 {layers.map((layer) => (
                   <li key={layer.id}>

@@ -286,8 +286,6 @@
   }
 
   function toRuntimeTemplate(json) {
-    const layerObj = layersArrayToObject(json.layers, json);
-
     return {
       name: json.name,
       _json: json,
@@ -307,7 +305,9 @@
         }
         return html;
       },
+      // Rebuild from _json.layers every access so Editor "Add text" / Save edits show up
       get layers() {
+        const layerObj = layersArrayToObject(json.layers, json);
         const merged = mergeAuthoringLayout(layerObj, json.authoring);
         if (json.authoring?.layers && global.state?.layouts?.[json.id]) {
           return mergeAuthoringLayout(merged, { layers: global.state.layouts[json.id] });
