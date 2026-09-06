@@ -47,12 +47,27 @@ export default function EditorPage({ Nav }) {
   const [bakeName, setBakeName] = useState('')
 
   const [apiOnline, setApiOnline] = useState(null)
+  const [textFields, setTextFields] = useState([])
+  const [renamingBind, setRenamingBind] = useState(null)
+  const [renameDraft, setRenameDraft] = useState('')
 
   useEffect(() => {
     apiHealth()
       .then(() => setApiOnline(true))
       .catch(() => setApiOnline(false))
   }, [])
+
+  useEffect(() => {
+    if (!api?.listTextFields) {
+      setTextFields([])
+      return
+    }
+    try {
+      setTextFields(api.listTextFields() || [])
+    } catch (e) {
+      console.warn(e)
+    }
+  }, [api, snapshot?.template, snapshot?.layers, ready])
 
   useEffect(() => {
     if (!api?.listTemplates) return
@@ -192,6 +207,7 @@ export default function EditorPage({ Nav }) {
             )
           } catch (_) {}
           if (api.listTemplates) setTemplates(api.listTemplates() || [])
+          if (api.listTextFields) setTextFields(api.listTextFields() || [])
           return
         } catch (dbErr) {
           setApiOnline(false)
@@ -203,6 +219,7 @@ export default function EditorPage({ Nav }) {
       }
       setStatus(download ? 'Template downloaded' : 'Saved to session')
       if (api.listTemplates) setTemplates(api.listTemplates() || [])
+      if (api.listTextFields) setTextFields(api.listTextFields() || [])
     } catch (e) {
       setStatus(e.message || 'Save failed')
     }
@@ -251,6 +268,7 @@ export default function EditorPage({ Nav }) {
               if (label == null || !String(label).trim()) return
               try {
                 const res = api?.addTextField?.({ label: String(label).trim() })
+                if (api.listTextFields) setTextFields(api.listTextFields() || [])
                 setStatus(res?.field?.bind ? `Added “${res.field.label}”` : 'Add text failed')
               } catch (e) {
                 setStatus(e.message || 'Add text failed')
@@ -347,28 +365,125 @@ export default function EditorPage({ Nav }) {
               </ul>
             </Panel>
 
+            <Panel
+              title="Text fields"
+              action={
+                <button
+                  type="button"
+                  className="text-[11px] font-medium text-paper hover:text-blaze"
+                  disabled={!ready}
+                  onClick={() => {
+                    const label = window.prompt('Text field label', 'New text')
+                    if (label == null || !String(label).trim()) return
+                    try {
+                      const res = api?.addTextField?.({ label: String(label).trim() })
+                      if (api.listTextFields) setTextFields(api.listTextFields() || [])
+                      setStatus(
+                        res?.field?.bind
+                          ? `Added “${res.field.label}”`
+                          : 'Add text failed — hard-refresh if engine is old',
+                      )
+                    } catch (e) {
+                      setStatus(e.message || 'Add text failed')
+                    }
+                  }}
+                >
+                  + Add
+                </button>
+              }
+            >
+              <ul className="space-y-1">
+                {textFields.map((field) => (
+                  <li
+                    key={field.key}
+                    className="rounded-md border border-line bg-inset px-2 py-1.5"
+                  >
+                    {renamingBind === field.key ? (
+                      <input
+                        className={inputClass}
+                        autoFocus
+                        value={renameDraft}
+                        placeholder="Field label"
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onBlur={() => {
+                          const next = String(renameDraft || '').trim()
+                          try {
+                            if (next && next !== field.label) {
+                              api?.renameTextField?.(field.key, next)
+                              if (api.listTextFields) setTextFields(api.listTextFields() || [])
+                              setStatus(`Renamed to “${next}”`)
+                            }
+                          } catch (e) {
+                            setStatus(e.message || 'Rename failed')
+                          }
+                          setRenamingBind(null)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur()
+                          if (e.key === 'Escape') {
+                            setRenamingBind(null)
+                          }
+                        }}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <span className="min-w-0 flex-1 truncate text-[12px] text-paper">
+                          {field.label}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-[10px] text-dim hover:text-paper"
+                          title="Rename field"
+                          onClick={() => {
+                            setRenamingBind(field.key)
+                            setRenameDraft(field.label || '')
+                          }}
+                        >
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          className="shrink-0 text-[10px] text-dim hover:text-paper"
+                          title="Remove field from template"
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                `Remove “${field.label}” from this template?\n\nSave to update Atlas / Automate.`,
+                              )
+                            ) {
+                              return
+                            }
+                            try {
+                              const res = api?.deleteTextField?.(field.key, { confirm: false })
+                              if (api.listTextFields) setTextFields(api.listTextFields() || [])
+                              setStatus(
+                                res?.ok
+                                  ? `Removed “${field.label}” — Save to update DB`
+                                  : res?.reason === 'cancelled'
+                                    ? ''
+                                    : 'Remove failed',
+                              )
+                            } catch (e) {
+                              setStatus(e.message || 'Remove failed')
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                    <div className="mt-0.5 truncate text-[10px] text-muted">{field.key}</div>
+                  </li>
+                ))}
+                {!textFields.length && (
+                  <li className="text-[11px] text-muted">
+                    {ready ? 'No text fields' : 'Loading…'}
+                  </li>
+                )}
+              </ul>
+            </Panel>
+
             <Panel title="Layers">
-              <button
-                type="button"
-                className="ui-btn mb-2 w-full"
-                disabled={!ready}
-                onClick={() => {
-                  const label = window.prompt('Text field label', 'New text')
-                  if (label == null || !String(label).trim()) return
-                  try {
-                    const res = api?.addTextField?.({ label: String(label).trim() })
-                    setStatus(
-                      res?.field?.bind
-                        ? `Added “${res.field.label}” on canvas (brand color)`
-                        : 'Add text failed — hard-refresh if engine is old',
-                    )
-                  } catch (e) {
-                    setStatus(e.message || 'Add text failed')
-                  }
-                }}
-              >
-                + Add text field
-              </button>
               <ul className="space-y-0.5">
                 {layers.map((layer) => (
                   <li key={layer.id}>

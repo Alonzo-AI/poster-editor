@@ -1495,39 +1495,68 @@ function textBindHasVisibleLayer(bind, layers, templateId){
     return def && !def.hidden && !L[id]?.hidden;
   });
 }
-/** Hide canvas layer(s) for a text field and remove it from the sidebar. */
-function deleteTextField(bind){
-  try{
-    const layers=layersOf();
-    const ids=layerIdsForTextBind(bind, layers);
-    if(!ids.length){
-      state.text[bind]="";
-      buildTextFields();
-      saveState();
-      return;
+/** Permanently remove a text bind's layer(s) from the template (Save will drop them from DB). */
+function removeTextFieldPermanent(bind, opts={}){
+  const tid=state.template;
+  if(!tid || !bind) return { ok:false, reason:"missing" };
+  const layers=layersOf();
+  const ids=layerIdsForTextBind(bind, layers);
+  const label=textFieldLabelFor(bind, layers, tid);
+  if(opts.confirm!==false){
+    if(!confirm(`Remove "${label}" from this template?\n\nSave to update Atlas / Automate.`)){
+      return { ok:false, reason:"cancelled" };
     }
-    const label=textFieldLabelFor(bind, layers);
-    if(!confirm(`Remove "${label}" from this template?\n\nIt will also disappear in Automate after you refresh that page.`)) return;
-    withUndo(()=>{
-      const L=ensureLayout();
-      const tid=state.template;
-      for(const id of ids){
-        if(L[id]) L[id].hidden=true;
-        if(layers[id]) layers[id].hidden=true;
-        const runtime=TEMPLATES[tid]?.layers?.[id];
-        if(runtime) runtime.hidden=true;
-        const jsonLayer=TEMPLATES[tid]?._json?.layers?.find(l=>l.id===id);
-        if(jsonLayer) jsonLayer.hidden=true;
+  }
+  withUndo(()=>{
+    const L=state.layouts[tid]||{};
+    const extras=state.extraLayers[tid]||{};
+    for(const id of ids){
+      delete L[id];
+      delete extras[id];
+    }
+    const json=TEMPLATES[tid]?._json;
+    if(json){
+      if(Array.isArray(json.layers)){
+        json.layers=json.layers.filter(l=>{
+          if(!l) return false;
+          if(ids.includes(l.id)) return false;
+          // Drop text layers that own this bind (incl. stats)
+          if(l.type==="text" && l.kind==="stat" && l.bind){
+            if(bind===l.bind+"num" || bind===l.bind+"label") return false;
+          }
+          if(l.type==="text" && l.bind===bind) return false;
+          return true;
+        });
       }
-      if(ids.includes(state.selected)) select(null);
-      buildTextFields();
-      buildCaptionColorControls();
-      render();
-      saveState();
-    });
+      if(json.authoring?.layers){
+        for(const id of ids) delete json.authoring.layers[id];
+      }
+      if(json.automation){
+        if(Array.isArray(json.automation.swapFields)){
+          json.automation.swapFields=json.automation.swapFields.filter(k=>k!==bind);
+        }
+        if(json.automation.fieldLabels) delete json.automation.fieldLabels[bind];
+      }
+    }
+    delete state.text[bind];
+    if(state.fieldLabels[tid]) delete state.fieldLabels[tid][bind];
+    if(ids.includes(state.selected)) select(null);
+    buildTextFields();
+    buildCaptionColorControls();
+    render();
+    scheduleSave();
+  });
+  notifyEditorBridge("text-field-delete");
+  return { ok:true, bind, label, removedIds:ids };
+}
+/** Hide or permanently remove (legacy name — now deletes for real so Save updates DB). */
+function deleteTextField(bind, opts={}){
+  try{
+    return removeTextFieldPermanent(bind, opts);
   }catch(err){
     console.error("deleteTextField failed:", err);
     alert("Could not remove field: "+(err&&err.message||err));
+    return { ok:false, reason:String(err&&err.message||err) };
   }
 }
 /** Label for a text bind: custom fieldLabels → JSON layer.label → TEXT_FIELDS → labelFor → bind key */
@@ -1577,6 +1606,7 @@ function setFieldLabel(bind, label){
     syncFieldLabelToLayers(tid, bind, trimmed);
     buildTextFields();
     saveState(); // immediate — Automate reads labels from localStorage
+    notifyEditorBridge("text-field-rename");
   }catch(err){
     console.error("setFieldLabel failed:", err);
     alert("Could not rename field: "+(err&&err.message||err));
@@ -1614,7 +1644,7 @@ function seedFieldLabelsFromTemplate(templateId){
 }
 function collectFieldLabelsForBake(templateId, layers, swapFields){
   const binds=collectTextBindsFromLayers(layers, swapFields, templateId);
-  const out={ ...(TEMPLATES[templateId]?._json?.automation?.fieldLabels||{}), ...(state.fieldLabels[templateId]||{}) };
+  const out={};
   for(const bind of binds){
     const label=textFieldLabelFor(bind, layers, templateId);
     if(label) out[bind]=label;
@@ -6106,6 +6136,22 @@ window.__RENDER_API_V3__={
   addTextField(opts={}){
     const created=addTextFieldLayer(opts);
     return { snapshot:buildEditorSnapshot(), field:created };
+  },
+  listTextFields(){
+    return templateInputFields(state.template);
+  },
+  /** Permanently remove a text field; next Save upserts JSON without it. */
+  deleteTextField(bind, opts={}){
+    const result=deleteTextField(bind, { confirm:opts.confirm!==false });
+    return { ...result, snapshot:buildEditorSnapshot(), fields:templateInputFields(state.template) };
+  },
+  /** Rename Automate/Editor display label for a bind. */
+  renameTextField(bind, label){
+    setFieldLabel(bind, label);
+    return {
+      snapshot:buildEditorSnapshot(),
+      fields:templateInputFields(state.template),
+    };
   },
   createTemplate(opts={}){
     const created=createBlankTemplate(opts);

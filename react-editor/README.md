@@ -38,7 +38,7 @@ cd narrative-styles-portal/server && npm i && npm run dev
 
 - `subscribe`, `getEditorSnapshot`, `listLayers`, `selectLayer`
 - `switchTemplate`, `setTextValue`, `setBrandColors`, `setLayerGeometry`
-- `addShape`, `listShapePresets`, `addTextField`, `createTemplate`
+- `addShape`, `listShapePresets`, `addTextField`, `listTextFields`, `renameTextField`, `deleteTextField`, `createTemplate`
 - `bakeTemplate` (returns `{ snapshot, json }`)
 - `injectRemoteTemplates` (merge DB JSON into the live engine)
 - `zoomFit` / `zoomIn` / `zoomOut` / `toggleFrameGuide` / `deselect`

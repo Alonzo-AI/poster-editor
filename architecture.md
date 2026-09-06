@@ -408,6 +408,10 @@ React **+ Create template** → `__RENDER_API_V3__.createTemplate({ name })` bui
 
 React **+ Add text field** → `__RENDER_API_V3__.addTextField({ label })` adds a `type:"text"` layer with a new `bind` (also listed in Automate after Save). Or hand-edit JSON layers the same way.
 
+**Rename / delete text field**
+
+React **Text fields** panel → **Rename** (`renameTextField(bind, label)`) updates `automation.fieldLabels` + layer labels. **Remove** (`deleteTextField(bind)`) permanently drops the layer(s), bind, and swapFields entry from the live template JSON. **Save** then upserts Atlas without that field (Automate list refreshes after sync).
+
 **New shape preset**
 
 Add an entry to `SHAPE_PRESETS` (w/h, radius, optional `clip` polygon). Optionally add an SVG + `library.json` row.
