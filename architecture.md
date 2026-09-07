@@ -237,7 +237,8 @@ Slots: `player`, `background`, `logo`, `conference`, `sponsor`. Missing conferen
 `SHAPE_PRESETS` in `index.html`: circle, square, rectangle, rounded, oval, triangle, diamond, parallelogram, pill, bar.
 
 - Presets with polygons store CSS `clip` (`polygon(...)`).
-- Live + export paint via **inline `<img class="shapefill">`** whose `src` is an SVG data URL (html2canvas drops CSS `clip-path`).
+- Live + export paint via CSS fill / SVG data URL (html2canvas drops CSS `clip-path`).
+- Fill: solid role/hex, or **`gradient: { type, from, to, angle }`** (React Styles → Solid / Gradient; shapes only).
 - Selecting a shape then clicking another preset **morphs that layer in place**. Shift-click / empty canvas adds a new extra layer.
 
 ### 6.4 Z-order
@@ -375,6 +376,7 @@ Editor can cycle bundled stories; Automate can pass `payload.story`.
 - **player / background / logo / conference / sponsor** → load into that image slot
 - **shape** with `preset` → `addShapeLayer(preset)` (editable block)
 - **shape** without preset → floating `image` layer (`shape_img_*`)
+- **effect** → full-canvas overlay layer (`effect_*`) from `assets/effects/` (drag/resize like any image)
 
 ---
 

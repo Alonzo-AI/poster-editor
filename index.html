@@ -496,6 +496,7 @@
           <button data-slot="conference">Conf</button>
           <button data-slot="sponsor">Sponsor</button>
           <button data-slot="shape">Shapes</button>
+          <button data-slot="effect">Effects</button>
         </div>
         <div id="assetLibrary" class="libgrid"></div>
         <div class="mini" style="margin-top:8px">Click an asset to drop it on the poster. <b>Shapes</b> are placed in the center of the canvas (not the conference logo slot). Add files under <code>assets/</code> and list them in <code>assets/library.json</code>.</div>
@@ -784,6 +785,33 @@ function blockFillRoleSelectValue(g, def){
   const c=g.fill || g.color || def.fill || def.color || "white";
   if(isKnownColorRole(c)) return c;
   return "__custom__";
+}
+/** Shape gradient: { type:'linear'|'radial', from, to, angle } or null */
+function normalizeShapeGradient(g, def){
+  const raw=(g && g.gradient!=null)?g.gradient:(def && def.gradient);
+  if(!raw || raw===false) return null;
+  if(typeof raw!=="object") return null;
+  if(raw.enabled===false) return null;
+  const from=raw.from || (g&&(g.fill||g.color)) || (def&&(def.fill||def.color)) || "primary";
+  const to=raw.to || "secondary";
+  const angle=Number.isFinite(+raw.angle)?((+raw.angle)%360+360)%360:135;
+  const type=raw.type==="radial"?"radial":"linear";
+  return { type, from, to, angle };
+}
+function shapeFillCss(g, def){
+  const grad=normalizeShapeGradient(g, def);
+  const solid=roleColor((g&&(g.fill||g.color))||(def&&(def.fill||def.color))||"white");
+  if(!grad) return { css:solid, solid, grad:null };
+  const from=roleColor(grad.from);
+  const to=roleColor(grad.to);
+  const css=grad.type==="radial"
+    ? `radial-gradient(circle at 50% 50%, ${from} 0%, ${to} 100%)`
+    : `linear-gradient(${grad.angle}deg, ${from} 0%, ${to} 100%)`;
+  return { css, solid:from, grad:{ ...grad, fromHex:from, toHex:to } };
+}
+function resolvedBlockFillToHex(g, def){
+  const grad=normalizeShapeGradient(g, def);
+  return roleColor(grad?.to || "secondary");
 }
 
 // Templates load only from templates/manifest.json + JSON files (no inline / localStorage templates).
@@ -1233,17 +1261,21 @@ function applyGlassStyle(el, def, g){
   el.style.height=(g.h??g.w)+"px";
 }
 function applyBlockStyle(el, def, g){
-  const fill=roleColor(g.fill || g.color || def.fill || def.color || "white");
-  el.style.background=fill;
+  const paint=shapeFillCss(g, def);
+  el.style.background=paint.css;
   let clip=g.clip ?? def.clip ?? null;
   const shapeName=g.shape || def.shape;
   if(!clip && shapeName && SHAPE_PRESETS[shapeName]?.clip) clip=SHAPE_PRESETS[shapeName].clip;
+  // Drop old shapefill img if any
+  el.querySelectorAll("img.shapefill").forEach(n=>n.remove());
   if(clip){
     el.style.clipPath=clip;
     el.style.webkitClipPath=clip;
     el.style.borderRadius="0px";
     el.dataset.clip=clip;
-    el.dataset.shapeFill=fill;
+    el.dataset.shapeFill=paint.grad ? JSON.stringify({
+      type:paint.grad.type, from:paint.grad.fromHex, to:paint.grad.toHex, angle:paint.grad.angle,
+    }) : paint.solid;
   } else {
     el.style.clipPath="";
     el.style.webkitClipPath="";
@@ -1254,7 +1286,7 @@ function applyBlockStyle(el, def, g){
   el.style.height=(g.h??g.w)+"px";
 }
 /** Convert CSS polygon()/percent clip into an SVG background (html2canvas-safe). */
-function clipPathToSvgBackground(clip, fillColor, w, h){
+function clipPathToSvgBackground(clip, fillSpec, w, h){
   const raw=String(clip||"").trim();
   const m=/^polygon\((.+)\)$/i.exec(raw);
   if(!m || !(w>0) || !(h>0)) return null;
@@ -1265,7 +1297,30 @@ function clipPathToSvgBackground(clip, fillColor, w, h){
     const py=String(y).endsWith("%") ? (parseFloat(y)/100)*h : parseFloat(y);
     return `${Number.isFinite(px)?px:0},${Number.isFinite(py)?py:0}`;
   }).join(" ");
-  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polygon points="${pts}" fill="${fillColor||"#ffffff"}"/></svg>`;
+  let fillAttr="#ffffff";
+  let defs="";
+  let gradObj=null;
+  if(fillSpec && typeof fillSpec==="object"){
+    gradObj=fillSpec;
+  } else if(typeof fillSpec==="string" && fillSpec.trim().startsWith("{")){
+    try{ gradObj=JSON.parse(fillSpec); }catch(_){ gradObj=null; }
+  }
+  if(gradObj && gradObj.from && gradObj.to){
+    const id="sg";
+    const from=gradObj.from, to=gradObj.to;
+    if(gradObj.type==="radial"){
+      defs=`<defs><radialGradient id="${id}" cx="50%" cy="50%" r="70%"><stop offset="0%" stop-color="${from}"/><stop offset="100%" stop-color="${to}"/></radialGradient></defs>`;
+    } else {
+      const ang=((Number(gradObj.angle)||135)*Math.PI)/180;
+      const x1=50-Math.cos(ang)*50, y1=50-Math.sin(ang)*50;
+      const x2=50+Math.cos(ang)*50, y2=50+Math.sin(ang)*50;
+      defs=`<defs><linearGradient id="${id}" x1="${x1}%" y1="${y1}%" x2="${x2}%" y2="${y2}%"><stop offset="0%" stop-color="${from}"/><stop offset="100%" stop-color="${to}"/></linearGradient></defs>`;
+    }
+    fillAttr=`url(#${id})`;
+  } else if(typeof fillSpec==="string" && fillSpec && !String(fillSpec).includes("gradient")){
+    fillAttr=String(fillSpec).trim()||"#ffffff";
+  }
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${defs}<polygon points="${pts}" fill="${fillAttr}"/></svg>`;
   return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
 }
 function migrateVaporGlassCardLayout(d){
@@ -1442,6 +1497,14 @@ function resetLayoutFromTemplate(templateId, opts={}){
     if(def.stroke!=null) L[id].stroke=def.stroke;
     if(def.strokeW!=null) L[id].strokeW=def.strokeW;
     if(def.fill!=null) L[id].fill=def.fill;
+    if(def.gradient!=null){
+      L[id].gradient=def.gradient && typeof def.gradient==="object" ? {
+        type:def.gradient.type==="radial"?"radial":"linear",
+        from:def.gradient.from||def.fill||"primary",
+        to:def.gradient.to||"secondary",
+        angle:def.gradient.angle!=null?+def.gradient.angle:135,
+      } : null;
+    }
     if(def.clip!=null) L[id].clip=def.clip;
     if(def.shape!=null) L[id].shape=def.shape;
     if(def.radius!=null) L[id].radius=def.radius;
@@ -1916,6 +1979,12 @@ function ensureLayout(){
                          borderOn:!!def.border, borderW:6, borderColor:def.borderColor||"primary",
                          lockAspect:def.type==="image", z:def.z ?? null,
                          fill:def.fill ?? null,
+                         gradient:def.gradient ? {
+                           type:def.gradient.type==="radial"?"radial":"linear",
+                           from:def.gradient.from||def.fill||"primary",
+                           to:def.gradient.to||"secondary",
+                           angle:def.gradient.angle!=null?+def.gradient.angle:135,
+                         } : null,
                          clip:(def.clip!=null?def.clip:(def.shape && SHAPE_PRESETS[def.shape]?.clip)||null),
                          shape:def.shape ?? null,
                          stroke:def.stroke ?? null, strokeW:def.strokeW ?? null, hollow:!!def.hollow,
@@ -2596,24 +2665,39 @@ async function placeLibraryShapeAsset(asset){
     return "shape:"+presetKey;
   }
   // Custom shape image (e.g. outlook PNG) → free floating image layer
+  return placeLibraryOverlayAsset(asset, { prefix:"shape_img_", w:280, h:280, z:28, fit:"contain" });
+}
+/** Overlay / effect PNGs as free-floating image layers (not slot-bound). */
+async function placeLibraryOverlayAsset(asset, opts={}){
   pushUndo();
   const t=state.template;
   if(!state.extraLayers[t]) state.extraLayers[t]={};
-  let n=1, nid; do{ nid="shape_img_"+n++; }while(layersOf()[nid]);
+  const prefix=opts.prefix||"effect_";
+  let n=1, nid; do{ nid=prefix+n++; }while(layersOf()[nid]);
   const bind="deco_"+nid;
-  const w=280, h=280;
-  const x=Math.round((SW-w)/2), y=Math.round((SH-h)/2);
+  const w=opts.w!=null?opts.w:SW;
+  const h=opts.h!=null?opts.h:SH;
+  const x=opts.x!=null?opts.x:Math.round((SW-w)/2);
+  const y=opts.y!=null?opts.y:Math.round((SH-h)/2);
+  const z=opts.z!=null?opts.z:36;
+  const fit=opts.fit||"cover";
   state.extraLayers[t][nid]={
-    type:"image", bind, x, y, w, h, fit:"contain", zoom:1, cropX:0.5, cropY:0.5, z:28,
+    type:"image", bind, x, y, w, h, fit, zoom:1, cropX:0.5, cropY:0.5, z,
   };
   const L=ensureLayout();
   Object.assign(L[nid], {
-    x, y, w, h, fit:"contain", zoom:1, cropX:0.5, cropY:0.5, z:28,
-    hidden:false, opacity:1, lockAspect:true,
+    x, y, w, h, fit, zoom:1, cropX:0.5, cropY:0.5, z,
+    hidden:false, opacity:1, lockAspect:false,
   });
   await loadImageFromUrl(bind, asset.src);
   select(nid); render(); scheduleSave();
   return "image:"+nid;
+}
+function isLibraryShapeAsset(a){
+  return !!(a && (a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-")));
+}
+function isLibraryEffectAsset(a){
+  return !!(a && (a.slot==="effect" || (a.tags||[]).includes("effect") || String(a.id||"").startsWith("effect-")));
 }
 function buildShapePalette(){
   const wrap=document.getElementById("shapePalette");
@@ -4729,7 +4813,7 @@ function applySessionLayoutsToTemplateDefs(){
   const STYLE_KEYS=[
     "x","y","w","h","size","weight","align","vAlign","color","italic","underline",
     "ls","lh","textTransform","opacity","z","rotate","hidden","manualSize","fixedBox",
-    "boxMinH","boxMaxH","fit","zoom","cropX","cropY","fill","clip","shape","radius",
+    "boxMinH","boxMaxH","fit","zoom","cropX","cropY","fill","gradient","clip","shape","radius",
     "stroke","strokeW","hollow",
   ];
   for(const [tid, L] of Object.entries(state.layouts||{})){
@@ -5266,6 +5350,10 @@ function layerDefToJson(id, def, g){
   } else if(def.type==="block"){
     const fill=g.fill||g.color||def.fill||def.color||"primary";
     out.fill=fill;
+    const grad=normalizeShapeGradient(g, def);
+    if(grad){
+      out.gradient={ type:grad.type, from:grad.from, to:grad.to, angle:grad.angle };
+    }
     const radius=g.radius??def.radius??0;
     out.radius=radius;
     const shape=g.shape||def.shape;
@@ -5845,7 +5933,8 @@ function buildAssetLibrary(){
   if(!assetLibraryEl) return;
   const items=_assetLibrary.filter(a=>{
     if(_libSlotFilter==="all") return true;
-    if(_libSlotFilter==="shape") return a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-");
+    if(_libSlotFilter==="shape") return isLibraryShapeAsset(a);
+    if(_libSlotFilter==="effect") return isLibraryEffectAsset(a);
     return a.slot===_libSlotFilter;
   });
   if(!items.length){
@@ -5857,10 +5946,11 @@ function buildAssetLibrary(){
     const btn=document.createElement("button");
     btn.type="button";
     btn.className="libcard";
-    const isShape=a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-");
-    btn.title=isShape ? `Add shape: ${a.name}` : `Use as ${a.slot}`;
+    const isShape=isLibraryShapeAsset(a);
+    const isEffect=isLibraryEffectAsset(a);
+    btn.title=isShape ? `Add shape: ${a.name}` : isEffect ? `Add effect: ${a.name}` : `Use as ${a.slot}`;
     btn.innerHTML=`<div class="thumb" style="background-image:url('${esc(a.src).replace(/'/g,"%27")}');background-color:#e8eaed"></div>
-      <div class="meta"><b>${esc(a.name||a.id)}</b><span>${esc(isShape?"shape":(a.slot||""))}</span></div>`;
+      <div class="meta"><b>${esc(a.name||a.id)}</b><span>${esc(isShape?"shape":isEffect?"effect":(a.slot||""))}</span></div>`;
     btn.onclick=async ()=>{
       btn.disabled=true;
       try{
@@ -5868,6 +5958,10 @@ function buildAssetLibrary(){
           await placeLibraryShapeAsset(a);
           const status=document.getElementById("bgStatus");
           if(status) status.textContent=`Added shape “${a.name}” on canvas`;
+        } else if(isEffect){
+          await placeLibraryOverlayAsset(a, { prefix:"effect_", w:SW, h:SH, x:0, y:0, z:36, fit:"cover" });
+          const status=document.getElementById("bgStatus");
+          if(status) status.textContent=`Added effect “${a.name}” on canvas`;
         } else {
           const slot=a.slot||"player";
           if(!ASSETS.some(([k])=>k===slot)){
@@ -5935,8 +6029,13 @@ async function captureStagePng(){
           const w=parseFloat(el.style.width)||el.offsetWidth||0;
           const h=parseFloat(el.style.height)||el.offsetHeight||0;
           const fill=el.dataset.shapeFill || el.style.backgroundColor || el.style.background || "#ffffff";
-          const solid=String(fill).includes("gradient") ? "#ffffff" : String(fill).trim();
-          const bg=clipPathToSvgBackground(clip, solid, w, h);
+          let fillSpec=fill;
+          if(typeof fill==="string" && fill.trim().startsWith("{")){
+            try{ fillSpec=JSON.parse(fill); }catch(_){ fillSpec="#ffffff"; }
+          } else if(typeof fill==="string" && String(fill).includes("gradient")){
+            fillSpec="#ffffff";
+          }
+          const bg=clipPathToSvgBackground(clip, fillSpec, w, h);
           if(!bg) return;
           el.style.clipPath="none";
           el.style.webkitClipPath="none";
@@ -6038,6 +6137,11 @@ function buildEditorSnapshot(){
         color:g.color||def.color||null,
         colorHex:typeof resolvedLayerColorHex==="function"?resolvedLayerColorHex(g,def):(g.color||"#ffffff"),
         fillHex:typeof resolvedBlockFillHex==="function"?resolvedBlockFillHex(g,def):(g.fill||g.color||"#ffffff"),
+        fillToHex:typeof resolvedBlockFillToHex==="function"?resolvedBlockFillToHex(g,def):"#C5B358",
+        gradient:(()=>{
+          const gr=typeof normalizeShapeGradient==="function"?normalizeShapeGradient(g,def):null;
+          return gr ? { type:gr.type, from:gr.from, to:gr.to, angle:gr.angle } : null;
+        })(),
         align:g.align??def.align??"left",
         vAlign:g.vAlign??def.vAlign??"middle",
         weight:g.weight??def.weight??700,
@@ -6337,7 +6441,32 @@ window.__RENDER_API_V3__={
     if(patch.font!=null){ g.font=patch.font; mark(); }
     if(patch.textTransform!==undefined){ g.textTransform=patch.textTransform; mark(); }
     if(patch.color!=null){ g.color=patch.color; mark(); }
-    if(patch.fill!=null){ g.fill=patch.fill; g.color=patch.fill; }
+    if(patch.fill!=null){
+      g.fill=patch.fill; g.color=patch.fill;
+      if(g.gradient && typeof g.gradient==="object") g.gradient={ ...g.gradient, from:patch.fill };
+    }
+    if(patch.gradient!==undefined){
+      if(!patch.gradient){
+        g.gradient=null;
+      } else {
+        const cur=g.gradient&&typeof g.gradient==="object"?g.gradient:{};
+        const from=patch.gradient.from!=null?patch.gradient.from:(cur.from||g.fill||"primary");
+        const to=patch.gradient.to!=null?patch.gradient.to:(cur.to||"secondary");
+        g.gradient={
+          type:patch.gradient.type==="radial"?"radial":(cur.type==="radial"?"radial":"linear"),
+          from, to,
+          angle:patch.gradient.angle!=null?+patch.gradient.angle:(cur.angle!=null?+cur.angle:135),
+        };
+        if(patch.gradient.from!=null){ g.fill=from; g.color=from; }
+      }
+    }
+    if(patch.fillTo!=null){
+      if(!g.gradient || typeof g.gradient!=="object"){
+        g.gradient={ type:"linear", from:g.fill||"primary", to:patch.fillTo, angle:135 };
+      } else {
+        g.gradient={ ...g.gradient, to:patch.fillTo };
+      }
+    }
     if(patch.bold===true){ g.weight=800; mark(); }
     if(patch.bold===false){ g.weight=400; mark(); }
     if(patch.bgOn===false){ g.bg=null; }
@@ -6536,7 +6665,11 @@ window.__RENDER_API_V3__={
     return { ok:true, id, name:rawName, json, snapshot:buildEditorSnapshot() };
   },
   listShapePresets(){
-    return Object.entries(SHAPE_PRESETS).map(([id,p])=>({ id, label:p.label }));
+    return Object.entries(SHAPE_PRESETS).map(([id,p])=>({
+      id,
+      label:p.label,
+      icon:p.icon||"",
+    }));
   },
   async bakeTemplate(opts={}){
     const idInput=document.getElementById("bakeTemplateId");
@@ -6638,14 +6771,17 @@ window.__RENDER_API_V3__={
       src:a.src,
       preset:a.preset||null,
       tags:a.tags||[],
-      isShape:a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-"),
+      isShape:isLibraryShapeAsset(a),
+      isEffect:isLibraryEffectAsset(a),
     }));
   },
   async applyLibraryAsset(assetId){
     const a=(_assetLibrary||[]).find(x=>x.id===assetId);
     if(!a) throw new Error("Asset not found: "+assetId);
-    const isShape=a.slot==="shape" || (a.tags||[]).includes("shape") || String(a.id||"").startsWith("shape-");
-    if(isShape) await placeLibraryShapeAsset(a);
+    if(isLibraryShapeAsset(a)) await placeLibraryShapeAsset(a);
+    else if(isLibraryEffectAsset(a)){
+      await placeLibraryOverlayAsset(a, { prefix:"effect_", w:SW, h:SH, x:0, y:0, z:36, fit:"cover" });
+    }
     else await loadImageFromUrl(a.slot||"player", a.src);
     notifyEditorBridge("asset");
     return buildEditorSnapshot();

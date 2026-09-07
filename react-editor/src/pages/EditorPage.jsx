@@ -10,6 +10,17 @@ import {
   syncDbTemplatesIntoEngine,
 } from '../api/templatesApi.js'
 
+const inputClass = 'ui-input'
+
+function portalAssetUrl(src) {
+  if (!src) return ''
+  if (/^(https?:|data:|blob:)/i.test(src)) return src
+  if (src.startsWith('/portal/')) return src
+  if (src.startsWith('/')) return src
+  const clean = String(src).replace(/^\.\//, '')
+  return `/portal/${clean.split('/').map(encodeURIComponent).join('/')}`
+}
+
 function Panel({ title, children, className = '', action = null }) {
   return (
     <section className={`border-b border-line/80 ${className}`}>
@@ -32,8 +43,6 @@ function Field({ label, children }) {
     </label>
   )
 }
-
-const inputClass = 'ui-input'
 
 export default function EditorPage({ Nav }) {
   const { iframeRef, src, api, snapshot, ready, error, onLoad } = usePosterEngine({
@@ -169,11 +178,12 @@ export default function EditorPage({ Nav }) {
         ? assets
         : assetFilter === 'shape'
           ? assets.filter((a) => a.isShape)
-          : assets.filter((a) => a.slot === assetFilter)
+          : assetFilter === 'effect'
+            ? assets.filter((a) => a.isEffect || a.slot === 'effect')
+            : assets.filter((a) => a.slot === assetFilter)
     return list.map((a) => ({
       ...a,
-      thumb:
-        a.src && !/^https?:|data:|\//.test(a.src) ? `/portal/${a.src.replace(/^\.\//, '')}` : a.src,
+      thumb: portalAssetUrl(a.src),
     }))
   }, [assets, assetFilter])
 
@@ -856,35 +866,72 @@ export default function EditorPage({ Nav }) {
                 <option value="conference">Conference</option>
                 <option value="sponsor">Sponsor</option>
                 <option value="shape">Shapes</option>
+                <option value="effect">Effects</option>
               </select>
-              <div className="grid max-h-40 grid-cols-3 gap-1 overflow-y-auto">
-                {filteredAssets.slice(0, 24).map((a) => (
+              <div className="grid max-h-52 grid-cols-3 gap-1.5 overflow-y-auto">
+                {filteredAssets.map((a) => (
                   <button
                     key={a.id}
                     type="button"
                     title={a.name}
                     onClick={() => onApplyAsset(a.id)}
-                    className="overflow-hidden rounded border border-line bg-inset hover:border-muted"
+                    className="overflow-hidden rounded border border-line bg-white text-left hover:border-blaze"
                   >
-                    <div
-                      className="h-10 bg-contain bg-center bg-no-repeat"
-                      style={{ backgroundImage: a.thumb ? `url(${a.thumb})` : undefined }}
-                    />
+                    <div className="flex h-14 items-center justify-center bg-[#eef3f8] p-1">
+                      {a.thumb ? (
+                        <img
+                          src={a.thumb}
+                          alt=""
+                          className="max-h-full max-w-full object-contain"
+                          loading="lazy"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none'
+                            const fb = e.currentTarget.nextElementSibling
+                            if (fb) fb.hidden = false
+                          }}
+                        />
+                      ) : null}
+                      <span
+                        className="px-1 text-center text-[9px] leading-tight text-muted"
+                        hidden={!!a.thumb}
+                      >
+                        {a.name}
+                      </span>
+                    </div>
+                    <div className="truncate border-t border-line px-1 py-0.5 text-[9px] text-dim">
+                      {a.name}
+                    </div>
                   </button>
                 ))}
+                {!filteredAssets.length ? (
+                  <p className="col-span-3 text-[11px] text-muted">No assets in this filter</p>
+                ) : null}
               </div>
             </Panel>
 
             <Panel title="Shapes">
-              <div className="grid grid-cols-3 gap-1">
+              <div className="grid grid-cols-3 gap-1.5">
                 {shapePresets.map((p) => (
                   <button
                     key={p.id}
                     type="button"
+                    title={p.label || p.id}
                     onClick={() => api?.addShape?.(p.id)}
-                    className="ui-btn px-1 py-2 text-[11px]"
+                    className="flex flex-col items-center gap-1 rounded-md border border-line bg-white px-1 py-2 text-paper hover:border-blaze hover:bg-panel2"
                   >
-                    {p.label || p.id}
+                    {p.icon ? (
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-8 w-8 text-paper"
+                        aria-hidden
+                        dangerouslySetInnerHTML={{ __html: p.icon }}
+                      />
+                    ) : (
+                      <span className="flex h-8 w-8 items-center justify-center text-[10px] text-muted">
+                        ◆
+                      </span>
+                    )}
+                    <span className="truncate text-[10px] text-dim">{p.label || p.id}</span>
                   </button>
                 ))}
               </div>

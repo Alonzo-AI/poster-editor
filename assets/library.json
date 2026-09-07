@@ -1,13 +1,6 @@
 {
-  "version": 3,
+  "version": 4,
   "assets": [
-    {
-      "id": "player-evan-otten",
-      "name": "Evan Otten",
-      "slot": "player",
-      "src": "assets/player/evan-otten.jpg",
-      "tags": ["player", "portrait"]
-    },
     {
       "id": "bg-ccbg",
       "name": "Coastal Carolina BG",
@@ -28,13 +21,6 @@
       "slot": "background",
       "src": "assets/background/arkansas-ref.jpg",
       "tags": ["background", "reference"]
-    },
-    {
-      "id": "logo-team-mark",
-      "name": "Team mark",
-      "slot": "logo",
-      "src": "assets/logo/team-mark.png",
-      "tags": ["logo"]
     },
     {
       "id": "conf-app-state",
@@ -129,6 +115,13 @@
       "slot": "shape",
       "src": "assets/shape/outlook-shape.png",
       "tags": ["shape"]
+    },
+    {
+      "id": "effect-bottom-shadow",
+      "name": "Bottom shadow blur",
+      "slot": "effect",
+      "src": "assets/effects/black-blurred-gradient-bottom-shadow.png",
+      "tags": ["effect", "overlay", "shadow"]
     }
   ]
 }
