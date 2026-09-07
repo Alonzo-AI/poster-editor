@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import StageHost from '../components/StageHost.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import { apiHealth, syncDbTemplatesIntoEngine } from '../api/templatesApi.js'
@@ -36,6 +36,7 @@ export default function AutomatePage({ Nav }) {
   const [fields, setFields] = useState([])
   const [imageSlots, setImageSlots] = useState([])
   const [apiOnline, setApiOnline] = useState(null)
+  const layoutTemplateRef = useRef(null)
 
   const filteredTemplates = useMemo(
     () => templates.filter((t) => (t.category || 'player') === formatCategory),
@@ -59,14 +60,18 @@ export default function AutomatePage({ Nav }) {
   }, [api])
 
   const apply = useCallback(
-    async (includeImages = true) => {
+    async (includeImages = true, { resetLayout = false } = {}) => {
       if (!api?.setPayload || !templateId) return
+      const switching = layoutTemplateRef.current !== templateId
+      const shouldReset = resetLayout || switching
       setStatus('Updating…')
       try {
         const payload = {
           template: templateId,
           auto_palette: false,
-          freeze_layout: true,
+          // First paint / Reset: lock to baked positions. Later fills keep drag nudges.
+          freeze_layout: shouldReset,
+          preserve_layout: !shouldReset,
           text: { ...text },
           colors: { ...colors },
         }
@@ -78,22 +83,37 @@ export default function AutomatePage({ Nav }) {
           if (images.sponsor) payload.sponsor_logo = images.sponsor
         }
         await api.setPayload(payload)
-        try {
-          api.freezeCurrentLayout?.()
-        } catch (_) {}
+        if (shouldReset) {
+          try {
+            api.freezeCurrentLayout?.()
+          } catch (_) {}
+          layoutTemplateRef.current = templateId
+        }
         try {
           api.zoomFit?.()
         } catch (_) {}
         setStatus(
-          (current?.frozen ? 'Live · layout frozen · ' : 'Live · ') + `“${templateId}”`,
+          shouldReset
+            ? `Live · “${templateId}” · drag layers to adjust (export only)`
+            : `Live · “${templateId}” · layout tweaks kept for this export`,
         )
       } catch (e) {
         setStatus('Update failed: ' + (e.message || e))
       }
     },
-    [api, templateId, text, colors, images, current?.frozen],
+    [api, templateId, text, colors, images],
   )
 
+  function onResetLayout() {
+    if (!api) return
+    try {
+      api.resetAutomateLayout?.() || api.freezeCurrentLayout?.()
+      layoutTemplateRef.current = templateId
+      setStatus('Layout reset to template · drag again if needed')
+    } catch (e) {
+      setStatus('Reset failed: ' + (e.message || e))
+    }
+  }
   useEffect(() => {
     if (!ready || !api) return
     let cancelled = false
@@ -170,13 +190,14 @@ export default function AutomatePage({ Nav }) {
     if (!api?.exportPng) return
     setStatus('Rendering…')
     try {
-      await apply(true)
+      // Keep drag nudges — do not re-freeze before PNG
+      await apply(true, { resetLayout: false })
       const dataUrl = await api.exportPng()
       const a = document.createElement('a')
       a.href = dataUrl
       a.download = `poster_${templateId || 'export'}.png`
       a.click()
-      setStatus('PNG downloaded.')
+      setStatus('PNG downloaded · layout tweaks were not saved to DB')
     } catch (e) {
       setStatus('Export failed: ' + (e.message || e))
     }
@@ -196,9 +217,20 @@ export default function AutomatePage({ Nav }) {
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-3">
         <div>
           <div className="text-sm font-medium text-paper">Automate</div>
-          <div className="text-[11px] text-muted">Fill frozen template · export PNG</div>
+          <div className="text-[11px] text-muted">
+            Fill copy · drag on canvas to tweak · export PNG (not saved to DB)
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={!ready || !templateId}
+            title="Restore baked template positions"
+            onClick={onResetLayout}
+          >
+            Reset layout
+          </button>
           <span
             className={`text-[10px] ${
               apiOnline === true ? 'text-blaze' : 'text-dim'
@@ -221,9 +253,9 @@ export default function AutomatePage({ Nav }) {
           </div>
         </div>
 
-        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
+        <section className="mb-3 rounded-xl border border-line bg-panel p-3.5 shadow-sm">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <h2 className="text-[11px] font-semibold text-dim">Template</h2>
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Template</h2>
             <button
               type="button"
               className="rounded border border-line px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-dim hover:border-blaze hover:text-paper"
@@ -240,14 +272,14 @@ export default function AutomatePage({ Nav }) {
               Refresh
             </button>
           </div>
-          <div className="mb-2 flex gap-0.5 rounded-md border border-line p-0.5">
+          <div className="mb-2 flex gap-0.5 rounded-full border border-line bg-inset p-0.5">
             {CATEGORIES.map((c) => (
               <button
                 key={c.id}
                 type="button"
-                className={`flex-1 rounded px-1 py-1.5 text-[10px] font-medium ${
+                className={`flex-1 rounded-full px-1 py-1.5 text-[10px] font-semibold ${
                   formatCategory === c.id
-                    ? 'bg-panel text-paper'
+                    ? 'bg-panel text-paper shadow-sm'
                     : 'text-dim hover:text-paper'
                 }`}
                 onClick={() => setFormatCategory(c.id)}
@@ -262,9 +294,9 @@ export default function AutomatePage({ Nav }) {
                 key={t.id}
                 type="button"
                 onClick={() => setTemplateId(t.id)}
-                className={`rounded-md border px-2 py-2 text-left text-xs font-medium ${
+                className={`rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${
                   templateId === t.id
-                    ? 'border-line bg-panel text-paper'
+                    ? 'border-blaze/40 bg-panel2 text-paper'
                     : 'border-line bg-inset text-dim hover:text-paper'
                 }`}
               >
@@ -287,8 +319,8 @@ export default function AutomatePage({ Nav }) {
             frozen.
           </p>
         </section>
-        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
-          <h2 className="mb-2 text-[11px] font-semibold text-dim">Brand colors</h2>
+        <section className="mb-3 rounded-xl border border-line bg-panel p-3.5 shadow-sm">
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Brand colors</h2>
           <div className="flex gap-2">
             <label className="flex-1 text-[11px] text-dim">
               Primary
@@ -311,8 +343,8 @@ export default function AutomatePage({ Nav }) {
           </div>
         </section>
 
-        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
-          <h2 className="mb-2 text-[11px] font-semibold text-dim">Text fields</h2>
+        <section className="mb-3 rounded-xl border border-line bg-panel p-3.5 shadow-sm">
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Text fields</h2>
           {fields.map((f) => {
             const long = /desc|callout|title/i.test(f.key)
             const Tag = long ? 'textarea' : 'input'
@@ -330,8 +362,8 @@ export default function AutomatePage({ Nav }) {
           })}
         </section>
 
-        <section className="mb-3 rounded-md border border-line bg-panel2 p-3">
-          <h2 className="mb-2 text-[11px] font-semibold text-dim">Images</h2>
+        <section className="mb-3 rounded-xl border border-line bg-panel p-3.5 shadow-sm">
+          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Images</h2>
           {imageSlots.map((slot) => (
             <div key={slot.key} className="mb-2 flex items-center gap-2">
               <div
@@ -389,15 +421,17 @@ export default function AutomatePage({ Nav }) {
           Export PNG
         </button>
         <p className="mt-2 text-[11px] text-muted">
-          Templates refresh from the database after Editor Save. Layout stays frozen.
+          Drag text or images on the canvas to fine-tune before export. Tweaks are session-only —
+          they are not written to Atlas. Use <b className="font-medium text-dim">Reset layout</b> to
+          restore the template.
         </p>
         <p className="mt-1 text-xs text-dim">{status}</p>
       </aside>
 
-      <main className="relative flex min-w-0 flex-1 items-center justify-center overflow-hidden bg-[#121212]">
-        <div className="relative aspect-[1080/1350] h-[min(92vh,920px)] max-h-[92vh] w-auto max-w-[min(92%,520px)] shadow-[0_20px_60px_#000a]">
+      <main className="ui-canvas-well relative flex min-w-0 flex-1 items-center justify-center overflow-hidden">
+        <div className="relative aspect-[1080/1350] h-[min(92vh,920px)] max-h-[92vh] w-auto max-w-[min(92%,520px)] rounded-sm shadow-[0_16px_48px_rgba(14,99,155,0.14)] ring-1 ring-line">
           {!ready && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-ink/90 text-xs text-dim">
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-panel/90 text-xs text-dim">
               {error || 'Starting poster engine…'}
             </div>
           )}

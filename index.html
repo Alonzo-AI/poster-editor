@@ -370,6 +370,8 @@
   body.headless #main{width:100%;height:100%;padding:0;background:#0a0b0e;}
   body.headless #stageWrap{box-shadow:none;}
   body.headless #stage{box-shadow:none;}
+  body.headless .layer{cursor:move;}
+  body.headless .layer.sel{outline:2px solid #0ea5e9;outline-offset:1px;}
   /* React shell embed: hide vanilla chrome; keep stage + zoom toolbar */
   body.embed #side,body.embed .hint,body.embed #testBanner,body.embed #labBanner,body.embed #templateLoadBanner{display:none!important;}
   body.embed #app{grid-template-columns:1fr;width:100%;height:100%;}
@@ -4632,7 +4634,11 @@ async function setCutBg(key, enabled){
 ============================================================ */
 const LS_KEY = "posterEditor.v3";
 let _saveTimer=null;
-function scheduleSave(){ clearTimeout(_saveTimer); _saveTimer=setTimeout(saveState,450); }
+function scheduleSave(){
+  // Automate headless: never write editor localStorage (export-only nudges stay in memory)
+  if(document.body.classList.contains("headless")) return;
+  clearTimeout(_saveTimer); _saveTimer=setTimeout(saveState,450);
+}
 function serializable(){
   return { v:5, template:state.template, colors:state.colors, text:state.text,
            layouts:state.layouts, extraLayers:state.extraLayers, fieldLabels:state.fieldLabels, autoPalette:state.autoPalette,
@@ -6151,22 +6157,28 @@ window.__RENDER_API_V3__={
     if(imageMap.logo && shouldUseLogoPalette(payload, state.template)) applyPaletteFromLogo();
     else if(shouldUseLogoPalette(payload, state.template) && imagesOf().logo) applyPaletteFromLogo();
     if(shouldUsePlayerPalette(state.template)) await applyPaletteFromPlayer();
-    // Always re-apply frozen layer positions when Automate selects a template
-    // or when payload asks to keep layout locked (default for Automate).
-    const wantFreeze=payload.freeze_layout!==false && (
-      payload.freeze_layout===true || isFrozenTemplate(state.template) || state.template!==prevTpl
-    );
-    if(wantFreeze || isFrozenTemplate(state.template) || state.template!==prevTpl){
-      resetLayoutFromTemplate(state.template, {
-        freeze: payload.freeze_layout===true || isFrozenTemplate(state.template),
-      });
-    } else {
+    // Automate export adjust: keep user drag/resize after fill updates
+    const preserve=!!payload.preserve_layout;
+    if(preserve){
       ensureLayout();
+    } else {
+      // Always re-apply frozen layer positions when Automate selects a template
+      // or when payload asks to keep layout locked (default for Automate).
+      const wantFreeze=payload.freeze_layout!==false && (
+        payload.freeze_layout===true || isFrozenTemplate(state.template) || state.template!==prevTpl
+      );
+      if(wantFreeze || isFrozenTemplate(state.template) || state.template!==prevTpl){
+        resetLayoutFromTemplate(state.template, {
+          freeze: payload.freeze_layout===true || isFrozenTemplate(state.template),
+        });
+      } else {
+        ensureLayout();
+      }
     }
     if(payload.layout_overrides) applyLayoutOverrides(state.template, payload.layout_overrides);
     if(payload.settings) applySettingsOverrides(state.template, payload.settings);
     // Never run stock layout migrations on frozen / editor-saved templates
-    if(!isFrozenTemplate(state.template) && payload.freeze_layout!==true){
+    if(!preserve && !isFrozenTemplate(state.template) && payload.freeze_layout!==true){
       if(state.template==="salukis_clean"||state.template==="salukis_dark") applySalukisLayoutDefault();
       if(state.template==="vapor_motion") applyVaporMotionLayoutDefault();
       if(state.template==="vapor_motion") buildVaporGlassControls();
@@ -6177,8 +6189,8 @@ window.__RENDER_API_V3__={
     if(cS) cS.value=state.colors.secondary;
     render();
     if(document.fonts?.ready) await document.fonts.ready;
-    // Re-freeze after fonts/images settle so positions cannot drift
-    if(payload.freeze_layout===true || isFrozenTemplate(state.template)){
+    // Re-freeze after fonts/images settle so positions cannot drift — skip when adjusting
+    if(!preserve && (payload.freeze_layout===true || isFrozenTemplate(state.template))){
       resetLayoutFromTemplate(state.template, { freeze:true });
       render();
     } else {
@@ -6189,6 +6201,13 @@ window.__RENDER_API_V3__={
     resetLayoutFromTemplate(state.template, { freeze:true });
     render();
     return { id:state.template, frozen:true };
+  },
+  /** Re-apply template geometry (Automate “Reset layout” for export-only nudges). */
+  resetAutomateLayout(){
+    resetLayoutFromTemplate(state.template, { freeze:true });
+    render();
+    notifyEditorBridge("layout-reset");
+    return { ok:true, id:state.template, snapshot:buildEditorSnapshot() };
   },
   listTemplates(){
     const ids=templateIdsReady();

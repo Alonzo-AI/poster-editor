@@ -6,13 +6,13 @@ const AutomatePage = lazy(() => import('./pages/AutomatePage.jsx'))
 
 function ShellNav() {
   return (
-    <nav className="flex items-center gap-1 rounded-md border border-line bg-inset p-0.5">
+    <nav className="flex items-center gap-0.5 rounded-full border border-line bg-inset p-0.5">
       <NavLink
         to="/"
         end
         className={({ isActive }) =>
-          `rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-            isActive ? 'bg-panel2 text-paper' : 'text-dim hover:text-paper'
+          `rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+            isActive ? 'bg-panel text-paper shadow-sm' : 'text-dim hover:text-paper'
           }`
         }
       >
@@ -21,8 +21,8 @@ function ShellNav() {
       <NavLink
         to="/automate"
         className={({ isActive }) =>
-          `rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-            isActive ? 'bg-panel2 text-paper' : 'text-dim hover:text-paper'
+          `rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+            isActive ? 'bg-panel text-paper shadow-sm' : 'text-dim hover:text-paper'
           }`
         }
       >

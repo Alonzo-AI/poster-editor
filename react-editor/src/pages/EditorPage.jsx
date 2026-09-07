@@ -10,14 +10,14 @@ import {
 
 function Panel({ title, children, className = '', action = null }) {
   return (
-    <section className={`border-b border-line ${className}`}>
+    <section className={`border-b border-line/80 ${className}`}>
       {title ? (
-        <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-1">
-          <h2 className="text-[11px] font-semibold text-dim">{title}</h2>
+        <div className="flex items-center justify-between gap-2 px-3.5 pt-3.5 pb-1.5">
+          <h2 className="text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">{title}</h2>
           {action}
         </div>
       ) : null}
-      <div className="px-3 pb-3">{children}</div>
+      <div className="px-3.5 pb-3.5">{children}</div>
     </section>
   )
 }
@@ -262,12 +262,14 @@ export default function EditorPage({ Nav }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-ink">
       {/* Top bar */}
-      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-3">
+      <header className="flex h-12 shrink-0 items-center gap-3 border-b border-line bg-panel px-4">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-medium text-paper">
+          <span className="truncate text-sm font-semibold tracking-tight text-paper">
             {bakeName || snapshot?.templateName || 'Untitled'}
           </span>
-          <span className="hidden text-[11px] text-muted sm:inline">1080 × 1350</span>
+          <span className="hidden rounded-full bg-panel2 px-2 py-0.5 text-[10px] font-medium text-dim sm:inline">
+            1080 × 1350
+          </span>
         </div>
         <div className="mx-auto flex items-center gap-1">
           <button type="button" className="ui-icon-btn" title="Fit" onClick={() => api?.zoomFit?.()}>
@@ -365,14 +367,14 @@ export default function EditorPage({ Nav }) {
                 </button>
               }
             >
-              <div className="mb-2 flex gap-0.5 rounded-md border border-line p-0.5">
+              <div className="mb-2 flex gap-0.5 rounded-full border border-line bg-inset p-0.5">
                 {CATEGORIES.map((c) => (
                   <button
                     key={c.id}
                     type="button"
-                    className={`flex-1 rounded px-1 py-1.5 text-[10px] font-medium ${
+                    className={`flex-1 rounded-full px-1 py-1.5 text-[10px] font-semibold ${
                       formatCategory === c.id
-                        ? 'bg-panel2 text-paper'
+                        ? 'bg-panel text-paper shadow-sm'
                         : 'text-dim hover:text-paper'
                     }`}
                     onClick={() => setFormatCategory(c.id)}
@@ -675,15 +677,15 @@ export default function EditorPage({ Nav }) {
         </aside>
 
         {/* Center canvas */}
-        <main className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-[#121212]">
+        <main className="ui-canvas-well relative flex min-h-0 min-w-0 flex-col overflow-hidden">
           {!ready && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ink/80 text-xs text-dim">
+            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ink/70 text-xs text-dim">
               {error || 'Starting engine…'}
             </div>
           )}
           <StageHost iframeRef={iframeRef} src={src} onLoad={onLoad} />
           {status ? (
-            <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-md border border-line bg-panel/95 px-3 py-1.5 text-[11px] text-dim backdrop-blur">
+            <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-panel/95 px-3.5 py-1.5 text-[11px] text-dim shadow-sm backdrop-blur">
               {status}
             </div>
           ) : null}
@@ -691,21 +693,21 @@ export default function EditorPage({ Nav }) {
 
         {/* Right properties */}
         <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-line bg-panel">
-          <div className="shrink-0 border-b border-line px-3 py-2.5">
-            <div className="text-[12px] font-semibold text-paper">Styles</div>
-            <div className="truncate text-[11px] text-muted">
+          <div className="shrink-0 border-b border-line px-3.5 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Styles</div>
+            <div className="mt-0.5 truncate text-[12px] text-paper">
               {selected ? `${selected.type} · ${selected.id}` : 'Select a layer'}
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3">
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3.5">
             <PropertiesPanel api={api} selected={selected} snapshot={snapshot} />
           </div>
-          <div className="shrink-0 space-y-2 border-t border-line p-3">
+          <div className="shrink-0 space-y-2 border-t border-line p-3.5">
             <button type="button" className="ui-btn ui-btn-primary w-full" onClick={onExport}>
               Export PNG
             </button>
             <p className="text-[10px] leading-snug text-muted">
-              Save writes id <span className="text-dim">{bakeId || '—'}</span> to Atlas.
+              Save writes id <span className="font-medium text-dim">{bakeId || '—'}</span> to Atlas.
             </p>
           </div>
         </aside>

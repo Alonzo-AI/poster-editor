@@ -398,12 +398,12 @@ function EffectPreset({ id, label, active, previewStyle, onClick }) {
       type="button"
       title={label}
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 rounded-md border p-2 ${
-        active ? 'border-blaze bg-panel2' : 'border-line bg-inset hover:border-muted'
+      className={`flex flex-col items-center gap-1 rounded-lg border p-2 ${
+        active ? 'border-blaze bg-panel2' : 'border-line bg-inset hover:border-blaze/40'
       }`}
     >
       <span
-        className="flex h-10 w-12 items-center justify-center text-[18px] font-bold text-paper"
+        className="flex h-10 w-12 items-center justify-center rounded bg-[#0f172a] text-[18px] font-bold text-white"
         style={{ textShadow: previewStyle, fontFamily: 'Georgia, serif' }}
       >
         Ag

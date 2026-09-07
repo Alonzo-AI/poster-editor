@@ -112,7 +112,7 @@ Scripts in `index.html`:
 3. `restoreBakedTemplates()` from `posterEditor.v3.bakedTemplates`
 4. Headless: `loadEditorSessionForAutomate()` (labels + layout styles)
 5. Seed default images baked into the template JSON
-6. `ensureLayout()` — do **not** freeze-reset in the Editor (so drags persist). Automate still freeze-resets via `setPayload({ freeze_layout: true })`
+6. `ensureLayout()` — do **not** freeze-reset in the Editor (so drags persist). Automate first paint / Reset uses `freeze_layout: true`; later fills use `preserve_layout: true` so export nudges stick
 7. `refreshEditorUI()` + first `render()`
 
 ---
@@ -264,7 +264,7 @@ Geometry writes go to `state.layouts[templateId][layerId]`. On pointer-up, `sync
 **Editor vs Automate freeze**
 
 - **Editor:** `switchTemplate` / `init` call `ensureLayout()` only. User drags stick across refresh via `localStorage`.
-- **Automate:** `setPayload` calls `resetLayoutFromTemplate(..., { freeze:true })` so copy/image swaps cannot drift positions.
+- **Automate:** first template paint (and **Reset layout**) uses `freeze_layout: true` → `resetLayoutFromTemplate`. Later copy/image updates pass `preserve_layout: true` so canvas drag/resize for **PNG export only** is kept. Headless never writes `posterEditor.v3`. Nudges are not Saved to Mongo; `resetAutomateLayout()` restores baked geometry.
 
 ---
 
@@ -328,8 +328,9 @@ Quota: oversized images are dropped from session save; bake retries with player+
 
 ```js
 __RENDER_API_V3__ = {
-  setPayload(payload),      // template, text, colors, images, freeze_layout
+  setPayload(payload),      // template, text, colors, images, freeze_layout, preserve_layout
   freezeCurrentLayout(),
+  resetAutomateLayout(),    // re-apply baked positions (clears export-only nudges)
   listTemplates(),          // id, name, frozen, fields, images, automation
   getTemplateFields(id),
   bakeTemplate,             // bake + return { snapshot, json }
@@ -344,6 +345,8 @@ __RENDER_API_V3__ = {
 ```
 
 `setPayload` image aliases: `player_image` / `playerImageUrl`, `logo_url`, `conference_logo`, `sponsor_logo`, `background_image`.
+
+Pass `preserve_layout: true` on Automate fill updates so drag/resize of text and images stay for **PNG export only** (not written to Atlas / bake). Template switch or `resetAutomateLayout()` restores baked geometry.
 
 React Automate loads file templates from the iframe, then merges Mongo via `GET /api/templates` → `injectRemoteTemplates`. Use **Refresh** on Automate if you Saved in another tab.
 
