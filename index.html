@@ -325,10 +325,30 @@
   .layer .h.s{left:50%;bottom:-7px;margin-left:-6px;cursor:ns-resize;}
   .layer .h.w{left:-7px;top:50%;margin-top:-6px;cursor:ew-resize;}
   .layer .h.e{right:-7px;top:50%;margin-top:-6px;cursor:ew-resize;}
-  .layer .rot{position:absolute;left:50%;top:-28px;margin-left:-8px;width:15px;height:15px;border-radius:50%;
-    background:#fff;border:2px solid var(--accent);cursor:grab;display:none;pointer-events:auto;z-index:6;}
-  .layer.sel .rot{display:block;}
+  .layer .rot{
+    position:absolute;left:50%;bottom:-46px;top:auto;margin-left:-12px;
+    width:24px;height:24px;border-radius:50%;
+    background:#fff;border:1.5px solid #cbd5e1;cursor:grab;display:none;pointer-events:auto;z-index:8;
+    box-shadow:0 2px 8px rgba(15,23,42,.28);
+    align-items:center;justify-content:center;
+  }
+  .layer .rot svg{
+    width:14px;height:14px;display:block;pointer-events:none;color:#0f172a;
+  }
+  .layer .rot::before{
+    content:"";position:absolute;left:50%;bottom:100%;width:1.5px;height:16px;margin-left:-0.75px;
+    background:#94a3b8;border-radius:1px;pointer-events:none;
+  }
+  .layer.sel .rot{display:flex;}
   .layer.cropping .rot{display:none;}
+  .layer .rot:active{cursor:grabbing;}
+  /* Selected layers must not clip resize/rotate handles (text uses overflow:hidden for autofit) */
+  .layer.sel,
+  .layer.sel.fixed-box{overflow:visible!important;}
+  .layer.sel.fixed-box>.txt-flow{
+    overflow:hidden;
+    max-height:100%;
+  }
   .layer.txt{display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;}
   .layer.txt>.txt-flow{display:block;width:100%;min-width:0;max-width:100%;}
   .layer.txt.fixed-box{overflow:hidden;}
@@ -2034,6 +2054,11 @@ function ensureLayout(){
   return L;
 }
 function parseRotate(t){ if(!t) return 0; const m=/rotate\((-?\d+(\.\d+)?)deg\)/.exec(t); return m?parseFloat(m[1]):0; }
+/** Normalize degrees into 0…359 for UI + paint */
+function normalizeRotateDeg(deg){
+  const n=Math.round(+deg||0);
+  return ((n%360)+360)%360;
+}
 function geo(id){ return ensureLayout()[id]; }
 
 /* ---- undo / redo (layout-only snapshots, no images) ---- */
@@ -3211,7 +3236,7 @@ function render(){
     el.style.width = displayW+"px";
     el.style.zIndex = g.z ?? def.z ?? 10;
     el.style.opacity = layerOpacity;
-    const rot = g.rotate||0;
+    const rot = normalizeRotateDeg(g.rotate||0);
     el.style.transform = rot? `rotate(${rot}deg)`:"";
 
     if(def.type==="image" && !isBlock){
@@ -3307,7 +3332,14 @@ function render(){
     const blockLayer=isBlockLayer(def, g, id);
     const dirs = ["nw","ne","sw","se","n","s","w","e"];
     dirs.forEach(d=>{ const hd=document.createElement("div"); hd.className="h "+d; hd.dataset.handle=d; el.appendChild(hd); });
-    const rt=document.createElement("div"); rt.className="rot"; rt.dataset.handle="rot"; el.appendChild(rt);
+    const rt=document.createElement("div");
+    rt.className="rot";
+    rt.dataset.handle="rot";
+    rt.title="Rotate";
+    rt.setAttribute("aria-label","Rotate");
+    // Circular arrows rotate glyph (like design tools)
+    rt.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 0 1 14.3-6.1"/><polyline points="17 2 18 6 14 6.5"/><path d="M20.5 12a8.5 8.5 0 0 1-14.3 6.1"/><polyline points="7 22 6 18 10 17.5"/></svg>`;
+    el.appendChild(rt);
 
     if(state.selected===id) el.classList.add("sel");
     deco.after(el); // keep order; appended to stage
@@ -3500,7 +3532,7 @@ function attachLayerEvents(el, def, g){
     } else if(d.mode==="rot"){
       let ang=Math.atan2(e.clientY-d.cy, e.clientX-d.cx)*180/Math.PI + 90;
       if(e.shiftKey) ang=Math.round(ang/15)*15;           // snap to 15°
-      gg.rotate=Math.round(ang);
+      gg.rotate=normalizeRotateDeg(ang);
     } else if(d.mode==="pan"){
       const bw=gg.w, bh=gg.h??gg.w;
       if(d.dispW>bw) gg.cropX=clamp01(d.ocx - dx/(d.dispW-bw));
@@ -3654,7 +3686,9 @@ function applyTextLayerVisuals(el, def, g, layerId){
 }
 function applyGeo(el, def, g){
   el.style.left=g.x+"px"; el.style.top=g.y+"px"; el.style.width=g.w+"px";
-  el.style.transform = (g.rotate? `rotate(${g.rotate}deg)`:"");
+  const rot=normalizeRotateDeg(g.rotate||0);
+  g.rotate=rot;
+  el.style.transform = (rot? `rotate(${rot}deg)`:"");
   el.style.opacity = (g.opacity!=null?g.opacity:1);
   const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(el.dataset.id||"");
   if(def.type==="image" && !isBlock){
@@ -3762,7 +3796,7 @@ function syncInspector(){
     h+=`<label class="fld" style="display:flex;align-items:center;gap:7px;cursor:pointer;margin-top:8px">
           <input type="checkbox" id="iLock" ${g.lockAspect?'checked':''} style="width:auto"> Lock aspect ratio</label>`;
     h+=`<label class="fld">Rotation: <b id="ivr">${g.rotate||0}°</b></label>
-        <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
+        <input type="range" id="iRot" min="0" max="360" value="${normalizeRotateDeg(g.rotate||0)}">`;
     h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius||0}</b></label>
         <input type="range" id="iRad" min="0" max="200" value="${g.radius||0}">`;
     h+=`<label class="fld" style="display:flex;align-items:center;gap:7px;cursor:pointer">
@@ -3781,7 +3815,7 @@ function syncInspector(){
           <div><label class="fld">Height</label><input class="num" type="number" id="iH" value="${Math.round(g.h??g.w)}"></div>
         </div>`;
     h+=`<label class="fld">Rotation: <b id="ivr">${g.rotate||0}°</b></label>
-        <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
+        <input type="range" id="iRot" min="0" max="360" value="${normalizeRotateDeg(g.rotate||0)}">`;
     h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??24}</b></label>
         <input type="range" id="iRad" min="0" max="80" value="${g.radius??def.radius??24}">`;
   } else if(isBlock){
@@ -3807,7 +3841,7 @@ function syncInspector(){
           <div><label class="fld">Height</label><input class="num" type="number" id="iH" value="${Math.round(g.h??g.w)}"></div>
         </div>`;
     h+=`<label class="fld">Rotation: <b id="ivr">${g.rotate||0}°</b></label>
-        <input type="range" id="iRot" min="-180" max="180" value="${g.rotate||0}">`;
+        <input type="range" id="iRot" min="0" max="360" value="${normalizeRotateDeg(g.rotate||0)}">`;
     const hasClip=!!(g.clip||def.clip);
     if(!hasClip){
       h+=`<label class="fld">Corner radius: <b id="ivrad">${g.radius??def.radius??0}</b></label>
@@ -3892,7 +3926,7 @@ function syncInspector(){
           </div>
         </div>`;
     h+=`<div class="row"><div><label class="fld">Letter spacing</label><input type="range" id="iLs" min="0" max="14" value="${(g.ls ?? def.ls)||0}"></div>
-        <div><label class="fld">Rotation: <b id="ivr2">${g.rotate||0}°</b></label><input type="range" id="iRot" min="-90" max="90" value="${g.rotate||0}"></div></div>`;
+        <div><label class="fld">Rotation: <b id="ivr2">${normalizeRotateDeg(g.rotate||0)}°</b></label><input type="range" id="iRot" min="0" max="360" value="${normalizeRotateDeg(g.rotate||0)}"></div></div>`;
     h+=`<label class="fld"><input type="checkbox" id="iIt" ${(g.italic ?? def.italic)?'checked':''} style="width:auto"> Italic</label>`;
     h+=`<label class="fld"><input type="checkbox" id="iUl" ${(g.underline ?? def.underline)?'checked':''} style="width:auto"> Underline</label>`;
     h+=`<label class="fld">Align</label>
@@ -3946,7 +3980,7 @@ function syncInspector(){
     $("iW").oninput=e=>{ const v=Math.max(1,+e.target.value||1); if(g.lockAspect){ const r=(g.h??g.w)/g.w; g.h=Math.round(v*r); $("iH").value=g.h; } g.w=v; applyGeo(el(),def,g); };
     $("iH").oninput=e=>{ const v=Math.max(1,+e.target.value||1); if(g.lockAspect){ const r=g.w/(g.h??g.w); g.w=Math.round(v*r); $("iW").value=g.w; } g.h=v; applyGeo(el(),def,g); };
     $("iLock").onchange=e=>{ g.lockAspect=e.target.checked; };
-    $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iRot").oninput=e=>{ g.rotate=normalizeRotateDeg(+e.target.value); if($("ivr"))$("ivr").textContent=g.rotate+"°"; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
     $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
     $("iBord").onchange=e=>{ g.borderOn=e.target.checked; applyGeo(el(),def,g); };
     $("iBw").oninput=e=>{ g.borderW=+e.target.value; $("ivbw").textContent=g.borderW; applyGeo(el(),def,g); };
@@ -3957,7 +3991,7 @@ function syncInspector(){
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
     $("iW").oninput=e=>{ g.w=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
     $("iH").oninput=e=>{ g.h=Math.max(24,+e.target.value||24); applyGeo(el(),def,g); };
-    $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iRot").oninput=e=>{ g.rotate=normalizeRotateDeg(+e.target.value); if($("ivr"))$("ivr").textContent=g.rotate+"°"; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
     $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
   } else if(isBlock){
     const commitBlockFill=()=>{
@@ -4012,7 +4046,7 @@ function syncInspector(){
       if(g.lockAspect){ const r=g.w/(g.h??g.w); g.w=Math.round(v*r); if($("iW")) $("iW").value=g.w; }
       g.h=v; applyGeo(el(),def,g);
     };
-    $("iRot").oninput=e=>{ g.rotate=+e.target.value; $("ivr").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iRot").oninput=e=>{ g.rotate=normalizeRotateDeg(+e.target.value); if($("ivr"))$("ivr").textContent=g.rotate+"°"; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
     if($("iRad")) $("iRad").oninput=e=>{ g.radius=+e.target.value; $("ivrad").textContent=g.radius; applyGeo(el(),def,g); };
     if($("iLock")) $("iLock").onchange=e=>{ g.lockAspect=e.target.checked; };
   } else {
@@ -4228,7 +4262,7 @@ function syncInspector(){
       iStrokeHex.onkeydown=e=>{ if(e.key==="Enter") e.target.blur(); };
     }
     $("iLs").oninput=e=>{ g.ls=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); };
-    $("iRot").oninput=e=>{ g.rotate=+e.target.value; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
+    $("iRot").oninput=e=>{ g.rotate=normalizeRotateDeg(+e.target.value); if($("ivr"))$("ivr").textContent=g.rotate+"°"; if($("ivr2"))$("ivr2").textContent=g.rotate+"°"; applyGeo(el(),def,g); };
     $("iIt").onchange=e=>{ g.italic=e.target.checked; markTextStyleCustom(g); applyGeo(el(),def,g); };
     $("iUl").onchange=e=>{ g.underline=e.target.checked; markTextStyleCustom(g); applyGeo(el(),def,g); };
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
@@ -6131,7 +6165,7 @@ function buildEditorSnapshot(){
       textStyle:typeof detectTextStylePreset==="function"?detectTextStylePreset(g,def):null,
       geo:{
         x:g.x, y:g.y, w:g.w, h:g.h,
-        rotate:g.rotate||0,
+        rotate:typeof normalizeRotateDeg==="function"?normalizeRotateDeg(g.rotate||0):(g.rotate||0),
         opacity:g.opacity!=null?g.opacity:1,
         fill:g.fill||def.fill||null,
         color:g.color||def.color||null,
@@ -6410,9 +6444,10 @@ window.__RENDER_API_V3__={
     const g=geo(lid);
     const mark=()=>{ try{ markTextStyleCustom(g); }catch(_){} };
 
-    for(const k of ["x","y","w","h","rotate","opacity","radius","ls","zoom","borderW","borderColor"]){
+    for(const k of ["x","y","w","h","opacity","radius","ls","zoom","borderW","borderColor"]){
       if(patch[k]!=null) g[k]=patch[k];
     }
+    if(patch.rotate!=null) g.rotate=normalizeRotateDeg(patch.rotate);
     if(patch.lockAspect!=null) g.lockAspect=!!patch.lockAspect;
     if(patch.borderOn!=null) g.borderOn=!!patch.borderOn;
     if(patch.flipH!=null) g.flipH=!!patch.flipH;

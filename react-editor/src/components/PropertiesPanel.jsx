@@ -532,15 +532,58 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
         ))}
       </div>
 
-      <Field label={`Rotation: ${g.rotate || 0}°`}>
-        <input
-          type="range"
-          min={selected.isText ? -90 : -180}
-          max={selected.isText ? 90 : 180}
-          value={g.rotate || 0}
-          className="w-full accent-blaze"
-          onChange={(e) => patch({ rotate: +e.target.value })}
-        />
+      <Field label={`Rotation: ${Math.round((((g.rotate || 0) % 360) + 360) % 360)}°`}>
+        <div className="mb-1 flex items-center gap-2">
+          <input
+            type="range"
+            min={0}
+            max={360}
+            step={1}
+            value={(((g.rotate || 0) % 360) + 360) % 360}
+            className="ui-range min-w-0 flex-1"
+            aria-label="Rotation degrees"
+            onChange={(e) => patch({ rotate: +e.target.value })}
+          />
+          <input
+            type="number"
+            min={0}
+            max={360}
+            className={`${inputClass} w-16 shrink-0`}
+            value={Math.round((((g.rotate || 0) % 360) + 360) % 360)}
+            onChange={(e) => {
+              const n = Number(e.target.value)
+              if (!Number.isFinite(n)) return
+              patch({ rotate: n })
+            }}
+          />
+        </div>
+        <div className="mb-2 flex gap-1">
+          <button
+            type="button"
+            className="ui-btn flex-1 py-1 text-[11px]"
+            onClick={() => patch({ rotate: ((((g.rotate || 0) % 360) + 360) % 360) - 15 })}
+          >
+            −15°
+          </button>
+          <button
+            type="button"
+            className="ui-btn flex-1 py-1 text-[11px]"
+            onClick={() => patch({ rotate: 0 })}
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            className="ui-btn flex-1 py-1 text-[11px]"
+            onClick={() => patch({ rotate: ((((g.rotate || 0) % 360) + 360) % 360) + 15 })}
+          >
+            +15°
+          </button>
+        </div>
+        <p className="mb-2 text-[10px] text-muted">
+          Drag the rotate handle under the selection, or set 0–360° here. Hold Shift while
+          dragging to snap to 15°.
+        </p>
       </Field>
 
       <Field label={`Opacity: ${Math.round((g.opacity ?? 1) * 100)}%`}>
