@@ -264,6 +264,12 @@ render()
 
 Geometry writes go to `state.layouts[templateId][layerId]`. On pointer-up, `syncLayerDefGeometry` copies x/y/w/h back onto the layer def so bake/export see the drag.
 
+**Layer lock** (`g.locked`): select still works; move / resize / rotate / pan / arrow-nudge / z-order keys are blocked. Styles panel **Lock layer** toggles it; baked into JSON. Dashed selection + handles hidden while locked.
+
+**Undo / redo**: layout-only stacks (`pushUndo` / `undo` / `redo`, max 50). Vanilla Ctrl/Cmd+Z already works. React Editor exposes **Undo** / **Redo** in the top bar via `__RENDER_API_V3__.undo|redo|pushUndo|getHistoryState`; snapshot includes `canUndo` / `canRedo`.
+
+**Image filters** (photo layers): `imgBrightness`, `imgContrast`, `imgBlur`, `imgGrayscale`, optional `imgDuotone` + `imgDuotoneFrom` / `imgDuotoneTo` → CSS `filter` (+ color-blend overlay for duotone). Painted in `applyImageStyle`; baked when non-default. Styles panel **Filters** section; does not change crop/fit math.
+
 **Editor vs Automate freeze**
 
 - **Editor:** `switchTemplate` / `init` call `ensureLayout()` only. User drags stick across refresh via `localStorage`.
@@ -340,6 +346,7 @@ __RENDER_API_V3__ = {
   getTemplateFields(id),
   bakeTemplate,             // bake + return { snapshot, json }
   injectRemoteTemplates,    // merge DB / remote JSON into TEMPLATES
+  undo / redo / pushUndo / getHistoryState,  // layout history (React Undo/Redo)
   exportPng(),              // data URL
   exportPngBuffer(),
   render(),

@@ -431,6 +431,24 @@ export default function EditorPage({ Nav }) {
           </span>
         </div>
         <div className="mx-auto flex items-center gap-1">
+          <button
+            type="button"
+            className="ui-icon-btn"
+            title="Undo (Ctrl+Z)"
+            disabled={!ready || !snapshot?.canUndo}
+            onClick={() => api?.undo?.()}
+          >
+            Undo
+          </button>
+          <button
+            type="button"
+            className="ui-icon-btn"
+            title="Redo (Ctrl+Shift+Z)"
+            disabled={!ready || !snapshot?.canRedo}
+            onClick={() => api?.redo?.()}
+          >
+            Redo
+          </button>
           <button type="button" className="ui-icon-btn" title="Fit" onClick={() => api?.zoomFit?.()}>
             Fit
           </button>
@@ -779,6 +797,11 @@ export default function EditorPage({ Nav }) {
                         {layer.type}
                       </span>
                       <span className="truncate">{layer.label}</span>
+                      {layer.locked ? (
+                        <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-muted">
+                          Locked
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 ))}

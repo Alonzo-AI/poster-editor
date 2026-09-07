@@ -518,6 +518,19 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
 
   return (
     <div className="space-y-1">
+      <button
+        type="button"
+        className={`mb-3 w-full rounded-md py-2 text-xs font-medium ${
+          g.locked ? 'ui-btn-primary' : 'ui-btn'
+        }`}
+        onClick={() => {
+          api?.pushUndo?.()
+          patch({ locked: !g.locked })
+        }}
+      >
+        {g.locked ? 'Unlock layer' : 'Lock layer'}
+      </button>
+
       {/* Geometry */}
       <div className="mb-3 grid grid-cols-2 gap-2">
         {['x', 'y', 'w', 'h'].map((k) => (
@@ -526,6 +539,7 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
               type="number"
               className={inputClass}
               value={Math.round(g[k] ?? 0)}
+              disabled={!!g.locked}
               onChange={(e) => patch({ [k]: +e.target.value })}
             />
           </Field>
@@ -542,6 +556,8 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
             value={(((g.rotate || 0) % 360) + 360) % 360}
             className="ui-range min-w-0 flex-1"
             aria-label="Rotation degrees"
+            disabled={!!g.locked}
+            onPointerDown={() => api?.pushUndo?.()}
             onChange={(e) => patch({ rotate: +e.target.value })}
           />
           <input
@@ -550,6 +566,7 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
             max={360}
             className={`${inputClass} w-16 shrink-0`}
             value={Math.round((((g.rotate || 0) % 360) + 360) % 360)}
+            disabled={!!g.locked}
             onChange={(e) => {
               const n = Number(e.target.value)
               if (!Number.isFinite(n)) return
@@ -561,6 +578,7 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
           <button
             type="button"
             className="ui-btn flex-1 py-1 text-[11px]"
+            disabled={!!g.locked}
             onClick={() => patch({ rotate: ((((g.rotate || 0) % 360) + 360) % 360) - 15 })}
           >
             −15°
@@ -568,6 +586,7 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
           <button
             type="button"
             className="ui-btn flex-1 py-1 text-[11px]"
+            disabled={!!g.locked}
             onClick={() => patch({ rotate: 0 })}
           >
             Reset
@@ -575,14 +594,16 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
           <button
             type="button"
             className="ui-btn flex-1 py-1 text-[11px]"
+            disabled={!!g.locked}
             onClick={() => patch({ rotate: ((((g.rotate || 0) % 360) + 360) % 360) + 15 })}
           >
             +15°
           </button>
         </div>
         <p className="mb-2 text-[10px] text-muted">
-          Drag the rotate handle under the selection, or set 0–360° here. Hold Shift while
-          dragging to snap to 15°.
+          {g.locked
+            ? 'Layer is locked — unlock to move, resize, or rotate.'
+            : 'Drag the rotate handle under the selection, or set 0–360° here. Hold Shift while dragging to snap to 15°.'}
         </p>
       </Field>
 
@@ -1103,6 +1124,7 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
             className={`mb-2 w-full rounded-md py-2 text-xs font-medium ${
               selected.cropping ? 'ui-btn-primary' : 'ui-btn'
             }`}
+            disabled={!!g.locked}
             onClick={() => patch({ cropping: !selected.cropping })}
           >
             {selected.cropping ? 'Done cropping' : 'Crop / reposition'}
@@ -1193,6 +1215,104 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
               </Field>
             </>
           )}
+
+          <p className="mb-1.5 mt-3 text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">
+            Filters
+          </p>
+          <Field label={`Brightness: ${Math.round(g.imgBrightness ?? 100)}%`}>
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={g.imgBrightness ?? 100}
+              className="w-full accent-blaze"
+              onPointerDown={() => api?.pushUndo?.()}
+              onChange={(e) => patch({ imgBrightness: +e.target.value })}
+            />
+          </Field>
+          <Field label={`Contrast: ${Math.round(g.imgContrast ?? 100)}%`}>
+            <input
+              type="range"
+              min={0}
+              max={200}
+              value={g.imgContrast ?? 100}
+              className="w-full accent-blaze"
+              onPointerDown={() => api?.pushUndo?.()}
+              onChange={(e) => patch({ imgContrast: +e.target.value })}
+            />
+          </Field>
+          <Field label={`Blur: ${Math.round(g.imgBlur ?? 0)}px`}>
+            <input
+              type="range"
+              min={0}
+              max={20}
+              value={g.imgBlur ?? 0}
+              className="w-full accent-blaze"
+              onPointerDown={() => api?.pushUndo?.()}
+              onChange={(e) => patch({ imgBlur: +e.target.value })}
+            />
+          </Field>
+          <Field label={`Grayscale: ${Math.round(g.imgGrayscale ?? 0)}%`}>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={g.imgGrayscale ?? 0}
+              className="w-full accent-blaze"
+              disabled={!!g.imgDuotone}
+              onPointerDown={() => api?.pushUndo?.()}
+              onChange={(e) => patch({ imgGrayscale: +e.target.value })}
+            />
+          </Field>
+          <label className="mb-2 flex items-center gap-2 text-sm text-dim">
+            <input
+              type="checkbox"
+              checked={!!g.imgDuotone}
+              onChange={(e) => {
+                api?.pushUndo?.()
+                patch({ imgDuotone: e.target.checked })
+              }}
+            />
+            Duotone
+          </label>
+          {g.imgDuotone ? (
+            <div className="mb-2 grid grid-cols-2 gap-2">
+              <Field label="Shadows">
+                <input
+                  type="color"
+                  className="h-9 w-full cursor-pointer rounded border border-line bg-inset"
+                  value={
+                    /^#[0-9a-fA-F]{6}$/.test(g.imgDuotoneFrom || '')
+                      ? g.imgDuotoneFrom
+                      : '#0f172a'
+                  }
+                  onChange={(e) => patch({ imgDuotoneFrom: e.target.value })}
+                />
+              </Field>
+              <Field label="Highlights">
+                <input
+                  type="color"
+                  className="h-9 w-full cursor-pointer rounded border border-line bg-inset"
+                  value={
+                    /^#[0-9a-fA-F]{6}$/.test(g.imgDuotoneTo || '')
+                      ? g.imgDuotoneTo
+                      : '#e8e0d4'
+                  }
+                  onChange={(e) => patch({ imgDuotoneTo: e.target.value })}
+                />
+              </Field>
+            </div>
+          ) : null}
+          <button
+            type="button"
+            className="mb-1 w-full rounded border border-line bg-inset py-1.5 text-xs text-dim hover:text-paper"
+            onClick={() => {
+              api?.pushUndo?.()
+              patch({ resetFilters: true })
+            }}
+          >
+            Reset filters
+          </button>
         </>
       )}
 
