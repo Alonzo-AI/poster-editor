@@ -50,6 +50,19 @@ export async function saveTemplateToDb(json, { id } = {}) {
   return parse(res)
 }
 
+/** Remove one template from Atlas. 404 = already gone (ok). */
+export async function deleteTemplateFromDb(id) {
+  const tid = String(id || '')
+    .trim()
+    .replace(/[^\w-]+/g, '_')
+  if (!tid) throw new Error('Template id required')
+  const res = await fetch(`${API}/templates/${encodeURIComponent(tid)}`, {
+    method: 'DELETE',
+  })
+  if (res.status === 404) return { ok: true, missing: true }
+  return parse(res)
+}
+
 /**
  * Pull DB templates into the engine iframe and prune ones deleted from Atlas.
  */

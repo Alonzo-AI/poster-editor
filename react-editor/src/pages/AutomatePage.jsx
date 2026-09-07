@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import StageHost from '../components/StageHost.jsx'
+import SmartCropModal from '../components/SmartCropModal.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import { apiHealth, syncDbTemplatesIntoEngine } from '../api/templatesApi.js'
 
@@ -37,6 +38,9 @@ export default function AutomatePage({ Nav }) {
   const [imageSlots, setImageSlots] = useState([])
   const [apiOnline, setApiOnline] = useState(null)
   const layoutTemplateRef = useRef(null)
+  const [smartCrop, setSmartCrop] = useState(null)
+  const [cutoutBusy, setCutoutBusy] = useState(false)
+  const [cutoutDone, setCutoutDone] = useState(false)
 
   const filteredTemplates = useMemo(
     () => templates.filter((t) => (t.category || 'player') === formatCategory),
@@ -212,7 +216,71 @@ export default function AutomatePage({ Nav }) {
     })
   }
 
+  async function openPlayerSmartCrop(url) {
+    if (!url || !api) return
+    setImages((img) => ({ ...img, player: url }))
+    setCutoutDone(false)
+    setCutoutBusy(false)
+    try {
+      await api.setPayload?.({
+        template: templateId,
+        preserve_layout: true,
+        freeze_layout: false,
+        player_image: url,
+        text: { ...text },
+        colors: { ...colors },
+      })
+    } catch (_) {}
+    const frame = api.getImageFrame?.('player') || {}
+    setSmartCrop({
+      key: 'player',
+      src: url,
+      label: 'Player image',
+      frameW: frame.w || 560,
+      frameH: frame.h || 1017,
+    })
+  }
+
+  async function onSmartCropRemoveBg() {
+    if (!api?.setImageCutout) return null
+    setCutoutBusy(true)
+    setStatus('Removing background… (first run downloads the model)')
+    try {
+      const res = await api.setImageCutout('player', true)
+      setCutoutDone(!!res?.cutBg)
+      const src = res?.src || api.getImageSlot?.('player')?.src
+      if (src) {
+        setImages((img) => ({ ...img, player: src }))
+        setSmartCrop((s) => (s ? { ...s, src } : s))
+      }
+      setStatus(res?.cutBg ? 'Background removed' : 'Background removal finished')
+      return src || null
+    } catch (e) {
+      setStatus('Background removal failed: ' + (e.message || e))
+      return null
+    } finally {
+      setCutoutBusy(false)
+    }
+  }
+
+  async function onSmartCropApply({ zoom, cropX, cropY, bake }) {
+    if (!api || !smartCrop) return
+    try {
+      await apply(true, { resetLayout: false })
+      await api.applySmartCrop?.(smartCrop.key, { zoom, cropX, cropY, bake })
+      const baked = api.getImageSlot?.('player')
+      if (baked?.src) {
+        setImages((img) => ({ ...img, player: baked.src }))
+      }
+      setStatus(`Player fitted to ${smartCrop.frameW}×${smartCrop.frameH}`)
+      setSmartCrop(null)
+    } catch (e) {
+      setStatus('Smart crop failed: ' + (e.message || e))
+    }
+  }
+
   return (
+    <>
     <div className="flex h-full min-h-0 flex-col bg-ink">
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-3">
         <div>
@@ -374,7 +442,13 @@ export default function AutomatePage({ Nav }) {
               />
               <div className="min-w-0 flex-1 text-sm">
                 <div className="font-medium">{slot.label}</div>
-                <div className="text-[10px] text-dim">{images[slot.key] ? 'loaded' : 'none'}</div>
+                <div className="text-[10px] text-dim">
+                  {images[slot.key] ? 'loaded' : 'none'}
+                  {slot.key === 'player' && (() => {
+                    const f = api?.getImageFrame?.('player')
+                    return f?.w ? ` · frame ${f.w}×${f.h}` : ''
+                  })()}
+                </div>
                 <label className="cursor-pointer text-[11px] text-blaze underline">
                   {images[slot.key] ? 'replace' : 'upload'}
                   <input
@@ -383,12 +457,29 @@ export default function AutomatePage({ Nav }) {
                     className="hidden"
                     onChange={async (e) => {
                       const file = e.target.files?.[0]
+                      e.target.value = ''
                       if (!file) return
                       const url = await readFile(file)
-                      setImages((img) => ({ ...img, [slot.key]: url }))
+                      if (slot.key === 'player') {
+                        await openPlayerSmartCrop(url)
+                      } else {
+                        setImages((img) => ({ ...img, [slot.key]: url }))
+                      }
                     }}
                   />
                 </label>
+                {slot.key === 'player' && images.player ? (
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      className="text-[11px] text-blaze underline"
+                      onClick={() => openPlayerSmartCrop(images.player)}
+                    >
+                      fit
+                    </button>
+                  </>
+                ) : null}
                 {images[slot.key] ? (
                   <>
                     {' · '}
@@ -445,5 +536,23 @@ export default function AutomatePage({ Nav }) {
       </main>
       </div>
     </div>
+
+    <SmartCropModal
+      open={!!smartCrop}
+      src={smartCrop?.src}
+      frameW={smartCrop?.frameW}
+      frameH={smartCrop?.frameH}
+      slotLabel={smartCrop?.label}
+      cutoutBusy={cutoutBusy}
+      cutoutDone={cutoutDone}
+      onRemoveBackground={onSmartCropRemoveBg}
+      onClose={() => setSmartCrop(null)}
+      onSkip={() => {
+        setSmartCrop(null)
+        setStatus('Player image kept without smart crop')
+      }}
+      onApply={onSmartCropApply}
+    />
+    </>
   )
 }

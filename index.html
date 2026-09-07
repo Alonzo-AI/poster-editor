@@ -4274,7 +4274,7 @@ COLOR_PRESETS.forEach(([p,s])=>{
 });
 
 // asset uploads
-const CUTOUT_FEATURE_ENABLED = false; // keep background-removal code restorable, but disabled for this workflow
+const CUTOUT_FEATURE_ENABLED = true; // in-browser @imgly cutout for player photos
 const ASSETS=[["player","Player image"],["background","Background"],["logo","Team logo"],["conference","Conference logo"],["sponsor","Sponsor logo"]];
 const assetList=document.getElementById("assetList");
 function buildAssets(){
@@ -5478,12 +5478,17 @@ function uninstallTemplateId(id){
     // Disk seed stays listed; baked override removed so next reload uses file JSON
     return false;
   }
+  const wasActive=state.template===id;
   try{ delete TEMPLATES[id]; }catch(_){}
   const ix=ENABLED_TEMPLATES.indexOf(id);
   if(ix>=0) ENABLED_TEMPLATES.splice(ix,1);
-  if(state.template===id){
-    const next=ENABLED_TEMPLATES[0]||null;
-    if(next) state.template=next;
+  if(wasActive){
+    const next=ENABLED_TEMPLATES.find(x=>TEMPLATES[x])||null;
+    if(next){
+      try{ doSwitchTemplate(next); }catch(_){ state.template=next; }
+    } else {
+      state.template=null;
+    }
   }
   return true;
 }
@@ -6222,6 +6227,7 @@ window.__RENDER_API_V3__={
       name:TEMPLATES[id]?.name||id,
       category:templateCategoryOf(id),
       frozen:isFrozenTemplate(id),
+      disk:DISK_TEMPLATE_IDS.has(id),
       fields:templateInputFields(id),
       images:templateImageSlots(id),
       automation:TEMPLATES[id]?._json?.automation||null,
@@ -6308,6 +6314,8 @@ window.__RENDER_API_V3__={
     if(patch.flipH!=null) g.flipH=!!patch.flipH;
     if(patch.flipV!=null) g.flipV=!!patch.flipV;
     if(patch.fit!=null) g.fit=patch.fit;
+    if(patch.cropX!=null) g.cropX=clamp01(+patch.cropX);
+    if(patch.cropY!=null) g.cropY=clamp01(+patch.cropY);
     if(patch.align!=null){
       g.align=patch.align;
       mark();
@@ -6475,6 +6483,58 @@ window.__RENDER_API_V3__={
     const created=createBlankTemplate(opts);
     return { snapshot:buildEditorSnapshot(), template:created };
   },
+  /** Deep-copy a poster (layers/images/layout) under a new id; caller Saves to Mongo. */
+  async duplicateTemplate(opts={}){
+    const srcId=String(opts.id||state.template||"").trim();
+    if(!srcId || !TEMPLATES[srcId]) throw new Error("Template not found");
+    if(srcId!==state.template){
+      try{ doSwitchTemplate(srcId); }catch(_){ state.template=srcId; ensureLayout(); }
+    }
+    await ensureDurableTemplateImages(srcId);
+    const rawName=String(opts.name||`${TEMPLATES[srcId].name||srcId} copy`).trim()||"Copy";
+    let id=String(opts.newId||rawName).trim().replace(/[^\w-]+/g,"_")||("copy_"+Date.now().toString(36));
+    if(/^\d/.test(id)) id="_"+id;
+    let base=id, n=2;
+    while(TEMPLATES[id] || ENABLED_TEMPLATES.includes(id)) id=base+"_"+n++;
+    const json=buildFrozenTemplateJSON({ id, name:rawName });
+    json.id=id;
+    json.name=rawName;
+    json.category=normalizeTemplateCategory(
+      opts.category ?? json.category ?? TEMPLATES[srcId]?._json?.category ?? "player",
+    );
+    if(!json._bakeMeta) json._bakeMeta={};
+    json._bakeMeta.duplicatedFrom=srcId;
+    json._bakeMeta.bakedAt=new Date().toISOString();
+    const loader=window.PosterTemplateLoader;
+    if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
+    else {
+      TEMPLATES[id]={
+        name:json.name,
+        _json:json,
+        stageBg:()=>json.canvas?.background||"#000",
+        deco:()=>json.deco?.html||"",
+        layers:Object.fromEntries((json.layers||[]).map(l=>{
+          const {id:lid, font, ...rest}=l;
+          return [lid, { ...rest, font:F[font]||font }];
+        })),
+      };
+    }
+    if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
+    REMOTE_TEMPLATE_IDS.add(id);
+    try{ saveBakedTemplateJson(json); }catch(_){}
+    if(json.defaults?.images){
+      seedTemplateImagesFromDefaults(id, json.defaults.images, { onlyMissing:false });
+    }
+    state.extraLayers[id]={};
+    state.layouts[id]=state.layouts[id]||{};
+    state.logoSettings[id]=Object.assign({}, logoSettingsOf(srcId));
+    try{ doSwitchTemplate(id); }catch(_){ state.template=id; }
+    resetLayoutFromTemplate(id, { freeze:true, clearExtras:true });
+    try{ buildTplChips(); }catch(_){}
+    render();
+    notifyEditorBridge("duplicate-template");
+    return { ok:true, id, name:rawName, json, snapshot:buildEditorSnapshot() };
+  },
   listShapePresets(){
     return Object.entries(SHAPE_PRESETS).map(([id,p])=>({ id, label:p.label }));
   },
@@ -6594,14 +6654,148 @@ window.__RENDER_API_V3__={
     return [["player","Player image"],["background","Background"],["logo","Team logo"],["conference","Conference logo"],["sponsor","Sponsor logo"]]
       .map(([key,label])=>{
         const slot=imagesOf()?.[key];
-        return { key, label, loaded:!!slot?.src };
+        let frame=null;
+        for(const [id,def] of Object.entries(layersOf())){
+          if(def?.type==="image" && def.bind===key){
+            const g=geo(id);
+            frame={ layerId:id, w:Math.round(g.w||def.w||0), h:Math.round(g.h??def.h??g.w??0) };
+            break;
+          }
+        }
+        return {
+          key, label,
+          loaded:!!slot?.src,
+          natW:slot?.natW||null,
+          natH:slot?.natH||null,
+          frameW:frame?.w||null,
+          frameH:frame?.h||null,
+          layerId:frame?.layerId||null,
+        };
       });
+  },
+  /** Player (or other) slot frame size from the active template layout. */
+  getImageFrame(bind="player"){
+    const key=bind||"player";
+    for(const [id,def] of Object.entries(layersOf())){
+      if(!def || def.type!=="image" || def.bind!==key) continue;
+      const g=geo(id);
+      return {
+        layerId:id,
+        bind:key,
+        w:Math.round(g.w||def.w||0),
+        h:Math.round(g.h??def.h??g.w??0),
+        fit:imgFit(def,g),
+        zoom:g.zoom||1,
+        cropX:clamp01(g.cropX??0.5),
+        cropY:clamp01(g.cropY??0.5),
+        x:g.x, y:g.y,
+      };
+    }
+    return null;
+  },
+  getImageSlot(key){
+    const im=imagesOf()?.[key];
+    if(!im?.src) return null;
+    return { key, src:im.src, natW:im.natW||null, natH:im.natH||null };
+  },
+  /**
+   * Fit a slot into its template frame: cover + pan/zoom, or bake a resized bitmap.
+   * opts: { zoom, cropX, cropY, bake:true } — bake writes a fw×fh image then contain@1.
+   */
+  async applySmartCrop(bind="player", opts={}){
+    const key=bind||"player";
+    const frame=window.__RENDER_API_V3__.getImageFrame(key);
+    if(!frame?.layerId) throw new Error("No image frame on this template");
+    const im=imagesOf()?.[key];
+    if(!im?.src) throw new Error("No image loaded for "+key);
+    const zoom=Math.max(1, Math.min(4, +(opts.zoom??1)||1));
+    const cropX=clamp01(opts.cropX??0.5);
+    const cropY=clamp01(opts.cropY??0.4);
+    const bake=opts.bake!==false;
+    const fw=Math.max(1, frame.w), fh=Math.max(1, frame.h);
+
+    if(bake){
+      const img=im.el || await new Promise((resolve,reject)=>{
+        const el=new Image();
+        el.onload=()=>resolve(el);
+        el.onerror=()=>reject(new Error("Image decode failed"));
+        el.src=im.src;
+      });
+      const nW=im.natW||img.naturalWidth||fw;
+      const nH=im.natH||img.naturalHeight||fh;
+      const base=Math.max(fw/nW, fh/nH);
+      const s=base*zoom;
+      const dispW=nW*s, dispH=nH*s;
+      const left=(fw-dispW)*cropX;
+      const top=(fh-dispH)*cropY;
+      const sx=-left/s, sy=-top/s, sw=fw/s, sh=fh/s;
+      const long=Math.max(fw, fh);
+      const outScale=long>1400 ? 1400/long : 1;
+      const ow=Math.max(1, Math.round(fw*outScale));
+      const oh=Math.max(1, Math.round(fh*outScale));
+      const canvas=document.createElement("canvas");
+      canvas.width=ow; canvas.height=oh;
+      const ctx=canvas.getContext("2d");
+      ctx.imageSmoothingEnabled=true;
+      ctx.imageSmoothingQuality="high";
+      // Keep transparent pixels (JPEG would paint an opaque bg)
+      ctx.clearRect(0,0,ow,oh);
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, ow, oh);
+      const srcIsPng=/^data:image\/png/i.test(im.src||"") || /\.png(\?|$)/i.test(im.src||"");
+      const keepAlpha=srcIsPng || imageHasAlpha(img);
+      const dataUrl=keepAlpha
+        ? canvas.toDataURL("image/png")
+        : canvas.toDataURL("image/jpeg", 0.92);
+      await loadImageFromUrl(key, dataUrl);
+      const g=geo(frame.layerId);
+      g.fit="contain";
+      g.zoom=1;
+      g.cropX=0.5;
+      g.cropY=0.5;
+    } else {
+      const g=geo(frame.layerId);
+      g.fit="cover";
+      g.zoom=zoom;
+      g.cropX=cropX;
+      g.cropY=cropY;
+    }
+    select(frame.layerId);
+    render();
+    scheduleSave();
+    notifyEditorBridge("smart-crop");
+    return {
+      ok:true,
+      baked:bake,
+      frame:{ w:fw, h:fh },
+      snapshot:buildEditorSnapshot(),
+    };
   },
   async setImageSlot(key, dataUrl){
     if(!key || !dataUrl) return buildEditorSnapshot();
     await loadImageFromUrl(key, dataUrl);
     notifyEditorBridge("image");
     return buildEditorSnapshot();
+  },
+  /** ML cutout for player (or other) slot — needs network on first run. */
+  async setImageCutout(key="player", enabled=true){
+    const k=key||"player";
+    await setCutBg(k, !!enabled);
+    notifyEditorBridge("cutout");
+    const im=imagesOf()?.[k];
+    return {
+      ok:true,
+      cutBg:!!im?.cutBg,
+      src:im?.src||null,
+      snapshot:buildEditorSnapshot(),
+    };
+  },
+  getImageCutout(key="player"){
+    const im=imagesOf()?.[key||"player"];
+    return {
+      cutBg:!!im?.cutBg,
+      hasOriginal:!!(im?.original),
+      src:im?.src||null,
+    };
   },
   clearImageSlot(key){
     if(key && imagesOf()?.[key]){

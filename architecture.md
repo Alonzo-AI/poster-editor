@@ -161,7 +161,7 @@ ensureLayout()[id]                 // per-layer geo the user can drag
 
 ## 5. Template JSON (source of truth)
 
-Disk files listed in `templates/manifest.json` seed the engine. Editor **Save** also upserts to Mongo via `server/` (`POST /api/templates`). React Editor/Automate call `injectRemoteTemplates` so DB templates appear without committing JSON to disk. localStorage bakes remain a session overlay.
+Disk files listed in `templates/manifest.json` seed the engine. Editor **Save** also upserts to Mongo via `server/` (`POST /api/templates`). React Editor/Automate call `injectRemoteTemplates` so DB templates appear without committing JSON to disk. localStorage bakes remain a session overlay. Formats **⋮** menu: **Copy template** (`duplicateTemplate` → new id + `PUT` Atlas) and **Delete** (`DELETE /api/templates/:id` + `removeRemoteTemplate`; disk seeds stay).
 
 ### 5.1 Shape of a file
 
@@ -229,6 +229,8 @@ Every layer is a rectangle on the 1080×1350 stage plus a `type`.
 ### 6.2 Images
 
 Slots: `player`, `background`, `logo`, `conference`, `sponsor`. Missing conference/sponsor/background skips the layer. Player still shows an empty placeholder.
+
+**Smart crop (React):** After player upload, a modal uses the template player frame (`getImageFrame`, e.g. 560×1017). Drag/zoom to compose; **Remove background** runs in-browser `@imgly/background-removal` via `setImageCutout` (needs network on first model download). **Apply fit** → `applySmartCrop` bakes a cover crop (PNG if alpha) and sets `fit:contain`.
 
 ### 6.3 Shapes (`block`)
 
@@ -331,6 +333,8 @@ __RENDER_API_V3__ = {
   setPayload(payload),      // template, text, colors, images, freeze_layout, preserve_layout
   freezeCurrentLayout(),
   resetAutomateLayout(),    // re-apply baked positions (clears export-only nudges)
+  getImageFrame(bind),      // template slot box size (player w×h)
+  applySmartCrop(bind, opts), // bake cover crop to frame / or live cover+zoom
   listTemplates(),          // id, name, frozen, fields, images, automation
   getTemplateFields(id),
   bakeTemplate,             // bake + return { snapshot, json }
