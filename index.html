@@ -122,6 +122,125 @@
     font-style:normal;
     font-display:swap;
   }
+  @font-face{
+    font-family:"Montserrat Light";
+    src:url("assets/fonts/Montserrat-Light.ttf") format("truetype");
+    font-weight:300;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Montserrat Regular";
+    src:url("assets/fonts/Montserrat-Regular.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Montserrat Medium";
+    src:url("assets/fonts/Montserrat-Medium.ttf") format("truetype");
+    font-weight:500;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Montserrat SemiBold";
+    src:url("assets/fonts/Montserrat-SemiBold.ttf") format("truetype");
+    font-weight:600;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Montserrat Bold";
+    src:url("assets/fonts/Montserrat-Bold.ttf") format("truetype");
+    font-weight:700;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Montserrat ExtraBold";
+    src:url("assets/fonts/Montserrat-ExtraBold.ttf") format("truetype");
+    font-weight:800;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Montserrat Black";
+    src:url("assets/fonts/Montserrat-Black.ttf") format("truetype");
+    font-weight:900;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Lato Thin";
+    src:url("assets/fonts/Lato-Thin.ttf") format("truetype");
+    font-weight:100;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Lato Light";
+    src:url("assets/fonts/Lato-Light.ttf") format("truetype");
+    font-weight:300;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Lato Regular";
+    src:url("assets/fonts/Lato-Regular.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Lato Bold";
+    src:url("assets/fonts/Lato-Bold.ttf") format("truetype");
+    font-weight:700;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Lato Black";
+    src:url("assets/fonts/Lato-Black.ttf") format("truetype");
+    font-weight:900;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Ford Antenna Medium";
+    src:url("assets/fonts/FordAntenna-Medium.otf") format("opentype");
+    font-weight:500;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Ford Antenna Black";
+    src:url("assets/fonts/FordAntenna-Black.otf") format("opentype");
+    font-weight:900;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Ford Antenna Medium Condensed";
+    src:url("assets/fonts/FordAntenna-MediumCondensed.otf") format("opentype");
+    font-weight:500;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Ford Antenna Extra Condensed";
+    src:url("assets/fonts/FordAntenna-RegularExtraCondensed.otf") format("opentype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Norwester";
+    src:url("assets/fonts/Norwester.otf") format("opentype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
   :root{
     --bg:#0c0d10;
     --panel:#14161c;
@@ -839,6 +958,61 @@ function resolvedBlockFillToHex(g, def){
   const grad=normalizeShapeGradient(g, def);
   return roleColor(grad?.to || "secondary");
 }
+/** Clear CSS text-gradient paint (background-clip:text). */
+function clearTextGradientPaint(node){
+  if(!node) return;
+  node.style.backgroundImage="";
+  node.style.webkitBackgroundClip="";
+  node.style.backgroundClip="";
+  node.style.webkitTextFillColor="";
+}
+/**
+ * Paint text fill: solid color or gradient (same geo.gradient as shapes).
+ * Prefer .txt-flow so layer chip background (bg) is unaffected.
+ */
+function applyTextGradientPaint(el, def, g, textColor){
+  if(!el) return;
+  const flow=el.querySelector(":scope > .txt-flow");
+  const target=flow||el;
+  const hollow=!!(g.hollow ?? def.hollow);
+  const paint=shapeFillCss(
+    { ...g, fill:g.fill||g.color, color:g.color },
+    { ...def, fill:def.fill||def.color, color:def.color }
+  );
+  clearTextGradientPaint(el);
+  if(flow) clearTextGradientPaint(flow);
+  el.querySelectorAll(".s-n, .s-l").forEach(clearTextGradientPaint);
+
+  if(hollow){
+    el.style.color="transparent";
+    if(flow){ flow.style.color="transparent"; flow.style.webkitTextFillColor=""; }
+    return { hollow:true, grad:null, fillHex:textColor };
+  }
+  if(paint.grad){
+    const applyClip=(node)=>{
+      if(!node) return;
+      node.style.backgroundImage=paint.css;
+      node.style.webkitBackgroundClip="text";
+      node.style.backgroundClip="text";
+      node.style.webkitTextFillColor="transparent";
+      node.style.color="transparent";
+    };
+    if(def.kind==="stat"){
+      applyClip(el);
+      el.querySelectorAll(".s-n, .s-l").forEach((n)=>{ n.style.color="transparent"; n.style.webkitTextFillColor="transparent"; });
+    } else {
+      applyClip(target);
+      if(flow) el.style.color="transparent";
+    }
+    return { hollow:false, grad:paint.grad, fillHex:paint.solid };
+  }
+  if(flow){
+    flow.style.color="";
+    flow.style.webkitTextFillColor="";
+  }
+  el.style.color=textColor;
+  return { hollow:false, grad:null, fillHex:textColor };
+}
 
 // Templates load only from templates/manifest.json + JSON files (no inline / localStorage templates).
 let _posterTemplatesLoadPromise = null;
@@ -1052,7 +1226,24 @@ const F = { disp:"'Anton',sans-serif", cond:"'Oswald',sans-serif", sans:"'Archiv
             tungstenCondBook:"'Tungsten Condensed Book',sans-serif",
             tungstenCondSemibold:"'Tungsten Condensed Semibold',sans-serif",
             tungstenCondBold:"'Tungsten Condensed Bold',sans-serif",
-            tungstenCondBlack:"'Tungsten Condensed Black',sans-serif" };
+            tungstenCondBlack:"'Tungsten Condensed Black',sans-serif",
+            montserrat:"'Montserrat Regular',sans-serif",
+            montserratLight:"'Montserrat Light',sans-serif",
+            montserratMedium:"'Montserrat Medium',sans-serif",
+            montserratSemiBold:"'Montserrat SemiBold',sans-serif",
+            montserratBold:"'Montserrat Bold',sans-serif",
+            montserratExtraBold:"'Montserrat ExtraBold',sans-serif",
+            montserratBlack:"'Montserrat Black',sans-serif",
+            lato:"'Lato Regular',sans-serif",
+            latoThin:"'Lato Thin',sans-serif",
+            latoLight:"'Lato Light',sans-serif",
+            latoBold:"'Lato Bold',sans-serif",
+            latoBlack:"'Lato Black',sans-serif",
+            antenna:"'Ford Antenna Medium',sans-serif",
+            antennaBlack:"'Ford Antenna Black',sans-serif",
+            antennaCond:"'Ford Antenna Medium Condensed',sans-serif",
+            antennaExtraCond:"'Ford Antenna Extra Condensed',sans-serif",
+            norwester:"'Norwester',sans-serif" };
 const FONT_OPTS = [
   ["Anton — display",F.disp],["Oswald — condensed",F.cond],["Archivo — sans",F.sans],
   ["Bebas Neue",F.bebas],["Playfair — serif",F.serif],["Permanent Marker — chalk",F.chalk],
@@ -1064,6 +1255,16 @@ const FONT_OPTS = [
   ["Tungsten Condensed Book",F.tungstenCondBook],["Tungsten Condensed Medium",F.tungstenCond],
   ["Tungsten Condensed Semibold",F.tungstenCondSemibold],["Tungsten Condensed Bold",F.tungstenCondBold],
   ["Tungsten Condensed Black",F.tungstenCondBlack],
+  ["Montserrat Light",F.montserratLight],["Montserrat Regular",F.montserrat],
+  ["Montserrat Medium",F.montserratMedium],["Montserrat SemiBold",F.montserratSemiBold],
+  ["Montserrat Bold",F.montserratBold],["Montserrat ExtraBold",F.montserratExtraBold],
+  ["Montserrat Black",F.montserratBlack],
+  ["Lato Thin",F.latoThin],["Lato Light",F.latoLight],["Lato Regular",F.lato],
+  ["Lato Bold",F.latoBold],["Lato Black",F.latoBlack],
+  ["Ford Antenna Medium",F.antenna],["Ford Antenna Black",F.antennaBlack],
+  ["Ford Antenna Medium Condensed",F.antennaCond],
+  ["Ford Antenna Extra Condensed",F.antennaExtraCond],
+  ["Norwester",F.norwester],
 ];
 
 /** Poster format categories (Editor Formats + Mongo). Legacy / missing → player. */
@@ -1545,6 +1746,7 @@ function resetLayoutFromTemplate(templateId, opts={}){
     L[id].underline=!!def.underline;
     L[id].hollow=!!def.hollow;
     L[id].hidden=!!def.hidden;
+    L[id].locked=!!def.locked;
     L[id].opacity=def.opacity!=null?def.opacity:1;
     if(def.rotate!=null) L[id].rotate=+def.rotate;
     else if(def.transform) L[id].rotate=parseRotate(def.transform);
@@ -2015,7 +2217,7 @@ function ensureLayout(){
                          fill:def.fill ?? null,
                          gradient:def.gradient ? {
                            type:def.gradient.type==="radial"?"radial":"linear",
-                           from:def.gradient.from||def.fill||"primary",
+                           from:def.gradient.from||def.fill||def.color||"primary",
                            to:def.gradient.to||"secondary",
                            angle:def.gradient.angle!=null?+def.gradient.angle:135,
                          } : null,
@@ -2047,6 +2249,14 @@ function ensureLayout(){
       if(L[id].shadow && L[id].shadowEffect==null) L[id].shadowEffect=def.shadowEffect||"drop";
       if(L[id].shadow && L[id].shadowDir==null && L[id].shadowOffset==null){
         syncShadowPolarFromXY(L[id]);
+      }
+      if(L[id].gradient==null && def.gradient && typeof def.gradient==="object"){
+        L[id].gradient={
+          type:def.gradient.type==="radial"?"radial":"linear",
+          from:def.gradient.from||def.color||"primary",
+          to:def.gradient.to||"secondary",
+          angle:def.gradient.angle!=null?+def.gradient.angle:135,
+        };
       }
       }
       if((L[id].rotate==null || L[id].rotate===0) && (def.rotate || def.transform)){
@@ -2951,9 +3161,10 @@ function applyTextChrome(el, def, g, layerId){
   const rad=g.radius ?? def.radius ?? null;
   if(bg){
     const vapor=typeof vaporMotionBgColorForLayer==="function" ? vaporMotionBgColorForLayer(id) : null;
-    el.style.background=vapor || roleColor(bg);
+    // backgroundColor (not shorthand) so text gradient background-image on the same node can survive
+    el.style.backgroundColor=vapor || roleColor(bg);
   } else {
-    el.style.background="";
+    el.style.backgroundColor="";
   }
   if(pad!=null && pad!==""){
     el.style.padding=typeof pad==="number" ? pad+"px" : String(pad);
@@ -2969,11 +3180,11 @@ function applyTextChrome(el, def, g, layerId){
   } else {
     el.style.borderRadius="";
   }
-  if(g.textBorderOn || def.outline){
+    if(g.textBorderOn || def.outline){
     const bw=Math.max(1, +(g.textBorderW ?? def.borderW ?? 2) || 2);
     const bc=roleColor(g.textBorderColor || def.borderColor || def.color || "white");
     el.style.border=`${bw}px solid ${bc}`;
-    if(!bg && def.outline) el.style.background="transparent";
+    if(!bg && def.outline) el.style.backgroundColor="transparent";
   } else {
     el.style.border="";
   }
@@ -3309,16 +3520,15 @@ function render(){
       applyTextUnderline(el, def, g);
       const hollow=!!(g.hollow ?? def.hollow);
       const textColor=resolveTextLayerColor(id, def, g);
+      const fillPaint=applyTextGradientPaint(el, def, g, textColor);
       if(hollow){
-        el.style.color="transparent";
         el.style.textShadow="";
       } else {
-        el.style.color = textColor;
-        el.style.textShadow=resolveTextShadow(g, def, size, textColor, id);
+        el.style.textShadow=resolveTextShadow(g, def, size, fillPaint.fillHex||textColor, id);
       }
-      applyTextStrokePaint(el, def, g, textColor);
+      applyTextStrokePaint(el, def, g, fillPaint.fillHex||textColor);
       const flow=el.querySelector(":scope > .txt-flow");
-      if(flow) applyTextStrokePaint(flow, def, g, textColor);
+      if(flow) applyTextStrokePaint(flow, def, g, fillPaint.fillHex||textColor);
       el.style.textAlign = g.align ?? def.align ?? "left";
       el.style.lineHeight = def.lh ?? 1.0;
       el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
@@ -3349,17 +3559,27 @@ function render(){
           n.style.fontWeight=numW;
           n.style.fontSize="1em";
           n.style.fontStyle="inherit";
-          n.style.color=vaporStatColor || roleColor(g.color || def.color || "white");
+          if(!fillPaint.grad && !hollow){
+            n.style.color=vaporStatColor || roleColor(g.color || def.color || "white");
+            n.style.webkitTextFillColor="";
+          }
           n.style.textTransform=tt==="uppercase"?"none":tt;
         }
         if(l){
           l.style.fontWeight=Math.max(400, Math.round(numW*0.55));
           l.style.fontSize=stacked?".58em":".42em";
           l.style.fontStyle="inherit";
-          l.style.color=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
+          if(!fillPaint.grad && !hollow){
+            l.style.color=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
+            l.style.webkitTextFillColor="";
+          }
           l.style.opacity=stacked?0.78:0.92;
           l.style.textTransform=tt;
           if(stacked) l.style.letterSpacing="0.04em";
+        }
+        if(fillPaint.grad && !hollow){
+          // Re-apply after stat child colors so clip stays on the layer
+          applyTextGradientPaint(el, def, g, textColor);
         }
       }
     }
@@ -5370,6 +5590,23 @@ function fontKeyFromValue(font){
   if(s.includes("avenir medium")) return "avenirMedium";
   if(s.includes("avenir heavy")) return "avenirHeavy";
   if(s.includes("avenir")) return "avenir";
+  if(s.includes("montserrat light")) return "montserratLight";
+  if(s.includes("montserrat medium")) return "montserratMedium";
+  if(s.includes("montserrat semibold")||s.includes("montserrat semi bold")) return "montserratSemiBold";
+  if(s.includes("montserrat extrabold")||s.includes("montserrat extra bold")) return "montserratExtraBold";
+  if(s.includes("montserrat black")) return "montserratBlack";
+  if(s.includes("montserrat bold")) return "montserratBold";
+  if(s.includes("montserrat")) return "montserrat";
+  if(s.includes("lato thin")) return "latoThin";
+  if(s.includes("lato light")) return "latoLight";
+  if(s.includes("lato bold")) return "latoBold";
+  if(s.includes("lato black")) return "latoBlack";
+  if(s.includes("lato")) return "lato";
+  if(s.includes("antenna") && s.includes("extra")) return "antennaExtraCond";
+  if(s.includes("antenna") && s.includes("cond")) return "antennaCond";
+  if(s.includes("antenna") && s.includes("black")) return "antennaBlack";
+  if(s.includes("antenna")||s.includes("ford antenna")) return "antenna";
+  if(s.includes("norwester")||s.includes("norwestor")) return "norwester";
   return undefined;
 }
 
@@ -5388,7 +5625,8 @@ function layerDefToJson(id, def, g){
   const opacity=g.opacity!=null?g.opacity:(def.opacity!=null?def.opacity:null);
   if(opacity!=null && opacity!==1) out.opacity=opacity;
   if(g.hidden||def.hidden) out.hidden=true;
-  if(g.locked||def.locked) out.locked=true;
+  // Use geo only — `def.locked` must not re-lock after the user unlocked (g.locked===false)
+  if(g.locked) out.locked=true;
   const rot=Number((g.rotate??def.rotate??parseRotate(def.transform))||0);
   if(rot){
     out.rotate=Math.round(rot);
@@ -5400,6 +5638,10 @@ function layerDefToJson(id, def, g){
     if(size!=null) out.size=size;
     const color=g.color||def.color;
     if(color) out.color=color;
+    const grad=normalizeShapeGradient(g, def);
+    if(grad){
+      out.gradient={ type:grad.type, from:grad.from, to:grad.to, angle:grad.angle };
+    }
     const fontKey=fontKeyFromValue(g.font||def.font)||undefined;
     if(fontKey) out.font=fontKey;
     else if(def.font && typeof def.font==="string" && !def.font.includes(",")) out.font=def.font;
@@ -6582,7 +6824,20 @@ window.__RENDER_API_V3__={
     }
     if(patch.rotate!=null) g.rotate=normalizeRotateDeg(patch.rotate);
     if(patch.lockAspect!=null) g.lockAspect=!!patch.lockAspect;
-    if(patch.locked!=null) g.locked=!!patch.locked;
+    if(patch.locked!=null){
+      g.locked=!!patch.locked;
+      // Keep runtime + JSON layer defs in sync so unlock survives bake/refresh
+      const runtime=TEMPLATES[state.template]?.layers?.[lid];
+      if(runtime){
+        if(g.locked) runtime.locked=true;
+        else delete runtime.locked;
+      }
+      const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===lid);
+      if(jl){
+        if(g.locked) jl.locked=true;
+        else delete jl.locked;
+      }
+    }
     if(patch.imgBrightness!=null) g.imgBrightness=Math.max(0, Math.min(300, +patch.imgBrightness));
     if(patch.imgContrast!=null) g.imgContrast=Math.max(0, Math.min(300, +patch.imgContrast));
     if(patch.imgBlur!=null) g.imgBlur=Math.max(0, Math.min(40, +patch.imgBlur));
@@ -6620,7 +6875,12 @@ window.__RENDER_API_V3__={
     if(patch.underline!=null){ g.underline=!!patch.underline; mark(); }
     if(patch.font!=null){ g.font=patch.font; mark(); }
     if(patch.textTransform!==undefined){ g.textTransform=patch.textTransform; mark(); }
-    if(patch.color!=null){ g.color=patch.color; mark(); }
+    if(patch.color!=null){
+      g.color=patch.color; mark();
+      if(g.gradient && typeof g.gradient==="object"){
+        g.gradient={ ...g.gradient, from:patch.color };
+      }
+    }
     if(patch.fill!=null){
       g.fill=patch.fill; g.color=patch.fill;
       if(g.gradient && typeof g.gradient==="object") g.gradient={ ...g.gradient, from:patch.fill };

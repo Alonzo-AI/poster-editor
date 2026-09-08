@@ -238,7 +238,7 @@ Slots: `player`, `background`, `logo`, `conference`, `sponsor`. Missing conferen
 
 - Presets with polygons store CSS `clip` (`polygon(...)`).
 - Live + export paint via CSS fill / SVG data URL (html2canvas drops CSS `clip-path`).
-- Fill: solid role/hex, or **`gradient: { type, from, to, angle }`** (React Styles → Solid / Gradient; shapes only).
+- Fill: solid role/hex, or **`gradient: { type, from, to, angle }`** (React Styles → Solid / Gradient).
 - Selecting a shape then clicking another preset **morphs that layer in place**. Shift-click / empty canvas adds a new extra layer.
 
 ### 6.4 Z-order
@@ -303,6 +303,7 @@ Optional auto palettes:
 **Text fill & stroke (Editor inspector)**
 
 - Fill: role (`primary`, `white`, …) **or** `#RRGGBB` via Hex / swatch → stored on layer as `color`.
+- Optional **gradient** (same `gradient: { type, from, to, angle }` as shapes) → CSS `background-clip: text` on `.txt-flow` (chip `bg` uses `backgroundColor` so it doesn’t wipe the fill). Baked on Save.
 - Stroke: optional outline (`stroke` + `strokeW`) with the same role-or-hex pattern → `webkitTextStroke` at paint time; baked into frozen JSON when enabled.
 - Effects (React Styles panel): **Drop** / **Glow** / **Echo** → CSS `text-shadow` via `shadowEffect`, `shadowDir`, `shadowOffset`, `shadowBlur`, `shadowOpacity`, `shadowColor`. Baked on Save; Automate keeps them frozen.
 

@@ -729,13 +729,82 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
             </select>
           </Field>
 
+          <Field label="Fill">
+            <Seg
+              value={g.gradient ? 'gradient' : 'solid'}
+              options={[
+                { value: 'solid', label: 'Solid' },
+                { value: 'gradient', label: 'Gradient' },
+              ]}
+              onChange={(v) => {
+                if (v === 'solid') {
+                  patch({ gradient: null })
+                } else {
+                  patch({
+                    gradient: {
+                      type: g.gradient?.type || 'linear',
+                      from: g.color || 'primary',
+                      to: g.gradient?.to || 'secondary',
+                      angle: g.gradient?.angle ?? 135,
+                    },
+                  })
+                }
+              }}
+            />
+          </Field>
+
           <ColorFields
-            role={g.color}
-            hex={g.colorHex}
+            role={g.gradient?.from || g.color}
+            hex={g.gradient ? g.fillHex || g.colorHex : g.colorHex}
             roles={roles}
-            onRole={(v) => patch({ color: v })}
-            onHex={(v) => patch({ color: v })}
+            onRole={(v) =>
+              g.gradient
+                ? patch({ color: v, gradient: { ...g.gradient, from: v } })
+                : patch({ color: v })
+            }
+            onHex={(v) =>
+              g.gradient
+                ? patch({ color: v, gradient: { ...g.gradient, from: v } })
+                : patch({ color: v })
+            }
           />
+          {g.gradient ? (
+            <>
+              <Field label="To">
+                <ColorFields
+                  role={g.gradient.to || 'secondary'}
+                  hex={g.fillToHex}
+                  roles={roles}
+                  onRole={(v) => patch({ fillTo: v, gradient: { ...g.gradient, to: v } })}
+                  onHex={(v) => patch({ fillTo: v, gradient: { ...g.gradient, to: v } })}
+                />
+              </Field>
+              <Field label="Type">
+                <Seg
+                  value={g.gradient.type || 'linear'}
+                  options={[
+                    { value: 'linear', label: 'Linear' },
+                    { value: 'radial', label: 'Radial' },
+                  ]}
+                  onChange={(v) => patch({ gradient: { ...g.gradient, type: v } })}
+                />
+              </Field>
+              {(g.gradient.type || 'linear') === 'linear' ? (
+                <Field label={`Angle: ${Math.round(g.gradient.angle ?? 135)}°`}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={360}
+                    value={g.gradient.angle ?? 135}
+                    className="w-full accent-blaze"
+                    onChange={(e) =>
+                      patch({ gradient: { ...g.gradient, angle: +e.target.value } })
+                    }
+                  />
+                </Field>
+              ) : null}
+            </>
+          ) : null}
 
           <div className="mb-2 flex gap-3">
             <label className="flex items-center gap-1.5 text-sm text-dim">
