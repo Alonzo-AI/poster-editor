@@ -85,7 +85,7 @@ index.html engine (#stage + paint/drag/bake)
 templates / renderer / html2canvas
 ```
 
-- **UI only:** Abyssale-like layout (layers | canvas | properties). No groups / Auto Layout / multi-format.
+- **UI only:** Abyssale-like layout (layers | canvas | properties) plus **Canva-style context bar** above the stage and **Font / Effects / Position / Color** flyout (`ContextToolbar` + `StudioSidePanel`). No groups / Auto Layout / multi-format. Flyouts call existing `patchLayerStyle` (z-order, align-to-page, shadows, hollow, fonts) — no second renderer.
 - **Do not** reimplement `render()` or pointer handles in React.
 - Embed CSS: `body.embed` hides `#side` / banners; headless unchanged for Automate.
 - Bridge extras: `subscribe`, `listLayers`, `selectLayer`, `setLayerGeometry`, `bakeTemplate`, `createTemplate`, `addTextField`, etc. (see `react-editor/README.md`).
@@ -268,6 +268,8 @@ Geometry writes go to `state.layouts[templateId][layerId]`. On pointer-up, `sync
 **Layer lock** (`g.locked`): select still works; move / resize / rotate / pan / arrow-nudge / z-order keys are blocked. Styles panel **Lock layer** toggles it; baked into JSON. Dashed selection + handles hidden while locked.
 
 **Selection toolbar** (floating bar above the selected layer): **Lock** / **Duplicate** / **Remove**. Stays upright when the layer is rotated. Lock matches Styles **Lock layer**; Remove matches the previous canvas ✕ behavior. **Duplicate** on text creates a **new Automate bind** (and Text Fields row); shapes stay extras-only. Resize/rotate handles stay on the box; toolbar is hidden while cropping.
+
+**Selection chrome (UI only):** Canva-like violet outline (`--sel`), white corner circles + pill mid-edge handles, capsule floating toolbar, soft rotate control under the box. Same 8 resize dirs + rotate + lock/dup/remove — visual restyle only. Snap guides use the same violet.
 
 **Rotate** (Canva-style): one CSS `rotate()` on the layer around `transform-origin: center`. Text/shapes rotate with the box as a rigid unit (no separate flip). Drag uses **pointer-angle delta** from grab so grabbing the bottom handle does not jump to ~180° / invert text. While rotating, cyan **rotate guides** (crosshair through layer center) appear when within 4° of 0/45/90/… or another layer’s angle; Shift snaps to 15° and always shows the guide.
 

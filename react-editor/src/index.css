@@ -1,22 +1,22 @@
 @import "tailwindcss";
 
 /*
-  Poster Lab shell — light studio
-  White major, sky accent. Tokens keep existing class names (ink/paper/blaze…)
-  so pages don't need logic changes.
+  Poster Lab shell — Canva-clean light studio
+  Soft gray workspace, white panels, violet accent (selection / primary).
+  Tokens keep existing class names (ink/paper/blaze…) so pages don't need logic changes.
 */
 @theme {
-  --color-ink: #f3f7fb;
+  --color-ink: #f0f1f5;
   --color-panel: #ffffff;
-  --color-panel2: #eaf4fb;
-  --color-line: #d5e4f0;
-  --color-paper: #0f172a;
-  --color-dim: #5b6b7c;
-  --color-muted: #8b9aab;
-  --color-blaze: #0ea5e9;
-  --color-blaze2: #0284c7;
-  --color-inset: #f7fbfe;
-  --color-guide: #38bdf8;
+  --color-panel2: #f5f6f9;
+  --color-line: #e5e7eb;
+  --color-paper: #111827;
+  --color-dim: #6b7280;
+  --color-muted: #9ca3af;
+  --color-blaze: #8b3dff;
+  --color-blaze2: #7c2cf0;
+  --color-inset: #f8f9fb;
+  --color-guide: #8b3dff;
   --font-sans: "Source Sans 3", system-ui, sans-serif;
   --font-display: "Source Sans 3", system-ui, sans-serif;
 }
@@ -55,7 +55,7 @@ body {
 }
 .ui-input:focus {
   border-color: var(--color-blaze);
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18);
+  box-shadow: 0 0 0 3px rgba(139, 61, 255, 0.18);
 }
 
 .ui-btn {
@@ -71,7 +71,7 @@ body {
 }
 .ui-btn:hover {
   background: var(--color-panel2);
-  border-color: #b9d4e8;
+  border-color: #d1d5db;
 }
 .ui-btn:disabled {
   opacity: 0.45;
@@ -134,7 +134,7 @@ body {
 }
 .ui-step-btn:hover {
   background: var(--color-panel2);
-  border-color: #b9d4e8;
+  border-color: #d1d5db;
 }
 
 .ui-num {
@@ -166,7 +166,7 @@ body {
   border-radius: 999px;
   border: 2px solid #fff;
   background: var(--color-blaze);
-  box-shadow: 0 0 0 1px #b9d4e8;
+  box-shadow: 0 0 0 1px #e5e7eb;
 }
 .ui-range::-moz-range-track {
   height: 4px;

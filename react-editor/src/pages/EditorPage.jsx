@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import StageHost from '../components/StageHost.jsx'
 import PropertiesPanel from '../components/PropertiesPanel.jsx'
+import ContextToolbar from '../components/ContextToolbar.jsx'
+import StudioSidePanel from '../components/StudioSidePanel.jsx'
 import SmartCropModal from '../components/SmartCropModal.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import {
@@ -67,6 +69,7 @@ export default function EditorPage({ Nav }) {
   const [smartCrop, setSmartCrop] = useState(null) // { key, src, label, frameW, frameH }
   const [cutoutBusy, setCutoutBusy] = useState(false)
   const [cutoutDone, setCutoutDone] = useState(false)
+  const [studioMode, setStudioMode] = useState(null) // font | effects | position | color
 
   const CATEGORIES = [
     { id: 'player', label: 'Player' },
@@ -166,6 +169,10 @@ export default function EditorPage({ Nav }) {
 
   const selected = snapshot?.selected
   const layers = snapshot?.layers || []
+
+  useEffect(() => {
+    if (!selected) setStudioMode(null)
+  }, [selected?.id])
 
   const shapePresets = useMemo(() => {
     if (api?.listShapePresets) return api.listShapePresets()
@@ -1008,20 +1015,38 @@ export default function EditorPage({ Nav }) {
           </div>
         </aside>
 
-        {/* Center canvas */}
-        <main className="ui-canvas-well relative flex min-h-0 min-w-0 flex-col overflow-hidden">
-          {!ready && (
-            <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ink/70 text-xs text-dim">
-              {error || 'Starting engine…'}
+        {/* Center: optional studio flyout + canvas */}
+        <div className="flex min-h-0 min-w-0 overflow-hidden">
+          <StudioSidePanel
+            mode={studioMode}
+            onClose={() => setStudioMode(null)}
+            api={api}
+            selected={selected}
+            layers={layers}
+          />
+          <main className="ui-canvas-well relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <ContextToolbar
+              api={api}
+              selected={selected}
+              layers={layers}
+              studioMode={studioMode}
+              onStudioMode={setStudioMode}
+            />
+            {!ready && (
+              <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center bg-ink/70 text-xs text-dim">
+                {error || 'Starting engine…'}
+              </div>
+            )}
+            <div className="relative min-h-0 flex-1 overflow-hidden">
+              <StageHost iframeRef={iframeRef} src={src} onLoad={onLoad} />
+              {status ? (
+                <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-panel/95 px-3.5 py-1.5 text-[11px] text-dim shadow-sm backdrop-blur">
+                  {status}
+                </div>
+              ) : null}
             </div>
-          )}
-          <StageHost iframeRef={iframeRef} src={src} onLoad={onLoad} />
-          {status ? (
-            <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-line bg-panel/95 px-3.5 py-1.5 text-[11px] text-dim shadow-sm backdrop-blur">
-              {status}
-            </div>
-          ) : null}
-        </main>
+          </main>
+        </div>
 
         {/* Right properties */}
         <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-line bg-panel">
