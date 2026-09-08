@@ -222,6 +222,7 @@ Every layer is a rectangle on the 1080×1350 stage plus a `type`.
 ### 6.1 Text
 
 - Box size is fixed (`g.w` / `g.h`). Font shrinks/grows (`fitTextToFixedBox`) like Canva autofit.
+- Text lives in `.txt-clip > .txt-flow`. The clip shell owns `overflow:hidden` so selection can set the layer to `overflow:visible` (handles) without putting overflow on the text node (which was clipping glyph tops).
 - `bind` maps to `state.text[bind]`. Empty user value stays empty (placeholder only if never set).
 - Stats use `kind: "stat"` plus `stat1num` / `stat1label` binds.
 - Color: role (`primary`) or hex, optional `gradient` (`linear` / `radial`).
@@ -265,6 +266,10 @@ render()
 Geometry writes go to `state.layouts[templateId][layerId]`. On pointer-up, `syncLayerDefGeometry` copies x/y/w/h back onto the layer def so bake/export see the drag.
 
 **Layer lock** (`g.locked`): select still works; move / resize / rotate / pan / arrow-nudge / z-order keys are blocked. Styles panel **Lock layer** toggles it; baked into JSON. Dashed selection + handles hidden while locked.
+
+**Selection toolbar** (floating bar above the selected layer): **Lock** / **Duplicate** / **Remove**. Stays upright when the layer is rotated. Lock matches Styles **Lock layer**; Remove matches the previous canvas ✕ behavior. **Duplicate** on text creates a **new Automate bind** (and Text Fields row); shapes stay extras-only. Resize/rotate handles stay on the box; toolbar is hidden while cropping.
+
+**Rotate** (Canva-style): one CSS `rotate()` on the layer around `transform-origin: center`. Text/shapes rotate with the box as a rigid unit (no separate flip). Drag uses **pointer-angle delta** from grab so grabbing the bottom handle does not jump to ~180° / invert text. While rotating, cyan **rotate guides** (crosshair through layer center) appear when within 4° of 0/45/90/… or another layer’s angle; Shift snaps to 15° and always shows the guide.
 
 **Undo / redo**: layout-only stacks (`pushUndo` / `undo` / `redo`, max 50). Vanilla Ctrl/Cmd+Z already works. React Editor exposes **Undo** / **Redo** in the top bar via `__RENDER_API_V3__.undo|redo|pushUndo|getHistoryState`; snapshot includes `canUndo` / `canRedo`.
 

@@ -412,7 +412,7 @@
     box-shadow:0 28px 90px #000c, 0 0 0 1px #000;}
   .deco{position:absolute;inset:0;pointer-events:none;}
   .deco>*{position:absolute;}
-  .layer{position:absolute;cursor:grab;user-select:none;}
+  .layer{position:absolute;cursor:grab;user-select:none;transform-origin:center center;}
   .layer[contenteditable="true"]{cursor:text;user-select:text;outline:2px solid var(--warn);outline-offset:1px;}
   .layer img{width:100%;height:100%;display:block;pointer-events:none;}
   .layer .imgcontent{position:absolute;inset:0;background-position:center;background-repeat:no-repeat;pointer-events:none;overflow:hidden;}
@@ -429,6 +429,10 @@
   #alignGuidesOverlay{position:absolute;inset:0;pointer-events:none;z-index:9999;}
   #alignGuidesOverlay .guide-v{position:absolute;top:0;width:1px;height:100%;background:var(--guide);box-shadow:0 0 6px #00e5ff99;}
   #alignGuidesOverlay .guide-h{position:absolute;left:0;height:1px;width:100%;background:var(--guide);box-shadow:0 0 6px #00e5ff99;}
+  #alignGuidesOverlay .guide-rot{
+    position:absolute;height:1px;margin:0;pointer-events:none;
+    background:var(--guide);box-shadow:0 0 6px #00e5ff99;transform-origin:center center;
+  }
   .layer.cropping{outline:2px dashed var(--warn);outline-offset:1px;}
   .layer.cropping .imgcontent{cursor:move;pointer-events:auto;}
   /* resize handles (8) */
@@ -461,25 +465,61 @@
   .layer.sel .rot{display:flex;}
   .layer.cropping .rot{display:none;}
   .layer .rot:active{cursor:grabbing;}
+  /* Floating selection toolbar (lock / duplicate / remove) — above box like design tools */
+  .layer .selbar{
+    position:absolute;left:50%;top:-56px;
+    display:none;align-items:center;gap:4px;
+    padding:5px 7px;border-radius:12px;
+    background:#fff;border:1px solid #e2e8f0;
+    box-shadow:0 4px 18px rgba(15,23,42,.2);
+    z-index:10;pointer-events:auto;transform-origin:center bottom;
+  }
+  .layer.sel .selbar{display:flex;}
+  .layer.cropping .selbar{display:none;}
+  .layer .selbar button{
+    width:36px;height:36px;border:none;background:transparent;border-radius:8px;
+    cursor:pointer;display:flex;align-items:center;justify-content:center;
+    color:#334155;padding:0;font:inherit;
+  }
+  .layer .selbar button:hover{background:#f1f5f9;color:#0f172a;}
+  .layer .selbar button[data-on="1"]{background:#e8eef7;color:#0f172a;}
+  .layer .selbar button[data-handle="del"]:hover{background:#fef2f2;color:#b91c1c;}
+  .layer .selbar svg{width:20px;height:20px;display:block;pointer-events:none;}
   .layer.locked{cursor:default;}
   .layer.locked.sel{outline-style:dashed;}
   .layer.locked .h,.layer.locked .rot{display:none!important;}
   .layer .imgcontent .duotone-overlay{
     position:absolute;inset:0;pointer-events:none;mix-blend-mode:color;z-index:2;
   }
-  /* Selected layers must not clip resize/rotate handles (text uses overflow:hidden for autofit) */
+  /* Selected: overflow visible so resize/rotate handles aren't clipped.
+     Never overflow:hidden on .txt-flow — that clips glyph ink (flat tops on "83").
+     Clip text via inset .txt-clip; handles stay outside that shell. */
   .layer.sel,
   .layer.sel.fixed-box{overflow:visible!important;}
-  .layer.sel.fixed-box>.txt-flow{
-    overflow:hidden;
-    max-height:100%;
+  .layer.txt > .txt-clip{
+    display:block;width:100%;min-width:0;max-width:100%;box-sizing:border-box;
   }
+  .layer.txt.fixed-box > .txt-clip{
+    position:absolute;inset:0;overflow:hidden;
+    display:flex;flex-direction:column;justify-content:center;
+  }
+  .layer.txt.fixed-box > .txt-clip[data-valign="top"]{justify-content:flex-start;}
+  .layer.txt.fixed-box > .txt-clip[data-valign="bottom"]{justify-content:flex-end;}
+  .layer.txt.fixed-box > .txt-clip[data-valign="middle"]{justify-content:center;}
+  .layer.txt.fixed-box > .txt-clip[data-halign="center"]{align-items:center;}
+  .layer.txt.fixed-box > .txt-clip[data-halign="right"]{align-items:flex-end;}
+  .layer.txt.fixed-box > .txt-clip[data-halign="left"]{align-items:flex-start;}
+  .layer.txt.fixed-box > .txt-clip > .txt-flow{flex:0 1 auto;min-height:0;}
   .layer.txt{display:flex;flex-direction:column;justify-content:center;box-sizing:border-box;}
-  .layer.txt>.txt-flow{display:block;width:100%;min-width:0;max-width:100%;}
+  .layer.txt > .txt-flow,
+  .layer.txt > .txt-clip > .txt-flow{display:block;width:100%;min-width:0;max-width:100%;}
   .layer.txt.fixed-box{overflow:hidden;}
+  .layer.txt.fixed-box:has(> .txt-clip){overflow:visible;}
   .layer.txt:has(sup):not(.fixed-box){overflow:visible;}
-  .layer.txt:has(sup)>.txt-flow{padding-top:0.18em;}
-  .layer.txt.fixed-box:has(sup)>.txt-flow{padding-top:0.18em;}
+  .layer.txt:has(sup) > .txt-flow,
+  .layer.txt:has(sup) > .txt-clip > .txt-flow{padding-top:0.18em;}
+  .layer.txt.fixed-box:has(sup) > .txt-flow,
+  .layer.txt.fixed-box:has(sup) > .txt-clip > .txt-flow{padding-top:0.18em;}
   .layer.txt sup,.layer.txt .s-n sup,.layer.txt .s-l sup{
     font-size:0.52em;line-height:1;vertical-align:baseline;position:relative;top:-0.42em;
     font-weight:inherit;font-style:inherit;letter-spacing:inherit;
@@ -970,9 +1010,16 @@ function clearTextGradientPaint(node){
  * Paint text fill: solid color or gradient (same geo.gradient as shapes).
  * Prefer .txt-flow so layer chip background (bg) is unaffected.
  */
+/** Text node (.txt-flow may sit under .txt-clip). */
+function textFlowEl(el){
+  if(!el) return null;
+  return el.querySelector(":scope > .txt-flow")
+    || el.querySelector(":scope > .txt-clip > .txt-flow")
+    || el.querySelector(".txt-flow");
+}
 function applyTextGradientPaint(el, def, g, textColor){
   if(!el) return;
-  const flow=el.querySelector(":scope > .txt-flow");
+  const flow=textFlowEl(el);
   const target=flow||el;
   const hollow=!!(g.hollow ?? def.hollow);
   const paint=shapeFillCss(
@@ -2751,10 +2798,151 @@ function duplicateLayer(id){
   const t=state.template;
   if(!state.extraLayers[t]) state.extraLayers[t]={};
   let n=1, nid; do{ nid=id+"_copy"+(n++); }while(layersOf()[nid]);
-  state.extraLayers[t][nid]=Object.assign({},def);
+
+  let newDef=Object.assign({}, def);
+  // Text: unique Automate bind so Text Fields + Automate list the copy
+  if(def.type==="text"){
+    const srcLabel=def.label || (def.kind==="stat" ? (def.labelNum||def.bind) : null)
+      || labelFor(def.bind) || def.bind || "Text";
+    const composite=def.bind==="footer" || def.bind==="playerMeta";
+    let bindBase=def.bind||"text";
+    if(composite){
+      bindBase=String(srcLabel).replace(/[^\w]+/g,"_")||"text";
+    }
+    const bind=allocUniqueTextBind(bindBase);
+    newDef=Object.assign({}, newDef, {
+      bind,
+      label:String(srcLabel)+" copy",
+      placeholder:(def.placeholder||srcLabel)+" copy",
+    });
+    if(composite){
+      delete newDef.kind;
+      if(def.bind==="footer"){
+        state.text[bind]=[state.text.teamName, state.text.hashtag, state.text.sport].filter(Boolean).join(" · ") || String(srcLabel);
+      } else {
+        state.text[bind]=[state.text.playerClass, state.text.position].filter(Boolean).join(" | ") || String(srcLabel);
+      }
+    } else if(def.kind==="stat"){
+      state.text[bind+"num"]=state.text[def.bind+"num"] ?? "";
+      state.text[bind+"label"]=state.text[def.bind+"label"] ?? "";
+      if(def.labelNum) newDef.labelNum=String(def.labelNum)+" copy";
+      if(def.labelText) newDef.labelText=String(def.labelText)+" copy";
+    } else {
+      state.text[bind]=state.text[def.bind] ?? def.placeholder ?? "";
+    }
+    if(!state.fieldLabels[t]) state.fieldLabels[t]={};
+    if(def.kind==="stat" && !composite){
+      state.fieldLabels[t][bind+"num"]=(def.labelNum||(srcLabel+" num"))+" copy";
+      state.fieldLabels[t][bind+"label"]=(def.labelText||(srcLabel+" label"))+" copy";
+    } else {
+      state.fieldLabels[t][bind]=String(srcLabel)+" copy";
+    }
+    const json=TEMPLATES[t]?._json;
+    if(json){
+      if(!json.automation) json.automation={ swapFields:[], swapImages:["player","logo","conference","sponsor","background"] };
+      if(!Array.isArray(json.automation.swapFields)) json.automation.swapFields=[];
+      if(!json.automation.fieldLabels) json.automation.fieldLabels={};
+      const pushBind=(k,lbl)=>{
+        if(!json.automation.swapFields.includes(k)) json.automation.swapFields.push(k);
+        if(lbl) json.automation.fieldLabels[k]=lbl;
+      };
+      if(def.kind==="stat" && !composite){
+        pushBind(bind+"num", state.fieldLabels[t][bind+"num"]);
+        pushBind(bind+"label", state.fieldLabels[t][bind+"label"]);
+      } else {
+        pushBind(bind, state.fieldLabels[t][bind]);
+      }
+    }
+  }
+
+  state.extraLayers[t][nid]=newDef;
   const L=ensureLayout(), src=geo(id);
-  L[nid]=Object.assign({},src,{x:src.x+24,y:src.y+24,z:(src.z??def.z??10)+1});
+  L[nid]=Object.assign({},src,{x:src.x+24,y:src.y+24,z:(src.z??def.z??10)+1, hidden:false, locked:false});
   buildTextFields(); buildCaptionColorControls(); select(nid); render(); scheduleSave();
+  notifyEditorBridge(def.type==="text" ? "text-field" : "style");
+}
+
+/** Next free text bind (and stat num/label siblings) for Automate / Text Fields. */
+function allocUniqueTextBind(base){
+  let bind=String(base||"text").trim().replace(/[^\w]+/g,"_")||"text";
+  if(/^\d/.test(bind)) bind="_"+bind;
+  const used=new Set();
+  for(const d of Object.values(layersOf()||{})){
+    if(!d || d.type!=="text" || !d.bind) continue;
+    if(d.kind==="stat"){
+      used.add(d.bind); used.add(d.bind+"num"); used.add(d.bind+"label");
+    } else {
+      used.add(d.bind);
+    }
+  }
+  const swap=TEMPLATES[state.template]?._json?.automation?.swapFields;
+  if(Array.isArray(swap)) swap.forEach(k=>used.add(k));
+  let b=bind, n=2;
+  while(used.has(b) || used.has(b+"num") || used.has(b+"label")){
+    b=bind+"_"+n++;
+  }
+  return b;
+}
+
+/** Toggle layer lock (canvas toolbar + Styles). */
+function toggleLayerLock(id){
+  const lid=id||state.selected;
+  if(!lid || !layersOf()[lid]) return { ok:false };
+  const g=geo(lid);
+  pushUndo();
+  g.locked=!g.locked;
+  const runtime=TEMPLATES[state.template]?.layers?.[lid];
+  if(runtime){
+    if(g.locked) runtime.locked=true;
+    else delete runtime.locked;
+  }
+  const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===lid);
+  if(jl){
+    if(g.locked) jl.locked=true;
+    else delete jl.locked;
+  }
+  render();
+  scheduleSave();
+  notifyEditorBridge("style");
+  return { ok:true, locked:!!g.locked };
+}
+
+/** Canvas ✕ — remove extra/shape, delete text field, or hide baked image/block. */
+function removeCanvasLayer(id, opts={}){
+  const tid=state.template;
+  const def=layersOf()[id];
+  if(!tid || !def) return { ok:false, reason:"missing" };
+  const g=geo(id);
+  if(g?.locked) return { ok:false, reason:"locked" };
+  const extras=state.extraLayers[tid]||{};
+
+  // Session extras (shapes, added text, overlays): hard-delete
+  if(extras[id]){
+    pushUndo();
+    delete extras[id];
+    if(state.layouts[tid]) delete state.layouts[tid][id];
+    select(null);
+    try{ buildTextFields(); buildCaptionColorControls(); }catch(_){}
+    render(); scheduleSave();
+    notifyEditorBridge("layer-remove");
+    return { ok:true, mode:"extra" };
+  }
+
+  // Baked / seed text → same path as Text Fields Remove
+  if(def.type==="text" && def.bind){
+    let bind=def.bind;
+    if(def.kind==="stat") bind=def.bind+"num";
+    return deleteTextField(bind, { confirm:opts.confirm!==false });
+  }
+
+  // Images + baked blocks: hide (Delete key behavior)
+  pushUndo();
+  g.hidden=true;
+  select(null);
+  try{ buildTextFields(); buildCaptionColorControls(); }catch(_){}
+  render(); scheduleSave();
+  notifyEditorBridge("layer-remove");
+  return { ok:true, mode:"hide" };
 }
 
 /* Canva-style shape presets (editable block layers) */
@@ -3287,7 +3475,14 @@ function applyTextBoxAlign(el, def, g){
   el.style.textAlign=align;
   el.style.alignItems=align==="center"?"center":align==="right"?"flex-end":"flex-start";
   el.style.justifyContent=vAlign==="top"?"flex-start":vAlign==="bottom"?"flex-end":"center";
-  const flow=el.querySelector(":scope > .txt-flow");
+  const flow=textFlowEl(el);
+  const clip=el.querySelector(":scope > .txt-clip");
+  if(clip){
+    clip.dataset.halign=align==="center"?"center":align==="right"?"right":"left";
+    clip.dataset.valign=vAlign==="top"?"top":vAlign==="bottom"?"bottom":"middle";
+    clip.style.alignItems=align==="center"?"center":align==="right"?"flex-end":"flex-start";
+    clip.style.justifyContent=vAlign==="top"?"flex-start":vAlign==="bottom"?"flex-end":"center";
+  }
   if(flow){
     flow.style.width="100%";
     flow.style.textAlign=align;
@@ -3333,7 +3528,7 @@ function textPreferredSize(g, def){
  * which sit outside the box and would fake "overflow".
  */
 function textContentOverflows(el, w, h){
-  const flow=el.querySelector(":scope > .txt-flow") || el;
+  const flow=textFlowEl(el) || el;
   // Content size with current font; parent width must already be set for wrapping
   const contentW=flow.scrollWidth;
   const contentH=flow.scrollHeight;
@@ -3378,7 +3573,7 @@ function fitTextToFixedBox(el, g, def){
   el.style.whiteSpace=nowrap?"nowrap":"normal";
   applyTextBoxAlign(el, def, g);
 
-  const flow=el.querySelector(":scope > .txt-flow");
+  const flow=textFlowEl(el);
   if(flow){
     flow.style.width="100%";
     flow.style.maxWidth="100%";
@@ -3511,7 +3706,7 @@ function render(){
       applyBlockStyle(el, Object.assign({}, def, {type:"block"}), g);
     } else {
       const markup=bindContent(def);
-      el.innerHTML = def.kind==="stat" ? markup : `<span class="txt-flow">${markup}</span>`;
+      el.innerHTML = def.kind==="stat" ? markup : `<div class="txt-clip"><span class="txt-flow">${markup}</span></div>`;
       const size = g.size ?? def.size ?? 30;
       el.style.fontFamily = state.lockTemplateFonts ? (def.font||F.sans) : (g.font||def.font||F.sans);
       el.style.fontSize = size+"px";
@@ -3527,7 +3722,7 @@ function render(){
         el.style.textShadow=resolveTextShadow(g, def, size, fillPaint.fillHex||textColor, id);
       }
       applyTextStrokePaint(el, def, g, fillPaint.fillHex||textColor);
-      const flow=el.querySelector(":scope > .txt-flow");
+      const flow=textFlowEl(el);
       if(flow) applyTextStrokePaint(flow, def, g, fillPaint.fillHex||textColor);
       el.style.textAlign = g.align ?? def.align ?? "left";
       el.style.lineHeight = def.lh ?? 1.0;
@@ -3596,6 +3791,35 @@ function render(){
     // Circular arrows rotate glyph (like design tools)
     rt.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 12a8.5 8.5 0 0 1 14.3-6.1"/><polyline points="17 2 18 6 14 6.5"/><path d="M20.5 12a8.5 8.5 0 0 1-14.3 6.1"/><polyline points="7 22 6 18 10 17.5"/></svg>`;
     el.appendChild(rt);
+    // Floating toolbar above selection: lock · duplicate · remove
+    const bar=document.createElement("div");
+    bar.className="selbar";
+    bar.dataset.handle="selbar";
+    const rotDeg=normalizeRotateDeg(g.rotate||0);
+    bar.style.transform=`translateX(-50%) rotate(${-rotDeg}deg)`;
+    const lockBtn=document.createElement("button");
+    lockBtn.type="button";
+    lockBtn.dataset.handle="lock";
+    lockBtn.dataset.on=g.locked?"1":"0";
+    lockBtn.title=g.locked?"Unlock":"Lock";
+    lockBtn.setAttribute("aria-label", lockBtn.title);
+    lockBtn.innerHTML=g.locked
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.9-1"/></svg>`;
+    const dupBtn=document.createElement("button");
+    dupBtn.type="button";
+    dupBtn.dataset.handle="dup";
+    dupBtn.title="Duplicate";
+    dupBtn.setAttribute("aria-label","Duplicate");
+    dupBtn.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>`;
+    const delBtn=document.createElement("button");
+    delBtn.type="button";
+    delBtn.dataset.handle="del";
+    delBtn.title="Remove";
+    delBtn.setAttribute("aria-label","Remove");
+    delBtn.innerHTML=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>`;
+    bar.append(lockBtn, dupBtn, delBtn);
+    el.appendChild(bar);
 
     if(state.selected===id) el.classList.add("sel");
     if(g.locked) el.classList.add("locked");
@@ -3716,6 +3940,8 @@ function applyImageStyle(content, def, g, im){
    DRAG / RESIZE / ROTATE
 ============================================================ */
 const SNAP_PX=6;
+const ROT_SNAP_DEG=4;
+const ROT_SNAP_ANGLES=[0,45,90,135,180,225,270,315];
 function layerBox(g, def){
   const w=g.w;
   let h=g.h;
@@ -3758,6 +3984,26 @@ function snapMoveBox(x,y,w,h,excludeId){
     vGuides:sx?[sx.guide]:[], hGuides:sy?[sy.guide]:[],
   };
 }
+function angleDistDeg(a,b){
+  const d=Math.abs(normalizeRotateDeg(a)-normalizeRotateDeg(b));
+  return Math.min(d, 360-d);
+}
+/** Snap rotation to 45° stops + other layers' angles (within ROT_SNAP_DEG). */
+function snapRotateDeg(deg, excludeId){
+  const targets=new Set(ROT_SNAP_ANGLES);
+  const L=ensureLayout();
+  for(const [id] of Object.entries(layersOf())){
+    if(id===excludeId) continue;
+    const g=L[id]; if(!g||g.hidden) continue;
+    targets.add(normalizeRotateDeg(g.rotate||0));
+  }
+  let best=null, bestDist=ROT_SNAP_DEG+1;
+  for(const t of targets){
+    const d=angleDistDeg(deg, t);
+    if(d<=ROT_SNAP_DEG && d<bestDist){ bestDist=d; best=normalizeRotateDeg(t); }
+  }
+  return best!=null ? { rotate:best, snapped:true } : { rotate:normalizeRotateDeg(deg), snapped:false };
+}
 function clearAlignGuides(){
   document.getElementById("alignGuidesOverlay")?.remove();
 }
@@ -3780,19 +4026,59 @@ function renderAlignGuides(vGuides, hGuides){
   }
   stage.appendChild(wrap);
 }
+/** Crosshair through layer center at the snapped rotation (same cyan as move guides). */
+function renderRotateGuides(cx, cy, angle){
+  clearAlignGuides();
+  const wrap=document.createElement("div");
+  wrap.id="alignGuidesOverlay";
+  const len=Math.hypot(SW, SH)*2;
+  const a=normalizeRotateDeg(angle);
+  for(const off of [0, 90]){
+    const d=document.createElement("div");
+    d.className="guide-rot";
+    d.style.left=cx+"px";
+    d.style.top=cy+"px";
+    d.style.width=len+"px";
+    d.style.transform=`translate(-50%, -50%) rotate(${a+off}deg)`;
+    wrap.appendChild(d);
+  }
+  stage.appendChild(wrap);
+}
 let drag=null;
 function attachLayerEvents(el, def, g){
   el.addEventListener("pointerdown",(e)=>{
-    const handle = e.target.dataset.handle;
+    const handleEl=e.target.closest?.("[data-handle]");
+    const handle = handleEl?.dataset?.handle || e.target.dataset.handle;
     e.stopPropagation();
     if(el.isContentEditable) return;          // let text editing place the caret
     select(el.dataset.id);
-    // Locked: allow select only — no move / resize / rotate / pan
+    // Toolbar actions work even when locked (so Unlock stays available)
+    if(handle==="lock"){
+      e.preventDefault();
+      toggleLayerLock(el.dataset.id);
+      return;
+    }
+    if(handle==="selbar"){
+      e.preventDefault();
+      return;
+    }
+    // Locked: allow select only — no move / resize / rotate / pan / remove / dup
     if(g.locked) return;
+    if(handle==="del"){
+      e.preventDefault();
+      removeCanvasLayer(el.dataset.id);
+      return;
+    }
+    if(handle==="dup"){
+      e.preventDefault();
+      duplicateLayer(el.dataset.id);
+      return;
+    }
     beginDragUndo();
     const sc = currentScale();
     // in crop mode, a drag on the photo pans the image inside its frame
     let mode = handle || "move";
+    if(mode==="del"||mode==="lock"||mode==="dup"||mode==="selbar") return;
     if(!handle && state.cropMode===el.dataset.id && def.type==="image") mode="pan";
     const layerId=el.dataset.id;
     const blockLayer=isBlockLayer(def, g, layerId);
@@ -3800,12 +4086,16 @@ function attachLayerEvents(el, def, g){
       g.h=def.h ?? Math.round(el.getBoundingClientRect().height/(currentScale()||1)) ?? g.w;
     }
     const r=el.getBoundingClientRect();
+    const cx=r.left+r.width/2, cy=r.top+r.height/2;
     drag = { id:layerId, def, g, mode, blockLayer,
              sx:e.clientX, sy:e.clientY, ox:g.x, oy:g.y, ow:g.w, oh:g.h ?? def.h ?? g.w,
              osize:g.size ?? def.size ?? 30, orot:g.rotate||0, sc,
              ocx:g.cropX??0.5, ocy:g.cropY??0.5,
              ratio:(g.h ?? def.h ?? g.w)/g.w,
-             cx:r.left+r.width/2, cy:r.top+r.height/2 };
+             cx, cy,
+             // Canva-style: rotate by pointer delta from grab (no absolute jump/invert)
+             lastAng:Math.atan2(e.clientY-cy, e.clientX-cx)*180/Math.PI,
+             rotAccum:0 };
     if(mode==="pan"){ const d=computeDisp(def,g,imagesOf()[def.bind]); drag.dispW=d.dispW; drag.dispH=d.dispH; }
     el.setPointerCapture(e.pointerId);
   });
@@ -3820,9 +4110,24 @@ function attachLayerEvents(el, def, g){
       gg.x=snap.x; gg.y=snap.y;
       renderAlignGuides(snap.vGuides,snap.hGuides);
     } else if(d.mode==="rot"){
-      let ang=Math.atan2(e.clientY-d.cy, e.clientX-d.cx)*180/Math.PI + 90;
-      if(e.shiftKey) ang=Math.round(ang/15)*15;           // snap to 15°
-      gg.rotate=normalizeRotateDeg(ang);
+      const ang=Math.atan2(e.clientY-d.cy, e.clientX-d.cx)*180/Math.PI;
+      let step=ang-d.lastAng;
+      if(step>180) step-=360;
+      if(step<-180) step+=360;
+      d.lastAng=ang;
+      d.rotAccum+=step;
+      let next=d.orot+d.rotAccum;
+      const box=layerBox(gg, def);
+      if(e.shiftKey){
+        next=Math.round(next/15)*15;                        // snap to 15°
+        gg.rotate=normalizeRotateDeg(next);
+        renderRotateGuides(box.cx, box.cy, gg.rotate);
+      } else {
+        const snap=snapRotateDeg(next, d.id);
+        gg.rotate=snap.rotate;
+        if(snap.snapped) renderRotateGuides(box.cx, box.cy, snap.rotate);
+        else clearAlignGuides();
+      }
     } else if(d.mode==="pan"){
       const bw=gg.w, bh=gg.h??gg.w;
       if(d.dispW>bw) gg.cropX=clamp01(d.ocx - dx/(d.dispW-bw));
@@ -3966,7 +4271,7 @@ function applyTextLayerVisuals(el, def, g, layerId){
     el.style.textShadow=resolveTextShadow(g, def, size, textColor, id);
   }
   applyTextStrokePaint(el, def, g, textColor);
-  const flow=el.querySelector(":scope > .txt-flow");
+  const flow=textFlowEl(el);
   if(flow) applyTextStrokePaint(flow, def, g, textColor);
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
@@ -3979,6 +4284,8 @@ function applyGeo(el, def, g){
   const rot=normalizeRotateDeg(g.rotate||0);
   g.rotate=rot;
   el.style.transform = (rot? `rotate(${rot}deg)`:"");
+  const bar=el.querySelector(":scope > .selbar");
+  if(bar) bar.style.transform=`translateX(-50%) rotate(${-rot}deg)`;
   el.style.opacity = (g.opacity!=null?g.opacity:1);
   const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(el.dataset.id||"");
   if(def.type==="image" && !isBlock){
@@ -6799,6 +7106,11 @@ window.__RENDER_API_V3__={
     scheduleSave();
     return buildEditorSnapshot();
   },
+  removeLayer(id){
+    const lid=id||state.selected;
+    const res=removeCanvasLayer(lid, { confirm:true });
+    return { ...res, snapshot:buildEditorSnapshot() };
+  },
   setLayerGeometry(id, patch={}){
     return window.__RENDER_API_V3__.patchLayerStyle(id, patch);
   },
@@ -7375,13 +7687,30 @@ window.__RENDER_API_V3__={
     };
   },
   clearImageSlot(key){
-    if(key && imagesOf()?.[key]){
-      delete imagesOf()[key];
-      try{ buildAssets(); buildLogoControls(); }catch(_){}
-      render();
-      scheduleSave();
-      notifyEditorBridge("image");
+    if(!key) return buildEditorSnapshot();
+    const slots=imagesOf();
+    if(slots?.[key]){
+      const prev=slots[key];
+      if(prev?.blobUrl){ try{ URL.revokeObjectURL(prev.blobUrl); }catch(_){} }
+      delete slots[key];
     }
+    // Drop baked default so Save does not resurrect the image after remove
+    const tid=state.template;
+    const json=TEMPLATES[tid]?._json;
+    if(json?.defaults?.images && key in json.defaults.images){
+      delete json.defaults.images[key];
+      if(!Object.keys(json.defaults.images).length){
+        if(json.defaults && Object.keys(json.defaults).length===1) delete json.defaults;
+        else delete json.defaults.images;
+      }
+    }
+    if(json?.settings?.defaultImages && key in json.settings.defaultImages){
+      delete json.settings.defaultImages[key];
+    }
+    try{ buildAssets(); buildLogoControls(); }catch(_){}
+    render();
+    scheduleSave();
+    notifyEditorBridge("image");
     return buildEditorSnapshot();
   },
 };

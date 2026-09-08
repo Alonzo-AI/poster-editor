@@ -878,6 +878,25 @@ export default function EditorPage({ Nav }) {
                       }}
                     />
                   </label>
+                  {slot.loaded ? (
+                    <button
+                      type="button"
+                      className="text-[11px] text-dim underline decoration-line underline-offset-2 hover:text-paper"
+                      title={`Remove ${slot.label}`}
+                      onClick={() => {
+                        if (!api?.clearImageSlot) return
+                        api.clearImageSlot(slot.key)
+                        if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
+                        if (slot.key === 'player') {
+                          setCutoutDone(false)
+                          setSmartCrop(null)
+                        }
+                        setStatus(`Removed ${slot.label.toLowerCase()}`)
+                      }}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </Panel>
