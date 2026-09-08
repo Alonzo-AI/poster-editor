@@ -247,15 +247,21 @@ export default function AutomatePage({ Nav }) {
     setStatus('Removing background… (first run downloads the model)')
     try {
       const res = await api.setImageCutout('player', true)
-      setCutoutDone(!!res?.cutBg)
-      const src = res?.src || api.getImageSlot?.('player')?.src
+      if (!res?.ok || !res?.cutBg) {
+        setCutoutDone(false)
+        setStatus(res?.error || 'Background removal failed — check network and try again')
+        return null
+      }
+      setCutoutDone(true)
+      const src = res.src || api.getImageSlot?.('player')?.src
       if (src) {
         setImages((img) => ({ ...img, player: src }))
         setSmartCrop((s) => (s ? { ...s, src } : s))
       }
-      setStatus(res?.cutBg ? 'Background removed' : 'Background removal finished')
+      setStatus('Background removed')
       return src || null
     } catch (e) {
+      setCutoutDone(false)
       setStatus('Background removal failed: ' + (e.message || e))
       return null
     } finally {

@@ -371,13 +371,19 @@ export default function EditorPage({ Nav }) {
     setStatus('Removing background… (first run downloads the model)')
     try {
       const res = await api.setImageCutout('player', true)
-      setCutoutDone(!!res?.cutBg)
+      if (!res?.ok || !res?.cutBg) {
+        setCutoutDone(false)
+        setStatus(res?.error || 'Background removal failed — check network and try again')
+        return null
+      }
+      setCutoutDone(true)
       if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
-      const src = res?.src || api.getImageSlot?.('player')?.src
+      const src = res.src || api.getImageSlot?.('player')?.src
       if (src) setSmartCrop((s) => (s ? { ...s, src } : s))
-      setStatus(res?.cutBg ? 'Background removed' : 'Background removal finished')
+      setStatus('Background removed')
       return src || null
     } catch (e) {
+      setCutoutDone(false)
       setStatus(e.message || 'Background removal failed')
       return null
     } finally {
@@ -575,8 +581,8 @@ export default function EditorPage({ Nav }) {
                           : 'text-dim hover:bg-inset hover:text-paper'
                       }`}
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-inset text-[9px] text-muted">
-                        4:5
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-inset text-[12px] font-semibold uppercase text-dim">
+                        {(t.name || t.id || '?').trim().charAt(0) || '?'}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12px] font-medium">{t.name}</span>

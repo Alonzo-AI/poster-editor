@@ -370,7 +370,9 @@ Export: park `#stage` off-screen at native 1080×1350, `html2canvas` scale 2, do
 
 `PosterRenderEngine.mapStoryToText(story)` maps a sports story record onto binds:
 
-`player_name` → `playerName`, `hero_stat_number` → `heroNumber`, `stat_line_1` → `stat1num`, colors, sport abbreviation, etc.
+`player_name` → `playerName`, `hero_stat_number` → `heroNumber`, `stat_line_1` → `stat1num`, sport abbreviation, etc.
+
+**Stories update copy only** in the Editor — they do not overwrite brand `primary` / `secondary` (that used to make role-colored text jump when changing Stories). Use `applyStory(story, { applyColors:true })` only if you explicitly want story team colors. Automate still sends its own `colors` via `setPayload`.
 
 Editor can cycle bundled stories; Automate can pass `payload.story`.
 

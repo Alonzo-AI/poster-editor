@@ -4505,18 +4505,21 @@ function revealImageLayers(key){
   }
 }
 function applyImageSrc(key, url, stored){
-  const slot=imagesOf()[key]; if(!slot) return;
-  const img=new Image();
-  img.onload=()=>{
-    slot.src=url; slot.natW=img.naturalWidth; slot.natH=img.naturalHeight; slot.el=img;
-    if(stored) slot.stored=stored;
-    revealImageLayers(key);
-    fitImageLayer(key, img.naturalWidth/img.naturalHeight);
-    if(key==="player") applyTemplateHeaderColors();
-    buildAssets(); buildLogoControls(); render(); scheduleSave();
-  };
-  img.onerror=()=>scheduleSave();
-  img.src=url;
+  return new Promise((resolve)=>{
+    const slot=imagesOf()[key]; if(!slot){ resolve(null); return; }
+    const img=new Image();
+    img.onload=()=>{
+      slot.src=url; slot.natW=img.naturalWidth; slot.natH=img.naturalHeight; slot.el=img;
+      if(stored) slot.stored=stored;
+      revealImageLayers(key);
+      fitImageLayer(key, img.naturalWidth/img.naturalHeight);
+      if(key==="player") applyTemplateHeaderColors();
+      buildAssets(); buildLogoControls(); render(); scheduleSave();
+      resolve(slot);
+    };
+    img.onerror=()=>{ scheduleSave(); resolve(null); };
+    img.src=url;
+  });
 }
 function loadImage(key,file){
   if(!file) return;
@@ -4775,45 +4778,65 @@ async function setCutBg(key, enabled){
     const im=imagesOf()[key];
     if(im && im.cutBg){
       im.cutBg=false;
-      applyImageSrc(key, im.original||im.src);
+      await applyImageSrc(key, im.original||im.src);
     }
     setBgStatus("");
-    return;
+    return { ok:false, reason:"disabled" };
   }
-  const im=imagesOf()[key]; if(!im) return;
+  const im=imagesOf()[key]; if(!im) return { ok:false, reason:"no-image" };
   if(!enabled){
-    const original=im.original||im.src;
+    const original=im.original||im.stored||im.src;
     if(!im.original) im.original=original;
     im.cutBg=false;
-    applyImageSrc(key, original);
+    await applyImageSrc(key, original);
     setBgStatus("Original photo restored.");
-    return;
+    return { ok:true, cutBg:false, src:im.src||original };
   }
-  const original=im.original||im.src;
+  const original=im.original||im.stored||im.src;
   if(!im.original) im.original=original;
-  const useCutout=(url, cached)=>{
+  const useCutout=async (url, cached)=>{
     im.cutout=url; im.cutBg=true;
     _cutoutCache.set(cutoutFingerprint(original), url);
-    compressImage(url, 1600, "image/png", 0.92).then(d=>applyImageSrc(key, url, d));
+    let stored=null;
+    try{ stored=await compressImage(url, 1600, "image/png", 0.92); }catch(_){}
+    await applyImageSrc(key, url, stored||url);
     setBgStatus(cached ? "Background removed (cached)." : "Background removed.");
+    return { ok:true, cutBg:true, src:url };
   };
-  if(im.cutout){ useCutout(im.cutout, true); return; }
+  if(im.cutout){ return await useCutout(im.cutout, true); }
   const fp=cutoutFingerprint(original);
-  if(_cutoutCache.has(fp)){ useCutout(_cutoutCache.get(fp), true); return; }
+  if(_cutoutCache.has(fp)){ return await useCutout(_cutoutCache.get(fp), true); }
   setBgStatus("Loading cutout model… (first run downloads ~a few MB, needs internet)");
   try{
-    if(!_imglyMod) _imglyMod=await import("https://esm.sh/@imgly/background-removal@1.7.0");
+    if(!_imglyMod){
+      try{
+        _imglyMod=await import("https://esm.sh/@imgly/background-removal@1.7.0");
+      }catch(_){
+        _imglyMod=await import("https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm");
+      }
+    }
     const removeBackground=_imglyMod.removeBackground||_imglyMod.default;
-    const src=await toSupportedSrc(original);
-    const blob=await removeBackground(src,{ output:{format:"image/png"},
-      progress:(k,c,t)=>{ if(typeof k==="string"&&k.startsWith("fetch")&&t) setBgStatus(`Downloading model… ${Math.round(100*c/t)}%`);
-                          else setBgStatus("Removing background…"); }});
+    if(typeof removeBackground!=="function"){
+      throw new Error("Background-removal module failed to load");
+    }
+    // Prefer durable data URL (blob: can fail after refresh / with the model)
+    const prefer=(im.stored && String(im.stored).startsWith("data:")) ? im.stored : original;
+    const src=await toSupportedSrc(prefer);
+    const blob=await removeBackground(src,{
+      output:{ format:"image/png" },
+      progress:(k,c,t)=>{
+        if(typeof k==="string"&&k.startsWith("fetch")&&t) setBgStatus(`Downloading model… ${Math.round(100*c/t)}%`);
+        else setBgStatus("Removing background…");
+      },
+    });
     const url=await blobToDataURL(blob);
-    useCutout(url);
+    return await useCutout(url);
   }catch(e){
     im.cutBg=false;
     buildAssets();
-    setBgStatus("Background removal failed: "+(e&&e.message||e));
+    const msg=(e&&e.message)||String(e);
+    setBgStatus("Background removal failed: "+msg);
+    return { ok:false, cutBg:false, error:msg };
   }
 }
 
@@ -5229,11 +5252,16 @@ function buildTextFields(){
    STORIES (JSON import)
 ============================================================ */
 const SPORT_MAP = PosterRenderEngine.SPORT_MAP;
-function applyStory(s){
+function applyStory(s, opts={}){
   const mapped = PosterRenderEngine.mapStoryToText(s);
   Object.assign(state.text, mapped.text);
-  if(mapped.colors.primary){ state.colors.primary=mapped.colors.primary; cP.value=mapped.colors.primary; }
-  if(mapped.colors.secondary){ state.colors.secondary=mapped.colors.secondary; cS.value=mapped.colors.secondary; }
+  // Copy only by default — story primary/secondary used to overwrite brand colors and
+  // make role-colored text (primary, secondary, …) jump on every Stories change.
+  if(opts.applyColors){
+    if(mapped.colors.primary){ state.colors.primary=mapped.colors.primary; cP.value=mapped.colors.primary; }
+    if(mapped.colors.secondary){ state.colors.secondary=mapped.colors.secondary; cS.value=mapped.colors.secondary; }
+    state.colors=PosterRenderEngine.enrichThemeColors(state.colors);
+  }
   buildTextFields();
   buildCaptionColorControls();
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
@@ -6012,7 +6040,7 @@ function loadImageFromUrl(key, url){
     im.onload=()=>{
       const prev=imagesOf()[key];
       if(prev?.blobUrl) URL.revokeObjectURL(prev.blobUrl);
-      imagesOf()[key]={src:url, stored:url, natW:im.naturalWidth, natH:im.naturalHeight, el:im};
+      imagesOf()[key]={src:url, stored:url, original:url, cutout:null, cutBg:false, natW:im.naturalWidth, natH:im.naturalHeight, el:im};
       if(key==="player"){
         applyBroadcastPhotoDefault(true);
         applyHypeLowerThirdDefault();
@@ -7067,13 +7095,14 @@ window.__RENDER_API_V3__={
   /** ML cutout for player (or other) slot — needs network on first run. */
   async setImageCutout(key="player", enabled=true){
     const k=key||"player";
-    await setCutBg(k, !!enabled);
+    const result=await setCutBg(k, !!enabled);
     notifyEditorBridge("cutout");
     const im=imagesOf()?.[k];
     return {
-      ok:true,
+      ok:!!(result&&result.ok),
       cutBg:!!im?.cutBg,
-      src:im?.src||null,
+      src:im?.cutout||im?.src||result?.src||null,
+      error:result?.error||result?.reason||null,
       snapshot:buildEditorSnapshot(),
     };
   },
