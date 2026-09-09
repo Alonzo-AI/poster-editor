@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import StageHost from '../components/StageHost.jsx'
 import SmartCropModal from '../components/SmartCropModal.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
-import { apiHealth, syncDbTemplatesIntoEngine } from '../api/templatesApi.js'
+import {
+  apiHealth,
+  syncDbTemplatesIntoEngine,
+  ensureTemplateInEngine,
+  listDbTemplates,
+  mergeTemplateCatalog,
+} from '../api/templatesApi.js'
 
 const inputClass = 'ui-input'
 
@@ -28,6 +34,7 @@ function pickDefaultTemplate(list) {
 export default function AutomatePage({ Nav }) {
   const { iframeRef, src, api, ready, error, onLoad } = usePosterEngine({ headless: true })
   const [templates, setTemplates] = useState([])
+  const [dbCatalog, setDbCatalog] = useState([])
   const [templateId, setTemplateId] = useState(null)
   const [formatCategory, setFormatCategory] = useState('player')
   const [text, setText] = useState({})
@@ -52,9 +59,12 @@ export default function AutomatePage({ Nav }) {
   const refreshFromDb = useCallback(async () => {
     if (!api) return []
     try {
+      const remote = await listDbTemplates({ lite: true })
+      setDbCatalog(remote)
+      setTemplates(mergeTemplateCatalog(remote, api.listTemplates?.() || []))
       await syncDbTemplatesIntoEngine(api)
       setApiOnline(true)
-      const merged = api.listTemplates?.() || []
+      const merged = mergeTemplateCatalog(remote, api.listTemplates?.() || [])
       setTemplates(merged)
       return merged
     } catch (e) {
@@ -70,6 +80,10 @@ export default function AutomatePage({ Nav }) {
       const shouldReset = resetLayout || switching
       setStatus('Updating…')
       try {
+        await ensureTemplateInEngine(api, templateId, {
+          updatedAt: templates.find((t) => t.id === templateId)?.updatedAt,
+        })
+        setTemplates(mergeTemplateCatalog(dbCatalog, api.listTemplates?.() || []))
         const payload = {
           template: templateId,
           auto_palette: false,
@@ -105,7 +119,7 @@ export default function AutomatePage({ Nav }) {
         setStatus('Update failed: ' + (e.message || e))
       }
     },
-    [api, templateId, text, colors, images],
+    [api, templateId, text, colors, images, dbCatalog],
   )
 
   function onResetLayout() {
@@ -154,7 +168,7 @@ export default function AutomatePage({ Nav }) {
     }
 
     load(true)
-    const timer = setInterval(() => load(false), 5000)
+    const timer = setInterval(() => load(false), 8000)
     const onFocus = () => load(false)
     window.addEventListener('focus', onFocus)
     return () => {

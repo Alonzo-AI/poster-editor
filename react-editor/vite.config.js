@@ -55,6 +55,11 @@ function portalStaticPlugin() {
 export default defineConfig({
   plugins: [react(), tailwindcss(), portalStaticPlugin()],
   server: {
+    // 8518 is open on this host's security group; 5173 is not.
+    host: '0.0.0.0',
+    port: 8518,
+    strictPort: true,
+    allowedHosts: true,
     fs: { allow: [portalRoot, __dirname] },
     proxy: {
       '/api': {

@@ -6266,30 +6266,42 @@ function loadBakedTemplatesMap(){
 }
 function saveBakedTemplateJson(json){
   if(!json?.id) return;
+  const stripHeavy=(src)=>{
+    const slim=JSON.parse(JSON.stringify(src));
+    if(slim.defaults?.images){
+      const keep={};
+      for(const k of ["player","background"]){
+        if(slim.defaults.images[k] && String(slim.defaults.images[k]).length<200000){
+          keep[k]=slim.defaults.images[k];
+        }
+      }
+      slim.defaults.images=keep;
+    }
+    if(slim.templateImages) delete slim.templateImages;
+    return slim;
+  };
+  const write=(map)=>{
+    localStorage.setItem(LS_BAKED_KEY, JSON.stringify(map));
+    localStorage.setItem(LS_BAKED_KEY+".lastId", json.id);
+  };
   const map=loadBakedTemplatesMap();
   map[json.id]=json;
   try{
-    localStorage.setItem(LS_BAKED_KEY, JSON.stringify(map));
-    localStorage.setItem(LS_BAKED_KEY+".lastId", json.id);
+    write(map);
   }catch(e){
-    // Quota: keep layout, drop heavy image payloads and retry
-    console.warn("Could not persist baked template with images", e);
+    // Quota: drop images, then shrink map to this template only
     try{
-      const slim=JSON.parse(JSON.stringify(json));
-      if(slim.defaults?.images){
-        // Keep only player + background if present, else drop all
-        const keep={};
-        for(const k of ["player","background"]){
-          if(slim.defaults.images[k]) keep[k]=slim.defaults.images[k];
-        }
-        slim.defaults.images=keep;
-      }
+      const slim=stripHeavy(json);
       map[json.id]=slim;
-      localStorage.setItem(LS_BAKED_KEY, JSON.stringify(map));
-      localStorage.setItem(LS_BAKED_KEY+".lastId", json.id);
+      write(map);
       setBakeStatus("Saved layout; some images may not fit in browser storage — use Download template for a full JSON with images.");
     }catch(e2){
-      console.warn("Could not persist baked template", e2);
+      try{
+        write({ [json.id]: stripHeavy(json) });
+        setBakeStatus("Browser storage full — kept only this template’s layout locally. DB Save is unaffected.");
+      }catch(e3){
+        console.warn("Could not persist baked template", e3);
+      }
     }
   }
 }
@@ -7564,13 +7576,37 @@ window.__RENDER_API_V3__={
   injectRemoteTemplates(list=[], opts={}){
     const loader=window.PosterTemplateLoader;
     const sync=!!opts.sync;
+    // Mongo/DB is source of truth — do not mirror every remote JSON into localStorage
+    // (baked images blow past the ~5–10MB quota and make sync O(n²) + QuotaExceededError).
+    const persist=opts.persist===true;
     const ids=[];
     const incoming=new Set();
+    if(sync){
+      try{
+        localStorage.removeItem(LS_BAKED_KEY);
+        localStorage.removeItem(LS_BAKED_KEY+".lastId");
+      }catch(_){}
+    }
     for(const item of list){
       const json=item?.json || item;
       if(!json || typeof json!=="object" || !json.id) continue;
       // Legacy Atlas docs without category → Player poster
       json.category=normalizeTemplateCategory(json.category ?? item?.category ?? json.settings?.category);
+      const isLite=!!json._remoteLite;
+      const existing=TEMPLATES[json.id]?._json;
+      // Lite metadata sync must not clobber disk seeds or already-hydrated DB templates
+      if(isLite && DISK_TEMPLATE_IDS.has(json.id)){
+        REMOTE_TEMPLATE_IDS.add(json.id);
+        incoming.add(json.id);
+        ids.push(json.id);
+        continue;
+      }
+      if(isLite && existing && !existing._remoteLite && (existing.layers||[]).length>0){
+        REMOTE_TEMPLATE_IDS.add(json.id);
+        incoming.add(json.id);
+        ids.push(json.id);
+        continue;
+      }
       if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
       else {
         TEMPLATES[json.id]={
@@ -7587,17 +7623,13 @@ window.__RENDER_API_V3__={
       if(!ENABLED_TEMPLATES.includes(json.id)) ENABLED_TEMPLATES.push(json.id);
       REMOTE_TEMPLATE_IDS.add(json.id);
       incoming.add(json.id);
-      try{ saveBakedTemplateJson(json); }catch(_){}
+      if(persist){ try{ saveBakedTemplateJson(json); }catch(_){} }
       ids.push(json.id);
     }
     if(sync){
       // Remove templates that exist only from old Atlas/localStorage bakes
       for(const id of [...REMOTE_TEMPLATE_IDS]){
         if(!incoming.has(id)) uninstallTemplateId(id);
-      }
-      for(const id of Object.keys(loadBakedTemplatesMap())){
-        if(incoming.has(id) || DISK_TEMPLATE_IDS.has(id)) continue;
-        uninstallTemplateId(id);
       }
     }
     try{ buildTplChips(); }catch(_){}

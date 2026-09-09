@@ -75,9 +75,37 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
-/** List templates (summary + full json for Automate inject). */
-app.get('/api/templates', async (_req, res) => {
+/** List templates. ?lite=1 → metadata only (fast). Full JSON is GET /api/templates/:id */
+app.get('/api/templates', async (req, res) => {
   try {
+    const lite =
+      req.query.lite === '1' ||
+      req.query.lite === 'true' ||
+      req.query.summary === '1'
+    if (lite) {
+      const rows = await Template.find(
+        {},
+        {
+          id: 1,
+          name: 1,
+          category: 1,
+          frozen: 1,
+          updatedAt: 1,
+          'json.category': 1,
+        },
+      )
+        .sort({ updatedAt: -1 })
+        .lean()
+      return res.json({
+        templates: rows.map((r) => ({
+          id: r.id,
+          name: r.name,
+          category: normalizeCategory(r.category ?? r.json?.category),
+          frozen: r.frozen !== false,
+          updatedAt: r.updatedAt,
+        })),
+      })
+    }
     const rows = await Template.find({}).sort({ updatedAt: -1 }).lean()
     res.json({
       templates: rows.map((r) => ({
@@ -218,8 +246,8 @@ async function main() {
   console.log('[api] connecting…', redactUri(MONGODB_URI), '→ db', dbName)
   await mongoose.connect(MONGODB_URI, { dbName })
   console.log('[api] Mongo connected · db=', mongoose.connection.name)
-  app.listen(PORT, () => {
-    console.log(`[api] http://127.0.0.1:${PORT}`)
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[api] http://127.0.0.1:${PORT} (also 0.0.0.0:${PORT})`)
   })
 }
 

@@ -9,7 +9,11 @@ import {
   apiHealth,
   deleteTemplateFromDb,
   saveTemplateToDb,
+  listDbTemplates,
+  mergeTemplateCatalog,
   syncDbTemplatesIntoEngine,
+  ensureTemplateInEngine,
+  markTemplateHydrated,
 } from '../api/templatesApi.js'
 
 const inputClass = 'ui-input'
@@ -51,6 +55,7 @@ export default function EditorPage({ Nav }) {
     headless: false,
   })
   const [templates, setTemplates] = useState([])
+  const [dbCatalog, setDbCatalog] = useState([]) // stable Mongo names (lite)
   const [stories, setStories] = useState([])
   const [assets, setAssets] = useState([])
   const [imageSlots, setImageSlots] = useState([])
@@ -119,32 +124,76 @@ export default function EditorPage({ Nav }) {
     }
   }, [api, snapshot?.template, snapshot?.layers, ready])
 
-  useEffect(() => {
-    if (!api?.listTemplates) return
+  const refreshTemplates = (catalog = dbCatalog) => {
     try {
-      setTemplates(api.listTemplates() || [])
+      setTemplates(mergeTemplateCatalog(catalog, api?.listTemplates?.() || []))
     } catch (e) {
       console.warn(e)
     }
-  }, [api, snapshot?.template])
+  }
 
-  // Pull DB templates into the engine so Editor chips stay in sync
+  /** Lite poll so other users' Saves appear without a full page reload. */
+  const pullDbCatalog = async ({ hydrateActive = false, quiet = false } = {}) => {
+    if (!api?.injectRemoteTemplates) return []
+    const remote = await listDbTemplates({ lite: true })
+    setDbCatalog(remote)
+    setApiOnline(true)
+    await syncDbTemplatesIntoEngine(api, { remote })
+    setTemplates(mergeTemplateCatalog(remote, api.listTemplates?.() || []))
+
+    if (hydrateActive) {
+      const active = api.getEditorSnapshot?.()?.template || snapshot?.template
+      if (active) {
+        const meta = remote.find((t) => t.id === active)
+        if (!quiet) setStatus(`Loading “${active}”…`)
+        await ensureTemplateInEngine(api, active, { updatedAt: meta?.updatedAt })
+        setTemplates(mergeTemplateCatalog(remote, api.listTemplates?.() || []))
+      }
+    }
+    if (!quiet) setStatus('')
+    return remote
+  }
+
+  useEffect(() => {
+    if (!api?.listTemplates) return
+    // Re-merge when active template changes — never drop Mongo names
+    refreshTemplates()
+  }, [api, snapshot?.template, dbCatalog])
+
+  // Initial load + multi-user catalog sync (names only, ~every 8s + on focus)
   useEffect(() => {
     if (!api?.injectRemoteTemplates || !ready) return
     let cancelled = false
-    ;(async () => {
+    let busy = false
+
+    async function run(opts) {
+      if (busy || cancelled) return
+      busy = true
       try {
-        const r = await syncDbTemplatesIntoEngine(api)
-        if (cancelled) return
-        setTemplates(api.listTemplates?.() || [])
-        setApiOnline(true)
-        if (r?.count) setStatus(`Loaded ${r.count} saved template(s) from DB`)
-      } catch {
-        setApiOnline(false)
+        await pullDbCatalog(opts)
+      } catch (e) {
+        if (!cancelled) {
+          setApiOnline(false)
+          if (!opts?.quiet) {
+            setStatus(e.message || 'Failed to load template list from DB')
+          }
+          try {
+            setTemplates(api.listTemplates?.() || [])
+          } catch (_) {}
+        }
+      } finally {
+        busy = false
       }
-    })()
+    }
+
+    run({ hydrateActive: true, quiet: false })
+    const timer = setInterval(() => run({ hydrateActive: true, quiet: true }), 8000)
+    const onFocus = () => run({ hydrateActive: true, quiet: true })
+    window.addEventListener('focus', onFocus)
     return () => {
       cancelled = true
+      clearInterval(timer)
+      window.removeEventListener('focus', onFocus)
     }
   }, [api, ready])
 
@@ -238,9 +287,10 @@ export default function EditorPage({ Nav }) {
     try {
       api.removeRemoteTemplate?.(t.id)
     } catch (_) {}
-    const next = api.listTemplates?.() || []
-    setTemplates(next)
-    const stillThere = next.some((x) => x.id === t.id)
+    const nextCatalog = dbCatalog.filter((x) => x.id !== t.id)
+    setDbCatalog(nextCatalog)
+    setTemplates(mergeTemplateCatalog(nextCatalog, api.listTemplates?.() || []))
+    const stillThere = (api.listTemplates?.() || []).some((x) => x.id === t.id)
     setStatus(
       stillThere
         ? `Cleared DB/session copy of “${label}” · seed kept`
@@ -251,6 +301,13 @@ export default function EditorPage({ Nav }) {
   async function onCopyTemplate(t) {
     if (!t?.id || !api?.duplicateTemplate) return
     setTplMenuId(null)
+    setStatus(`Loading “${t.name || t.id}”…`)
+    try {
+      await ensureTemplateInEngine(api, t.id, { updatedAt: t.updatedAt })
+    } catch (e) {
+      setStatus(e.message || 'Failed to load template')
+      return
+    }
     const suggested = `${t.name || t.id} copy`
     const name = window.prompt('Name for duplicate template', suggested)
     if (name == null || !String(name).trim()) return
@@ -265,6 +322,7 @@ export default function EditorPage({ Nav }) {
       if (!json?.id) throw new Error('Duplicate failed — hard-refresh if engine is old')
       const saved = await saveTemplateToDb(json, { id: json.id })
       setApiOnline(true)
+      markTemplateHydrated(saved.id, saved.updatedAt || Date.now())
       try {
         api.injectRemoteTemplates?.(
           [
@@ -279,7 +337,31 @@ export default function EditorPage({ Nav }) {
           { sync: false },
         )
       } catch (_) {}
-      setTemplates(api.listTemplates?.() || [])
+      setDbCatalog((prev) => [
+        ...prev.filter((x) => x.id !== saved.id),
+        {
+          id: saved.id,
+          name: json.name,
+          category: json.category || 'player',
+          frozen: true,
+          updatedAt: saved.updatedAt,
+        },
+      ])
+      setTemplates(
+        mergeTemplateCatalog(
+          [
+            ...dbCatalog.filter((x) => x.id !== saved.id),
+            {
+              id: saved.id,
+              name: json.name,
+              category: json.category || 'player',
+              frozen: true,
+              updatedAt: saved.updatedAt,
+            },
+          ],
+          api.listTemplates?.() || [],
+        ),
+      )
       setBakeId(saved.id)
       setBakeName(json.name)
       setStatus(`Copied “${json.name}” (id: ${saved.id}) · saved to DB`)
@@ -320,6 +402,17 @@ export default function EditorPage({ Nav }) {
         try {
           const saved = await saveTemplateToDb(json, { id })
           setApiOnline(true)
+          markTemplateHydrated(saved.id, saved.updatedAt || Date.now())
+          setDbCatalog((prev) => {
+            const entry = {
+              id: saved.id,
+              name,
+              category: json.category || 'player',
+              frozen: true,
+              updatedAt: saved.updatedAt,
+            }
+            return [...prev.filter((x) => x.id !== saved.id), entry]
+          })
           setStatus(
             saved.updated
               ? `Updated “${name}” (id: ${saved.id}) · JSON overwritten`
@@ -339,7 +432,7 @@ export default function EditorPage({ Nav }) {
               { sync: false },
             )
           } catch (_) {}
-          if (api.listTemplates) setTemplates(api.listTemplates() || [])
+          if (api.listTemplates) refreshTemplates()
           if (api.listTextFields) setTextFields(api.listTextFields() || [])
           return
         } catch (dbErr) {
@@ -351,7 +444,7 @@ export default function EditorPage({ Nav }) {
         }
       }
       setStatus(download ? 'Template downloaded' : 'Saved to session')
-      if (api.listTemplates) setTemplates(api.listTemplates() || [])
+      if (api.listTemplates) refreshTemplates()
       if (api.listTextFields) setTextFields(api.listTextFields() || [])
     } catch (e) {
       setStatus(e.message || 'Save failed')
@@ -508,6 +601,24 @@ export default function EditorPage({ Nav }) {
           >
             {apiOnline === true ? 'DB' : apiOnline === false ? 'Offline' : '…'}
           </span>
+          <button
+            type="button"
+            className="ui-btn"
+            title="Pull latest template names from DB (other users' saves)"
+            disabled={!ready}
+            onClick={async () => {
+              setStatus('Refreshing templates…')
+              try {
+                await pullDbCatalog({ hydrateActive: true, quiet: false })
+                setStatus('Templates refreshed from DB')
+              } catch (e) {
+                setApiOnline(false)
+                setStatus('Refresh failed: ' + (e.message || e))
+              }
+            }}
+          >
+            Refresh
+          </button>
           <button type="button" className="ui-btn" onClick={() => onBake(true)} disabled={!ready}>
             Download
           </button>
@@ -542,7 +653,7 @@ export default function EditorPage({ Nav }) {
                         category: formatCategory,
                       })
                       const id = res?.template?.id
-                      if (api.listTemplates) setTemplates(api.listTemplates() || [])
+                      if (api.listTemplates) refreshTemplates()
                       setStatus(
                         id
                           ? `Created “${name}” · ${CATEGORIES.find((c) => c.id === formatCategory)?.label || formatCategory}`
@@ -578,9 +689,19 @@ export default function EditorPage({ Nav }) {
                   <li key={t.id} className="group relative flex items-center gap-0.5">
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={async () => {
                         setTplMenuId(null)
-                        api?.switchTemplate?.(t.id)
+                        setStatus(`Loading “${t.name || t.id}”…`)
+                        try {
+                          await ensureTemplateInEngine(api, t.id, {
+                            updatedAt: t.updatedAt,
+                          })
+                          refreshTemplates()
+                          api?.switchTemplate?.(t.id)
+                          setStatus('')
+                        } catch (e) {
+                          setStatus(e.message || 'Failed to load template')
+                        }
                       }}
                       className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left ${
                         snapshot?.template === t.id
