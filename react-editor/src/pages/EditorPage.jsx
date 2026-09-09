@@ -313,14 +313,33 @@ export default function EditorPage({ Nav }) {
     if (name == null || !String(name).trim()) return
     setStatus(`Duplicating “${t.name || t.id}”…`)
     try {
+      const existingIds = [
+        ...new Set(
+          [
+            ...dbCatalog.map((x) => x.id),
+            ...(api.listTemplates?.() || []).map((x) => x.id),
+          ].filter(Boolean),
+        ),
+      ]
       const res = await api.duplicateTemplate({
         id: t.id,
         name: String(name).trim(),
         category: t.category || formatCategory,
+        existingIds,
       })
       const json = res?.json
-      if (!json?.id) throw new Error('Duplicate failed — hard-refresh if engine is old')
-      const saved = await saveTemplateToDb(json, { id: json.id })
+      const newId = String(res?.id || json?.id || '').trim()
+      if (!newId) throw new Error('Duplicate failed — hard-refresh if engine is old')
+      if (newId === t.id) {
+        throw new Error('Copy kept the original id — refused to overwrite. Try a different name.')
+      }
+      json.id = newId
+      json.name = res?.name || json.name || String(name).trim()
+      // Always PUT under the NEW id (never the source)
+      const saved = await saveTemplateToDb(json, { id: newId })
+      if (saved.id === t.id) {
+        throw new Error('DB saved under original id — copy aborted')
+      }
       setApiOnline(true)
       markTemplateHydrated(saved.id, saved.updatedAt || Date.now())
       try {
@@ -336,6 +355,12 @@ export default function EditorPage({ Nav }) {
           ],
           { sync: false },
         )
+      } catch (_) {}
+      // Lock editor + Save target onto the copy
+      setBakeId(saved.id)
+      setBakeName(json.name)
+      try {
+        api.switchTemplate?.(saved.id)
       } catch (_) {}
       setDbCatalog((prev) => [
         ...prev.filter((x) => x.id !== saved.id),
@@ -362,9 +387,7 @@ export default function EditorPage({ Nav }) {
           api.listTemplates?.() || [],
         ),
       )
-      setBakeId(saved.id)
-      setBakeName(json.name)
-      setStatus(`Copied “${json.name}” (id: ${saved.id}) · saved to DB`)
+      setStatus(`Copied “${json.name}” as new id “${saved.id}” (from ${t.id}) · saved to DB`)
     } catch (e) {
       setStatus(e.message || 'Copy failed')
     }
@@ -372,16 +395,16 @@ export default function EditorPage({ Nav }) {
 
   async function onBake(download) {
     if (!api?.bakeTemplate) return
-    // Always overwrite the *current* template id in Mongo (not a new document)
-    const id = (snapshot?.template || bakeId || '').trim()
+    // Prefer live engine selection (after Copy this is the NEW id), not a stale React snapshot
+    const liveId = api.getEditorSnapshot?.()?.template
+    const id = String(liveId || bakeId || snapshot?.template || '').trim()
     if (!id) {
       setStatus('No template selected')
       return
     }
     // Keep this template's own display name — never reuse another chip's name
-    // (stale "Magazine" in the name field made mag_updated look like it vanished).
     const listed = (api.listTemplates?.() || []).find((t) => t.id === id)
-    const name = listed?.name || snapshot?.templateName || id
+    const name = listed?.name || snapshot?.templateName || bakeName || id
     setBakeId(id)
     setBakeName(name)
     setStatus(download ? 'Downloading…' : `Saving “${id}”…`)
@@ -947,17 +970,27 @@ export default function EditorPage({ Nav }) {
 
             <Panel title="Stories">
               {stories.length ? (
-                <select
-                  className={inputClass}
-                  value={snapshot?.storyIndex ?? 0}
-                  onChange={(e) => api?.setStoryIndex?.(+e.target.value)}
-                >
-                  {stories.map((s) => (
-                    <option key={s.index} value={s.index}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    className={inputClass}
+                    value={
+                      snapshot?.storyIndex != null && snapshot.storyIndex >= 0
+                        ? snapshot.storyIndex
+                        : -1
+                    }
+                    onChange={(e) => api?.setStoryIndex?.(+e.target.value)}
+                  >
+                    <option value={-1}>Saved template values</option>
+                    {stories.map((s) => (
+                      <option key={s.index} value={s.index}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1.5 text-[10px] text-muted">
+                    Default keeps DB/Save text. Pick a story only to override.
+                  </p>
+                </>
               ) : (
                 <p className="text-[11px] text-muted">No stories</p>
               )}

@@ -482,6 +482,9 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
   const [styles, setStyles] = useState([])
   const [sizeDraft, setSizeDraft] = useState('')
   const [sizeFocused, setSizeFocused] = useState(false)
+  const [textDraft, setTextDraft] = useState(null)
+  const [classDraft, setClassDraft] = useState(null)
+  const [posDraft, setPosDraft] = useState(null)
 
   useEffect(() => {
     if (!api) return
@@ -497,6 +500,12 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
     const px = selected?.geo?.size ?? selected?.geo?.baseSize ?? 30
     setSizeDraft(String(Math.round(+px || 30)))
   }, [selected?.id, selected?.geo?.size, selected?.geo?.baseSize, sizeFocused])
+
+  useEffect(() => {
+    setTextDraft(null)
+    setClassDraft(null)
+    setPosDraft(null)
+  }, [selected?.id, selected?.bind])
 
   if (!selected) {
     return <p className="text-sm text-dim">Select a layer on the canvas or in the list.</p>
@@ -626,25 +635,35 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
               <Field label="Class / Year">
                 <input
                   className={inputClass}
-                  value={selected.playerClass ?? ''}
-                  onChange={(e) => api?.setTextValue?.('playerClass', e.target.value)}
+                  value={classDraft != null ? classDraft : (selected.playerClass ?? '')}
+                  onChange={(e) => {
+                    setClassDraft(e.target.value)
+                    api?.setTextValue?.('playerClass', e.target.value)
+                  }}
                 />
               </Field>
               <Field label="Position">
                 <input
                   className={inputClass}
-                  value={selected.position ?? ''}
-                  onChange={(e) => api?.setTextValue?.('position', e.target.value)}
+                  value={posDraft != null ? posDraft : (selected.position ?? '')}
+                  onChange={(e) => {
+                    setPosDraft(e.target.value)
+                    api?.setTextValue?.('position', e.target.value)
+                  }}
                 />
               </Field>
             </>
           ) : (
             <Field label={`Text (${selected.bind})`}>
               <textarea
-                className={`${inputClass} min-h-[64px]`}
-                value={selected.text ?? ''}
-                onChange={(e) => api?.setTextValue?.(selected.bind, e.target.value)}
+                className={`${inputClass} min-h-[80px]`}
+                value={textDraft != null ? textDraft : (selected.text ?? '')}
+                onChange={(e) => {
+                  setTextDraft(e.target.value)
+                  api?.setTextValue?.(selected.bind, e.target.value)
+                }}
               />
+              <p className="mt-1 text-[10px] text-dim">Shift+Enter for a new line (also on the poster).</p>
             </Field>
           )}
         </>
@@ -706,13 +725,39 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
                 patch({ size: next })
               }}
             />
-            {g.fitSize != null && g.fitSize < g.size ? (
+            <label className="mt-2 flex items-center gap-2 text-[11px] text-dim">
+              <input
+                type="checkbox"
+                checked={g.autoFit !== false}
+                onChange={(e) => patch({ autoFit: e.target.checked })}
+              />
+              Auto-fit text to box
+            </label>
+            {g.autoFit === false ? (
+              <p className="mt-1 text-[10px] text-dim">
+                Auto-fit off — text stays at {g.size || 30}px (may clip).
+              </p>
+            ) : g.fitSize != null && g.fitSize < g.size ? (
               <p className="mt-1 text-[10px] text-dim">
                 Set {g.size}px — using {g.fitSize}px to fit the box.
               </p>
             ) : (
-              <p className="mt-1 text-[10px] text-dim">Autofit shrinks long text inside the fixed box.</p>
+              <p className="mt-1 text-[10px] text-dim">
+                Autofit shrinks long text and grows back when you delete.
+              </p>
             )}
+          </Field>
+
+          <Field label={`Line spacing: ${Number(g.lh ?? 1).toFixed(2)}`}>
+            <input
+              type="range"
+              min={0.7}
+              max={2.4}
+              step={0.05}
+              value={g.lh ?? 1}
+              className="w-full accent-blaze"
+              onChange={(e) => patch({ lh: +e.target.value })}
+            />
           </Field>
 
           <Field label="Weight">

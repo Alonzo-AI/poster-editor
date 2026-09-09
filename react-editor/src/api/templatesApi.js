@@ -102,11 +102,24 @@ export async function saveTemplateToDb(json, { id } = {}) {
     )
   }
 
-  const res = await fetch(`${API}/templates/${encodeURIComponent(tid)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-  })
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 180000)
+  let res
+  try {
+    res = await fetch(`${API}/templates/${encodeURIComponent(tid)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: controller.signal,
+    })
+  } catch (e) {
+    if (e?.name === 'AbortError') {
+      throw new Error('Save timed out talking to DB (large template). Try again.')
+    }
+    throw new Error('Save failed to reach API: ' + (e.message || e))
+  } finally {
+    clearTimeout(timer)
+  }
   return parse(res)
 }
 

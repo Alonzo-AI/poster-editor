@@ -405,13 +405,32 @@
 
   /* ---------- Stage area ---------- */
   #main{
-    position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;
+    position:relative;display:flex;flex-direction:column;align-items:stretch;justify-content:stretch;
+    overflow:hidden;
     background:
       radial-gradient(ellipse 70% 50% at 50% 40%, #1a1520 0%, transparent 55%),
       repeating-linear-gradient(-18deg, transparent, transparent 11px, #ffffff04 11px, #ffffff04 12px),
       linear-gradient(160deg, #12141a 0%, #0a0b0e 55%, #101218 100%);
   }
-  #stageWrap{position:relative;flex:none;overflow:hidden;}
+  /* UI-only scroll: pan around the scaled poster on short/narrow screens. Stage stays 1080×1350. */
+  #stageScroll{
+    position:relative;flex:1 1 auto;min-width:0;min-height:0;
+    display:flex;align-items:center;justify-content:center;
+    overflow:auto;
+    overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;
+    touch-action:pan-x pan-y;
+    padding:48px 24px 56px;
+    scrollbar-width:thin;
+    scrollbar-color:rgba(148,163,184,.55) transparent;
+  }
+  #stageScroll::-webkit-scrollbar{width:10px;height:10px;}
+  #stageScroll::-webkit-scrollbar-thumb{background:rgba(148,163,184,.45);border-radius:8px;}
+  #stageScroll::-webkit-scrollbar-corner{background:transparent;}
+  @supports (align-items:safe center){
+    #stageScroll{align-items:safe center;justify-content:safe center;}
+  }
+  #stageWrap{position:relative;flex:none;overflow:visible;margin:auto;}
   #stage{position:relative;width:1080px;height:1350px;transform-origin:top left;overflow:hidden;
     box-shadow:0 28px 90px #000c, 0 0 0 1px #000;}
   .deco{position:absolute;inset:0;pointer-events:none;}
@@ -442,35 +461,43 @@
   }
   .layer.cropping{outline:2px dashed var(--warn);outline-offset:2px;}
   .layer.cropping .imgcontent{cursor:move;pointer-events:auto;}
-  /* Canva-like handles: white corners + pill mid-edges (same 8 directions) */
+  /* Canva-like handles: larger grab targets (visual + invisible hit pad) */
   .layer .h{
-    position:absolute;width:12px;height:12px;border-radius:50%;
-    background:var(--sel-ring);border:1.5px solid var(--sel);
-    display:none;pointer-events:auto;z-index:6;box-shadow:var(--sel-shadow);
+    position:absolute;width:20px;height:20px;border-radius:50%;
+    background:var(--sel-ring);border:2px solid var(--sel);
+    display:none;pointer-events:auto;z-index:20;box-shadow:var(--sel-shadow);
     box-sizing:border-box;
+  }
+  .layer .h::before{
+    content:"";position:absolute;inset:-14px;border-radius:50%;
   }
   .layer.sel .h{display:block;}
   .layer.cropping .h{display:none;}
-  .layer .h.nw{left:-6px;top:-6px;cursor:nwse-resize;}
-  .layer .h.ne{right:-6px;top:-6px;cursor:nesw-resize;}
-  .layer .h.sw{left:-6px;bottom:-6px;cursor:nesw-resize;}
-  .layer .h.se{right:-6px;bottom:-6px;cursor:nwse-resize;}
+  .layer .h.nw{left:-10px;top:-10px;cursor:nwse-resize;}
+  .layer .h.ne{right:-10px;top:-10px;cursor:nesw-resize;}
+  .layer .h.sw{left:-10px;bottom:-10px;cursor:nesw-resize;}
+  .layer .h.se{right:-10px;bottom:-10px;cursor:nwse-resize;}
   .layer .h.n,.layer .h.s{
-    width:18px;height:8px;border-radius:999px;margin-left:-9px;
+    width:32px;height:14px;border-radius:999px;margin-left:-16px;
   }
-  .layer .h.n{left:50%;top:-4px;cursor:ns-resize;}
-  .layer .h.s{left:50%;bottom:-4px;cursor:ns-resize;}
+  .layer .h.n::before,.layer .h.s::before{border-radius:999px;inset:-12px -8px;}
+  .layer .h.n{left:50%;top:-7px;cursor:ns-resize;}
+  .layer .h.s{left:50%;bottom:-7px;cursor:ns-resize;}
   .layer .h.w,.layer .h.e{
-    width:8px;height:22px;border-radius:999px;margin-top:-11px;
+    width:14px;height:36px;border-radius:999px;margin-top:-18px;
   }
-  .layer .h.w{left:-4px;top:50%;cursor:ew-resize;}
-  .layer .h.e{right:-4px;top:50%;cursor:ew-resize;}
+  .layer .h.w::before,.layer .h.e::before{border-radius:999px;inset:-8px -12px;}
+  .layer .h.w{left:-7px;top:50%;cursor:ew-resize;}
+  .layer .h.e{right:-7px;top:50%;cursor:ew-resize;}
   .layer .rot{
-    position:absolute;left:50%;bottom:-44px;top:auto;margin-left:-14px;
-    width:28px;height:28px;border-radius:50%;
+    position:absolute;left:50%;bottom:-48px;top:auto;margin-left:-16px;
+    width:32px;height:32px;border-radius:50%;
     background:#fff;border:1px solid #e5e7eb;cursor:grab;display:none;pointer-events:auto;z-index:8;
     box-shadow:0 2px 10px rgba(15,23,42,.16);
     align-items:center;justify-content:center;
+  }
+  .layer .rot::after{
+    content:"";position:absolute;inset:-8px;border-radius:50%;
   }
   .layer .rot svg{
     width:15px;height:15px;display:block;pointer-events:none;color:#374151;
@@ -567,8 +594,9 @@
   body.headless #side,body.headless #toolbar,body.headless .hint,body.headless #zoomlabel,body.headless #testBanner{display:none!important;}
   body.headless #app{grid-template-columns:1fr;width:100%;height:100%;}
   body.headless html,body.headless body{width:100%;height:100%;overflow:hidden;}
-  body.headless #main{width:100%;height:100%;padding:0;background:#0a0b0e;}
-  body.headless #stageWrap{box-shadow:none;}
+  body.headless #main{width:100%;height:100%;padding:0;background:#0a0b0e;overflow:hidden;}
+  body.headless #stageScroll{overflow:hidden;padding:0;align-items:stretch;justify-content:stretch;}
+  body.headless #stageWrap{box-shadow:none;margin:0;}
   body.headless #stage{box-shadow:none;}
   body.headless .layer{cursor:move;}
   body.headless .layer.sel{outline:2px solid #0ea5e9;outline-offset:1px;}
@@ -579,6 +607,11 @@
   body.embed #main{
     width:100%;height:100%;padding:0;
     background:#f4f7f8!important;
+    overflow:hidden;
+  }
+  body.embed #stageScroll{
+    padding:28px 20px 40px;
+    background:#f4f7f8;
   }
   body.embed #stage{
     box-shadow:0 8px 32px rgba(15,23,42,.12), 0 0 0 1px rgba(15,23,42,.06);
@@ -773,8 +806,10 @@
       <button id="deselectBtn">Deselect</button>
     </div>
     <div id="testBanner"></div>
-    <div id="stageWrap">
-      <div id="stage"></div>
+    <div id="stageScroll">
+      <div id="stageWrap">
+        <div id="stage"></div>
+      </div>
     </div>
     <div class="hint">Double-click text to edit · double-click an image to crop · arrows nudge · ⌘/Ctrl+D duplicate · [ / ] re-order · Del hides.</div>
     <div id="zoomlabel"></div>
@@ -1281,6 +1316,8 @@ function formatPosterText(raw){
     return tok;
   });
   s=esc(s);
+  // Preserve Shift+Enter / multiline as hard breaks on the poster
+  s=s.replace(/\r\n|\r|\n/g, "<br>");
   s=s.replace(/(\d+)(st|nd|rd|th)\b/gi, (m, num, suf)=>`${num}<sup>${suf}</sup>`);
   supSlots.forEach((inner, i)=>{
     s=s.replace(`\x00SUP${i}\x00`, `<sup>${esc(inner)}</sup>`);
@@ -1295,9 +1332,14 @@ function serializeEditableText(el){
     const tag=node.tagName;
     if(tag==="SUP") return `<sup>${Array.from(node.childNodes).map(walk).join("")}</sup>`;
     if(tag==="BR") return "\n";
+    if(tag==="DIV" || tag==="P"){
+      const inner=Array.from(node.childNodes).map(walk).join("");
+      return inner + (inner.endsWith("\n") ? "" : "\n");
+    }
     return Array.from(node.childNodes).map(walk).join("");
   };
-  return Array.from(el.childNodes).map(walk).join("").trim();
+  // Keep intentional trailing newlines; only strip outer spaces/tabs
+  return Array.from(el.childNodes).map(walk).join("").replace(/^[\t ]+|[\t ]+$/g,"");
 }
 
 /* ============================================================
@@ -1384,6 +1426,7 @@ function blankLayersForCategory(category){
       layers:[
         bg,
         { id:"logo", type:"image", bind:"logo", x:40, y:40, w:160, h:160, z:18, fit:"contain", cropX:0.5, cropY:0.5 },
+        { id:"conference", type:"image", bind:"conference", x:860, y:40, w:160, h:80, z:18, fit:"contain", cropX:0.5, cropY:0.5 },
         { id:"title", type:"text", bind:"teamName", label:"Team name", x:60, y:560, w:960, h:120, size:64, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Team name" },
       ],
       swapFields:["teamName"],
@@ -1396,6 +1439,8 @@ function blankLayersForCategory(category){
     return {
       layers:[
         bg,
+        { id:"logo", type:"image", bind:"logo", x:48, y:48, w:160, h:160, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
+        { id:"conference", type:"image", bind:"conference", x:860, y:48, w:160, h:80, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
         { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:560, w:960, h:120, size:64, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
       ],
       swapFields:["playerName"],
@@ -1408,6 +1453,8 @@ function blankLayersForCategory(category){
     layers:[
       bg,
       { id:"player", type:"image", bind:"player", x:240, y:180, w:600, h:900, z:12, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
+      { id:"logo", type:"image", bind:"logo", x:48, y:48, w:160, h:160, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
+      { id:"conference", type:"image", bind:"conference", x:860, y:48, w:160, h:80, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
       { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:1120, w:960, h:100, size:56, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
     ],
     swapFields:["playerName"],
@@ -1813,6 +1860,7 @@ function resetLayoutFromTemplate(templateId, opts={}){
     if(def.align!=null) L[id].align=def.align;
     if(def.ls!=null) L[id].ls=def.ls;
     if(def.lh!=null) L[id].lh=def.lh;
+    if(def.autoFit!=null) L[id].autoFit=def.autoFit!==false;
     if(def.color!=null) L[id].color=def.color;
     if(def.stroke!=null) L[id].stroke=def.stroke;
     if(def.strokeW!=null) L[id].strokeW=def.strokeW;
@@ -2289,8 +2337,9 @@ function ensureLayout(){
                          rotate:(def.rotate!=null?+def.rotate:parseRotate(def.transform)),
                          italic:!!def.italic,
                          underline:!!def.underline, align:def.align ?? null,
-                         ls:def.ls ?? null, color:def.color, textTransform:def.textTransform ?? null,
+                         ls:def.ls ?? null, lh:def.lh ?? 1, color:def.color, textTransform:def.textTransform ?? null,
                          labelColor:null, textStyle:null, manualSize:false, fixedBox:false,
+                         autoFit:def.autoFit!==false,
                          boxMinH:def.type==="text"?(def.h??null):null, boxMaxH:def.maxH??null,
                          userResizedBox:false, vAlign:def.vAlign ?? "middle", hidden:false,
                          baseSize:def.type==="text"?(def.size??null):null,
@@ -3004,6 +3053,52 @@ const SHAPE_PRESETS = {
   pill:           { label:"Pill",           w:320, h:72,  radius:9999, clip:null, icon:'<rect x="2" y="8" width="20" height="8" rx="4" fill="currentColor"/>' },
   bar:            { label:"Bar",            w:420, h:28,  radius:0,    clip:null, icon:'<rect x="1" y="10" width="22" height="4" fill="currentColor"/>' },
 };
+function layerZValue(id, def, g){
+  if(g && g.z!=null) return +g.z;
+  if(def && def.z!=null) return +def.z;
+  return 10;
+}
+function maxCanvasZ(filterFn){
+  let m=0;
+  const defs=layersOf()||{};
+  const L=ensureLayout();
+  for(const [id,def] of Object.entries(defs)){
+    if(!def) continue;
+    if(filterFn && !filterFn(id, def, L[id])) continue;
+    const z=layerZValue(id, def, L[id]);
+    if(z>m) m=z;
+  }
+  return m;
+}
+function minTextCanvasZ(){
+  let m=Infinity;
+  const defs=layersOf()||{};
+  const L=ensureLayout();
+  for(const [id,def] of Object.entries(defs)){
+    if(!def || def.type!=="text") continue;
+    const z=layerZValue(id, def, L[id]);
+    if(z<m) m=z;
+  }
+  return Number.isFinite(m) ? m : 40;
+}
+/** Shapes sit under text (and list first) so text can sit on the shape. */
+function nextShapeZ(){
+  const textFloor=minTextCanvasZ();
+  const amongShapes=maxCanvasZ((id, def)=>{
+    if(def.type==="text") return false;
+    if(def.type==="image" && ["background","player","logo","sponsor","conference"].includes(def.bind)) return false;
+    return def.type==="block" || !!def.shape || /^shape_/.test(id)
+      || (def.type==="image" && String(def.bind||"").startsWith("deco_"));
+  });
+  // Above photos (~5–12), always below the lowest text layer
+  let z=Math.max(14, amongShapes+1);
+  if(z>=textFloor) z=Math.max(2, textFloor-1);
+  return z;
+}
+/** New text fields always stack above shapes / other canvas chrome. */
+function nextTextFieldZ(){
+  return Math.max(40, maxCanvasZ()+1);
+}
 function addShapeLayer(presetId, opts={}){
   const p=SHAPE_PRESETS[presetId];
   if(!p) return null;
@@ -3015,8 +3110,8 @@ function addShapeLayer(presetId, opts={}){
   const x=opts.x!=null?opts.x:Math.round((SW-w)/2);
   const y=opts.y!=null?opts.y:Math.round((SH-h)/2);
   const fill=opts.fill||"primary";
-  // Keep shapes above player / text so they are always visible
-  const z=opts.z??28;
+  // Under text by default — text stays readable on top of the shape
+  const z=opts.z!=null?+opts.z:nextShapeZ();
   state.extraLayers[t][nid]=block({
     x, y, w, h,
     fill,
@@ -3059,10 +3154,12 @@ function addTextFieldLayer(opts={}){
   const size=Math.max(12, Math.min(200, +opts.size||56));
   // Dark ink so text is visible on cream magazine canvases (white was invisible)
   const color=opts.color||"#111111";
+  // Always above shapes so text sits on the shape after: text → then shape
+  const z=opts.z!=null?+opts.z:nextTextFieldZ();
   const layerJson={
     id:nid, type:"text", bind, label, placeholder:label,
     x, y, w, h, size, weight:800, align:"center", color,
-    font:"sans", z:40, manualSize:true, fixedBox:true,
+    font:"sans", z, manualSize:true, fixedBox:true,
   };
   const layerDef=txt({
     ...layerJson,
@@ -3085,7 +3182,7 @@ function addTextFieldLayer(opts={}){
   const L=ensureLayout();
   Object.assign(L[nid], {
     x, y, w, h, size, baseSize:size, manualSize:true, fixedBox:true,
-    weight:800, align:"center", color, z:40, hidden:false, opacity:1,
+    weight:800, align:"center", color, z, hidden:false, opacity:1,
   });
   state.text[bind]=String(opts.text||label);
   if(!state.fieldLabels[t]) state.fieldLabels[t]={};
@@ -3169,8 +3266,8 @@ async function placeLibraryShapeAsset(asset){
     addShapeLayer(presetKey);
     return "shape:"+presetKey;
   }
-  // Custom shape image (e.g. outlook PNG) → free floating image layer
-  return placeLibraryOverlayAsset(asset, { prefix:"shape_img_", w:280, h:280, z:28, fit:"contain" });
+  // Custom shape image (e.g. outlook PNG) → free floating image layer under text
+  return placeLibraryOverlayAsset(asset, { prefix:"shape_img_", w:280, h:280, z:nextShapeZ(), fit:"contain" });
 }
 /** Overlay / effect PNGs as free-floating image layers (not slot-bound). */
 async function placeLibraryOverlayAsset(asset, opts={}){
@@ -3282,7 +3379,7 @@ function templateStatAutoFit(){ return RE.templateStatAutoFit(state.template, te
 function autoFitSalukisStat(el, g, def){ RE.autoFitSalukisStat(el, g, def); }
 function autoFitGenericStat(el, g, def){ RE.autoFitGenericStat(el, g, def, state.template, textRulesFor); }
 function autoFitTextLayer(el, def, g){
-  fitTextToFixedBox(el, g, def);
+  applyLayerAutofit(el, g, def);
 }
 
 function fontAudit(){
@@ -3324,6 +3421,9 @@ function doSwitchTemplate(id){
   if(next!=="salukis_dark") state.salukisDarkHeaderSamples=null;
   if(isFrozenTemplate(next)){
     resetLayoutFromTemplate(next, { freeze:true });
+    // DB / baked Save text lives in layer placeholders — restore it instead of story picker
+    state.storyIndex=-1;
+    applyTemplateTextFromPlaceholders(next, { overwrite:true });
   } else {
     ensureLayout();
     applyBroadcastPhotoDefault();
@@ -3586,7 +3686,42 @@ function textContentOverflows(el, w, h){
  * - Font size (px) is what you set — applied inside the box
  * - If text can't fit at that px, font shrinks just enough to fit
  * - If text gets shorter, font grows back up to your px size
+ * - Per-field g.autoFit===false disables shrink/grow (exact px only)
  */
+function layerAutoFitEnabled(g, def){
+  if(g && g.autoFit===false) return false;
+  if(def && def.autoFit===false) return false;
+  return true;
+}
+function applyLayerAutofit(el, g, def){
+  if(!el || !def || def.type!=="text" || def.kind==="stat") return;
+  if(!layerAutoFitEnabled(g, def)){
+    const px=textPreferredSize(g, def);
+    g.size=px;
+    g.baseSize=px;
+    g.fitSize=px;
+    el.style.fontSize=px+"px";
+    const lh=g.lh ?? def.lh ?? 1.0;
+    el.style.lineHeight=String(lh);
+    if(g.userResizedBox || g.fixedBox || def.h!=null){
+      const w=Math.max(8, Math.round(g.w ?? def.w ?? 100));
+      const h=textBoxFixedH(g, def);
+      g.w=w; g.h=h; g.fixedBox=true;
+      el.style.boxSizing="border-box";
+      el.style.width=w+"px";
+      el.style.height=h+"px";
+      el.style.maxWidth=w+"px";
+      el.style.maxHeight=h+"px";
+      el.style.overflow="hidden";
+      el.classList.add("fixed-box");
+    }
+    const flow=textFlowEl(el);
+    if(flow) flow.style.lineHeight=String(lh);
+    applyTextBoxAlign(el, def, g);
+    return;
+  }
+  fitTextToFixedBox(el, g, def);
+}
 function fitTextToFixedBox(el, g, def){
   if(!el || def.type!=="text" || def.kind==="stat") return;
 
@@ -3617,6 +3752,8 @@ function fitTextToFixedBox(el, g, def){
   el.style.wordBreak="break-word";
   const nowrap=def.bind==="heroNumber";
   el.style.whiteSpace=nowrap?"nowrap":"normal";
+  const lh=g.lh ?? def.lh ?? 1.0;
+  el.style.lineHeight=String(lh);
   applyTextBoxAlign(el, def, g);
 
   const flow=textFlowEl(el);
@@ -3624,6 +3761,7 @@ function fitTextToFixedBox(el, g, def){
     flow.style.width="100%";
     flow.style.maxWidth="100%";
     flow.style.boxSizing="border-box";
+    flow.style.lineHeight=String(lh);
   }
 
   // 1) Try the exact px the user set
@@ -3652,8 +3790,8 @@ function fitTextToFixedBox(el, g, def){
   g.fitSize=best;
 }
 /** @deprecated name — fits font into a fixed box instead of growing the box */
-function syncTextBoxGrow(el, g, def){ fitTextToFixedBox(el, g, def); }
-function syncTextLayerHeight(el, g, def){ fitTextToFixedBox(el, g, def); }
+function syncTextBoxGrow(el, g, def){ applyLayerAutofit(el, g, def); }
+function syncTextLayerHeight(el, g, def){ applyLayerAutofit(el, g, def); }
 
 /** Soft opposite-value halo on Magazine header glyphs for busy photo backgrounds. */
 function magazineHeaderTextShadow(fontSize, textColor){
@@ -3685,6 +3823,8 @@ function salukisDarkHeaderTextShadow(fontSize, textColor){
 }
 
 function render(){
+  // Never remount the stage while a text caret is active (avoids caret jumping to end)
+  if(activeInlineTextEditEl()) return;
   const t = tpl();
   if(!t) return;
   let L;
@@ -3771,7 +3911,7 @@ function render(){
       const flow=textFlowEl(el);
       if(flow) applyTextStrokePaint(flow, def, g, fillPaint.fillHex||textColor);
       el.style.textAlign = g.align ?? def.align ?? "left";
-      el.style.lineHeight = def.lh ?? 1.0;
+      el.style.lineHeight = String(g.lh ?? def.lh ?? 1.0);
       el.style.letterSpacing = ((g.ls ?? def.ls)||0)+"px";
       el.style.textTransform = g.textTransform ?? def.textTransform ?? "none";
       applyTextChrome(el, def, g, id);
@@ -3873,7 +4013,7 @@ function render(){
     stage.appendChild(el);
     // Fit after the layer is in the DOM so font metrics are real
     if(def.type==="text" && def.kind!=="stat"){
-      fitTextToFixedBox(el, g, def);
+      applyLayerAutofit(el, g, def);
     }
     if(def.kind==="stat"&&templateStatAutoFit()){
       if(state.template==="salukis_clean"||state.template==="salukis_dark") autoFitSalukisStat(el, g, def);
@@ -4135,7 +4275,9 @@ function attachLayerEvents(el, def, g){
     const cx=r.left+r.width/2, cy=r.top+r.height/2;
     drag = { id:layerId, def, g, mode, blockLayer,
              sx:e.clientX, sy:e.clientY, ox:g.x, oy:g.y, ow:g.w, oh:g.h ?? def.h ?? g.w,
-             osize:g.size ?? def.size ?? 30, orot:g.rotate||0, sc,
+             // Preferred font size (not autofit-shrunk fitSize) — box resize scales this
+             osize:(typeof textPreferredSize==="function" ? textPreferredSize(g, def) : null) ?? g.baseSize ?? g.size ?? def.size ?? 30,
+             orot:g.rotate||0, sc,
              ocx:g.cropX??0.5, ocy:g.cropY??0.5,
              ratio:(g.h ?? def.h ?? g.w)/g.w,
              cx, cy,
@@ -4201,8 +4343,8 @@ function attachLayerEvents(el, def, g){
         gg.x=Math.round(nx); gg.y=Math.round(ny);
         gg.w=Math.round(nw); gg.h=Math.round(nh);
       } else if(def.type==="text"){
-        // Text box resize: change container only — font size stays (use Font size slider)
-        // Hold Shift while resizing a corner to also scale font with width
+        // Canva-like: resize box AND scale preferred font with the box.
+        // Auto-fit is unchanged — it still shrinks/grows within this preferred size after applyGeo.
         if(dir.includes("w")) nx=d.ox+(d.ow-nw);
         if(dir.includes("n")) ny=d.oy+(d.oh-nh);
         gg.x=Math.round(nx); gg.y=Math.round(ny);
@@ -4210,11 +4352,16 @@ function attachLayerEvents(el, def, g){
         gg.fixedBox=true;
         gg.manualSize=true;
         gg.userResizedBox=true;
-        if(e.shiftKey && corner){
-          const next=Math.max(8, Math.round(d.osize*(nw/d.ow)));
-          gg.size=next;
-          gg.baseSize=next;
-        }
+        const scaleW=d.ow>0 ? nw/d.ow : 1;
+        const scaleH=d.oh>0 ? nh/d.oh : 1;
+        let scale=1;
+        if(corner) scale=Math.sqrt(Math.max(0.01, scaleW*scaleH));
+        else if(dir==="n"||dir==="s") scale=scaleH;
+        else scale=scaleW;
+        const next=Math.max(8, Math.min(400, Math.round(d.osize*scale)));
+        gg.size=next;
+        gg.baseSize=next;
+        // Do not touch gg.autoFit — resize only updates preferred px; autofit still applies in applyGeo
       } else {
         if(dir.includes("w")) nx=d.ox+(d.ow-nw);
         gg.x=Math.round(nx); gg.w=Math.round(nw);
@@ -4244,7 +4391,8 @@ function attachLayerEvents(el, def, g){
   });
 }
 function commitInlineTextEdit(def, raw){
-  const v=String(raw||"").trim();
+  // Keep newlines (Shift+Enter). Only strip outer spaces/tabs.
+  const v=String(raw??"").replace(/^[\t ]+|[\t ]+$/g,"");
   if(def.bind==="playerMeta"){
     const parts=v.split("|").map(s=>s.trim()).filter(Boolean);
     if(parts.length>=2){
@@ -4259,27 +4407,72 @@ function commitInlineTextEdit(def, raw){
     state.text[def.bind]=v;
   }
 }
+/** Active canvas text edit target (.txt-flow preferred). */
+function activeInlineTextEditEl(){
+  return document.querySelector('#stage .txt-flow[contenteditable="true"], #stage .layer[contenteditable="true"]');
+}
+/** If the user is mid-edit on canvas, commit that text before Save/bake. */
+function flushActiveInlineTextEdit(){
+  const editEl=activeInlineTextEditEl();
+  if(!editEl) return false;
+  const layer=editEl.closest?.(".layer") || editEl;
+  const id=layer.dataset?.id;
+  const def=id ? (layersOf()[id]||TEMPLATES[state.template]?.layers?.[id]) : null;
+  try{
+    if(def) commitInlineTextEdit(def, serializeEditableText(editEl));
+  }catch(_){}
+  try{
+    editEl.contentEditable="false";
+    editEl.blur();
+  }catch(_){}
+  return true;
+}
 function beginInlineTextEdit(el, def){
-  if(!el || el.isContentEditable) return;
-  el.contentEditable="true";
-  el.focus();
-  try{ document.execCommand("selectAll",false,null); }catch(_){}
-  el.addEventListener("blur",function h(){
-    el.contentEditable="false";
-    commitInlineTextEdit(def, serializeEditableText(el));
-    el.removeEventListener("blur",h);
-    el.removeEventListener("keydown",kd);
+  if(!el || !def) return;
+  const flow=textFlowEl(el) || el;
+  if(flow.isContentEditable) return;
+  const g=geo(el.dataset.id);
+  flow.contentEditable="true";
+  flow.spellcheck=false;
+  flow.focus();
+  // Do NOT selectAll — keep caret where the user double-clicked (Canva-like)
+  function onInput(){
+    // Live state + autofit without remounting the layer (preserves caret)
+    try{ commitInlineTextEdit(def, serializeEditableText(flow)); }catch(_){}
+    if(g && def.kind!=="stat") applyLayerAutofit(el, g, def);
+  }
+  function onBlur(){
+    flow.contentEditable="false";
+    commitInlineTextEdit(def, serializeEditableText(flow));
+    flow.removeEventListener("blur", onBlur);
+    flow.removeEventListener("keydown", kd);
+    flow.removeEventListener("input", onInput);
     render(); buildTextFields(); buildCaptionColorControls(); syncInspector(); scheduleSave();
-  },{once:true});
+  }
   function kd(e){
-    if(e.key==="Escape"){ e.preventDefault(); el.blur(); }
-    if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); el.blur(); }
+    if(e.key==="Escape"){ e.preventDefault(); flow.blur(); return; }
+    // Enter commits; Shift+Enter inserts a line break (poster + editor)
+    if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); flow.blur(); return; }
+    if(e.key==="Enter" && e.shiftKey){
+      e.preventDefault();
+      try{
+        if(!document.execCommand("insertLineBreak", false, null)){
+          document.execCommand("insertHTML", false, "<br>");
+        }
+      }catch(_){
+        try{ document.execCommand("insertHTML", false, "<br>"); }catch(__){}
+      }
+      onInput();
+      return;
+    }
     if((e.ctrlKey||e.metaKey) && e.shiftKey && (e.key==="=" || e.key==="+" || e.key===".")){
       e.preventDefault();
       try{ document.execCommand("superscript", false, null); }catch(_){}
     }
   }
-  el.addEventListener("keydown",kd);
+  flow.addEventListener("blur", onBlur);
+  flow.addEventListener("keydown", kd);
+  flow.addEventListener("input", onInput);
 }
 function applyTextLayerVisuals(el, def, g, layerId){
   if(!el || def.type!=="text") return;
@@ -4326,10 +4519,10 @@ function applyTextLayerVisuals(el, def, g, layerId){
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
   // Keep template lh, but don't crush gradient ink room (applyTextGradientInkRoom sets flow lh)
-  if(!fillPaint.grad) el.style.lineHeight = (g.lh ?? def.lh ?? 1.0);
+  if(!fillPaint.grad) el.style.lineHeight = String(g.lh ?? def.lh ?? 1.0);
   applyTextChrome(el, def, g, id);
   applyTextBoxAlign(el, def, g);
-  if(def.kind!=="stat") fitTextToFixedBox(el, g, def);
+  if(def.kind!=="stat") applyLayerAutofit(el, g, def);
 }
 function applyGeo(el, def, g){
   el.style.left=g.x+"px"; el.style.top=g.y+"px"; el.style.width=g.w+"px";
@@ -4515,9 +4708,9 @@ function syncInspector(){
         const label=sidelineDate?"Date / hashtag":(labelFor(def.bind)||"Text");
         const val=state.text[def.bind]??"";
         h+=`<label class="fld">${esc(label)}</label>
-            <textarea id="iTxt" rows="2" placeholder="${esc(def.placeholder||"")}">${esc(val)}</textarea>`;
+            <textarea id="iTxt" rows="4" placeholder="${esc(def.placeholder||"")}">${esc(val)}</textarea>`;
       }
-      h+=`<div class="mini" style="margin:4px 0 10px">Edit here, or <b>double-click</b> the text on the poster. Ordinals like <b>1st</b> auto-superscript; use <code>&lt;sup&gt;…&lt;/sup&gt;</code> for custom text. Double-click + <b>Ctrl+Shift+.</b> for superscript selection.</div>`;
+      h+=`<div class="mini" style="margin:4px 0 10px">Edit here, or <b>double-click</b> the text on the poster. <b>Shift+Enter</b> = new line (same on the poster). Ordinals like <b>1st</b> auto-superscript; use <code>&lt;sup&gt;…&lt;/sup&gt;</code> for custom. Double-click + <b>Ctrl+Shift+.</b> for superscript selection.</div>`;
     }
     h+=`<label class="fld">Text style <span style="font-weight:400;color:var(--dim)">(same font)</span></label>`;
     h+=`<div id="iStyleCurrent" style="margin-bottom:6px;padding:6px 8px;border-radius:7px;border:1px solid ${styleCustom?"#5a4a18":"#24344f"};background:${styleCustom?"#2a2410":"#11203a"};font-size:11px;color:#cfd3da">Active: <b style="color:${styleCustom?"#ffd34f":"#cfe1ff"}">${esc(textStyleSummary(activeStyle,g,def))}</b></div>`;
@@ -4532,16 +4725,27 @@ function syncInspector(){
     }
     const fontPx=g.baseSize ?? g.size ?? def.size ?? 30;
     const fitPx=g.fitSize!=null?g.fitSize:fontPx;
+    const autoFitOn=layerAutoFitEnabled(g, def);
+    const lhVal=Number(g.lh ?? def.lh ?? 1);
     h+=`<label class="fld">Font size (px): <b id="ivs">${fontPx}</b></label>
         <div class="row" style="align-items:center;gap:8px">
           <input type="range" id="iFs" min="10" max="380" value="${fontPx}" style="flex:1">
           <input type="number" id="iFsNum" class="num" min="8" max="400" value="${fontPx}" style="width:64px;flex:none" title="Exact size in px">
         </div>`;
+    h+=`<label class="fld" style="display:flex;align-items:center;gap:7px;cursor:pointer;margin:6px 0 4px">
+          <input type="checkbox" id="iAutoFit" ${autoFitOn?'checked':''} style="width:auto"> Auto-fit text to box</label>`;
     h+=`<div class="mini" id="iFsHint" style="margin:4px 0 8px">${
-      fitPx<fontPx
-        ? `Set to <b>${fontPx}px</b> — using <b>${fitPx}px</b> so text fits this box (like Canva autofit).`
-        : `Text uses <b>${fontPx}px</b> inside the fixed box. Longer text will auto-shrink to fit.`
+      !autoFitOn
+        ? `Auto-fit is <b>off</b> — text stays at <b>${fontPx}px</b> (may clip if the box is too small).`
+        : (fitPx<fontPx
+          ? `Set to <b>${fontPx}px</b> — using <b>${fitPx}px</b> so text fits this box (like Canva autofit).`
+          : `Text uses <b>${fontPx}px</b> inside the fixed box. Longer text will auto-shrink; shorter text grows back.`)
     }</div>`;
+    h+=`<label class="fld">Line spacing: <b id="ivlh">${lhVal.toFixed(2)}</b></label>
+        <div class="row" style="align-items:center;gap:8px">
+          <input type="range" id="iLh" min="0.7" max="2.4" step="0.05" value="${lhVal}" style="flex:1">
+          <input type="number" id="iLhNum" class="num" min="0.5" max="3" step="0.05" value="${lhVal}" style="width:64px;flex:none" title="Line height multiplier">
+        </div>`;
     h+=`<label class="fld">Weight</label>
         <select id="iFw">${[300,400,600,700,800,900].map(w=>`<option ${(g.weight ?? def.weight)==w?'selected':''}>${w}</option>`).join('')}</select>`;
     const colorRole=captionColorRoleSelectValue(g, def);
@@ -4590,7 +4794,7 @@ function syncInspector(){
           <button type="button" data-valign="middle" class="${(g.vAlign??def.vAlign??"middle")==="middle"?"on":""}">Middle</button>
           <button type="button" data-valign="bottom" class="${(g.vAlign??def.vAlign??"middle")==="bottom"?"on":""}">Bottom</button>
         </div>`;
-    h+=`<div class="mini" style="margin:6px 0 8px">Like Canva: the blue box is fixed. Font size is in <b>px</b> inside that box. If text is too long for the box, it shrinks automatically; shorter text grows back to your px size.</div>`;
+    h+=`<div class="mini" style="margin:6px 0 8px">Like Canva: resizing the blue box also scales font size. Auto-fit (on/off) is separate — when on, long text still shrinks to fit and shorter text grows back to your scaled size.</div>`;
     h+=`<div class="row" style="margin-top:6px">
           <div><label class="fld">X</label><input class="num" type="number" id="iX" value="${Math.round(g.x)}"></div>
           <div><label class="fld">Y</label><input class="num" type="number" id="iY" value="${Math.round(g.y)}"></div>
@@ -4734,13 +4938,16 @@ function syncInspector(){
       const layerEl=el();
       if(layerEl){
         layerEl.style.fontSize=px+"px";
-        fitTextToFixedBox(layerEl, g, def);
+        applyLayerAutofit(layerEl, g, def);
         const hint=$("iFsHint");
         if(hint){
           const used=g.fitSize??px;
-          hint.innerHTML=used<px
-            ? `Set to <b>${px}px</b> — using <b>${used}px</b> so text fits this box (like Canva autofit).`
-            : `Text uses <b>${px}px</b> inside the fixed box. Longer text will auto-shrink to fit.`;
+          const on=layerAutoFitEnabled(g, def);
+          hint.innerHTML=!on
+            ? `Auto-fit is <b>off</b> — text stays at <b>${px}px</b> (may clip if the box is too small).`
+            : (used<px
+              ? `Set to <b>${px}px</b> — using <b>${used}px</b> so text fits this box (like Canva autofit).`
+              : `Text uses <b>${px}px</b> inside the fixed box. Longer text will auto-shrink; shorter text grows back.`);
         }
       }
       scheduleSave();
@@ -4750,6 +4957,40 @@ function syncInspector(){
       // Commit on blur/Enter only — live oninput clamps mid-typing (4→8 breaks 48)
       $("iFsNum").onchange=e=>applyFontPx(e.target.value);
       $("iFsNum").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); e.target.blur(); } };
+    }
+    const iAutoFit=$("iAutoFit");
+    if(iAutoFit){
+      iAutoFit.onchange=e=>withUndo(()=>{
+        g.autoFit=!!e.target.checked;
+        const runtime=TEMPLATES[state.template]?.layers?.[id];
+        if(runtime) runtime.autoFit=g.autoFit;
+        const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===id);
+        if(jl) jl.autoFit=g.autoFit;
+        const layerEl=el();
+        if(layerEl) applyLayerAutofit(layerEl, g, def);
+        applyFontPx(g.baseSize ?? g.size ?? def.size ?? 30);
+        scheduleSave();
+      });
+    }
+    const applyLh=(raw)=>{
+      const lh=Math.max(0.5, Math.min(3, Math.round((+raw||1)*100)/100));
+      g.lh=lh;
+      if($("ivlh")) $("ivlh").textContent=lh.toFixed(2);
+      if($("iLh") && document.activeElement!==$("iLh")) $("iLh").value=String(lh);
+      if($("iLhNum") && document.activeElement!==$("iLhNum")) $("iLhNum").value=String(lh);
+      const layerEl=el();
+      if(layerEl){
+        layerEl.style.lineHeight=String(lh);
+        const flow=textFlowEl(layerEl);
+        if(flow) flow.style.lineHeight=String(lh);
+        applyLayerAutofit(layerEl, g, def);
+      }
+      scheduleSave();
+    };
+    if($("iLh")) $("iLh").oninput=e=>applyLh(e.target.value);
+    if($("iLhNum")){
+      $("iLhNum").onchange=e=>applyLh(e.target.value);
+      $("iLhNum").onkeydown=e=>{ if(e.key==="Enter"){ e.preventDefault(); e.target.blur(); } };
     }
     $("iFw").onchange=e=>{ g.weight=+e.target.value; markTextStyleCustom(g); applyGeo(el(),def,g); syncInspector(); };
     $("iAlign")?.querySelectorAll("[data-align]").forEach(b=>{
@@ -4917,18 +5158,35 @@ function syncInspector(){
     $("iX").oninput=e=>{ g.x=+e.target.value||0; applyGeo(el(),def,g); };
     $("iY").oninput=e=>{ g.y=+e.target.value||0; applyGeo(el(),def,g); };
     $("iW").oninput=e=>{
-      g.w=Math.max(8,+e.target.value||8);
+      const prevW=Math.max(1, g.w||1);
+      const nextW=Math.max(8,+e.target.value||8);
+      const pref=textPreferredSize(g, def);
+      g.w=nextW;
       g.fixedBox=true;
       g.manualSize=true;
       g.userResizedBox=true;
       if(g.h==null) g.h=def.h ?? Math.round((g.size??def.size??30)*1.35);
+      // Scale preferred font with width; auto-fit still applies in applyGeo
+      const scaled=Math.max(8, Math.min(400, Math.round(pref*(nextW/prevW))));
+      g.size=scaled; g.baseSize=scaled;
+      if($("ivs")) $("ivs").textContent=String(scaled);
+      if($("iFs")) $("iFs").value=String(scaled);
+      if($("iFsNum") && document.activeElement!==$("iFsNum")) $("iFsNum").value=String(scaled);
       applyGeo(el(),def,g);
     };
     if($("iH")) $("iH").oninput=e=>{
-      g.h=Math.max(12,+e.target.value||12);
+      const prevH=Math.max(1, g.h||def.h||1);
+      const nextH=Math.max(12,+e.target.value||12);
+      const pref=textPreferredSize(g, def);
+      g.h=nextH;
       g.fixedBox=true;
       g.manualSize=true;
       g.userResizedBox=true;
+      const scaled=Math.max(8, Math.min(400, Math.round(pref*(nextH/prevH))));
+      g.size=scaled; g.baseSize=scaled;
+      if($("ivs")) $("ivs").textContent=String(scaled);
+      if($("iFs")) $("iFs").value=String(scaled);
+      if($("iFsNum") && document.activeElement!==$("iFsNum")) $("iFsNum").value=String(scaled);
       applyGeo(el(),def,g);
     };
   }
@@ -5083,6 +5341,63 @@ function revealImageLayers(key){
     }
   }
 }
+/** Find canvas layer id bound to an image slot (player/logo/…). */
+function findImageLayerId(bind){
+  for(const [id,def] of Object.entries(layersOf()||{})){
+    if(def?.type==="image" && def.bind===bind) return id;
+  }
+  return null;
+}
+/**
+ * Many templates list logo/conference in swapImages but have no canvas layer.
+ * Create a visible layer on upload so the image actually appears on the poster.
+ */
+function ensureImageSlotLayer(bind){
+  const key=String(bind||"");
+  if(!["logo","conference","sponsor"].includes(key)) return findImageLayerId(key);
+  const existing=findImageLayerId(key);
+  if(existing){
+    revealImageLayers(key);
+    return existing;
+  }
+  const t=state.template;
+  if(!t) return null;
+  const defaults={
+    logo:{ x:48, y:48, w:160, h:160, z:21 },
+    conference:{ x:860, y:48, w:160, h:80, z:21 },
+    sponsor:{ x:48, y:1240, w:180, h:80, z:21 },
+  }[key];
+  if(!defaults) return null;
+  if(!state.extraLayers[t]) state.extraLayers[t]={};
+  let id=key, n=2;
+  while(layersOf()[id]) id=key+"_"+n++;
+  const def={
+    type:"image", bind:key,
+    x:defaults.x, y:defaults.y, w:defaults.w, h:defaults.h,
+    z:defaults.z, fit:"contain", cropX:0.5, cropY:0.5, zoom:1,
+  };
+  state.extraLayers[t][id]=Object.assign({}, def);
+  // Persist into baked JSON so Save keeps the slot layer
+  try{
+    const json=TEMPLATES[t]?._json;
+    if(json){
+      if(!Array.isArray(json.layers)) json.layers=[];
+      json.layers=json.layers.filter(l=>!(l && (l.id===id || (l.type==="image" && l.bind===key))));
+      json.layers.push({ id, ...def });
+      if(!json.automation) json.automation={};
+      if(!Array.isArray(json.automation.swapImages)) json.automation.swapImages=["player","logo","conference","sponsor","background"];
+      if(!json.automation.swapImages.includes(key)) json.automation.swapImages.push(key);
+    }
+  }catch(_){}
+  const L=ensureLayout();
+  Object.assign(L[id], {
+    x:def.x, y:def.y, w:def.w, h:def.h, z:def.z,
+    fit:"contain", zoom:1, cropX:0.5, cropY:0.5,
+    hidden:false, opacity:1, lockAspect:true,
+  });
+  try{ select(id); }catch(_){}
+  return id;
+}
 function applyImageSrc(key, url, stored){
   return new Promise((resolve)=>{
     const slot=imagesOf()[key]; if(!slot){ resolve(null); return; }
@@ -5090,6 +5405,7 @@ function applyImageSrc(key, url, stored){
     img.onload=()=>{
       slot.src=url; slot.natW=img.naturalWidth; slot.natH=img.naturalHeight; slot.el=img;
       if(stored) slot.stored=stored;
+      ensureImageSlotLayer(key);
       revealImageLayers(key);
       fitImageLayer(key, img.naturalWidth/img.naturalHeight);
       if(key==="player") applyTemplateHeaderColors();
@@ -5116,6 +5432,7 @@ function loadImage(key,file){
       applyHypeLowerThirdDefault();
       if(state.template==="magazine" && !isFrozenTemplate(state.template)) applyMagazineLayoutDefault();
     }
+    ensureImageSlotLayer(key);
     revealImageLayers(key);
     fitImageLayer(key,im.naturalWidth/im.naturalHeight);
     if(key==="player" && shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
@@ -5594,8 +5911,8 @@ function fitImageLayer(key,ratio){
   if(!ratio || !isFinite(ratio) || ratio<=0) return;
   if(isFrozenTemplate(state.template)) return;
   if((state.template==="sideline_text"||state.template==="sideline_cutout"||state.template==="cutout_splat"||state.template==="cc11") && key==="player") return;
-  const t=tpl(); const L=ensureLayout();
-  for(const [id,def] of Object.entries(t.layers||{})){
+  const L=ensureLayout();
+  for(const [id,def] of Object.entries(layersOf())){
     if(def.type==="image"&&def.bind===key&&(def.fit||"contain")==="contain"){
       const g=L[id]; if(!g) continue;
       g.h=Math.round(g.w/ratio);
@@ -5637,19 +5954,40 @@ const CAPTION_COLOR_LABELS={
 };
 const CAPTION_COLOR_BINDS=new Set(["eyebrow","playerName","playerMeta","heroNumber","hero","heroDesc","callout","footer","teamName"]);
 let _textRenderFrame=0;
+/** Update text layer markup in place — avoids remounting the stage (caret/selection safe). */
+function patchTextLayersInPlace(){
+  if(activeInlineTextEditEl()) return;
+  document.querySelectorAll("#stage .layer.txt").forEach(el=>{
+    const id=el.dataset.id;
+    const def=layersOf()[id];
+    const g=id?geo(id):null;
+    if(!def || !g || def.type!=="text") return;
+    if(def.kind==="stat"){
+      el.innerHTML=bindContent(def);
+      applyTextLayerVisuals(el, def, g, id);
+      return;
+    }
+    const flow=textFlowEl(el);
+    const markup=bindContent(def);
+    if(flow) flow.innerHTML=markup;
+    else el.innerHTML=`<div class="txt-clip"><span class="txt-flow">${markup}</span></div>`;
+    applyTextLayerVisuals(el, def, g, id);
+  });
+  notifyEditorBridge("text");
+}
 function queueTextPreview(){
   if(_textRenderFrame) cancelAnimationFrame(_textRenderFrame);
   _textRenderFrame=requestAnimationFrame(()=>{
     _textRenderFrame=0;
-    render._skipInspector=true;
-    render();
+    patchTextLayersInPlace();
     // Second pass after layout/paint so font fit uses real metrics
     requestAnimationFrame(()=>{
+      if(activeInlineTextEditEl()) return;
       document.querySelectorAll("#stage .layer.txt").forEach(el=>{
         const id=el.dataset.id;
         const def=layersOf()[id];
         const g=id?geo(id):null;
-        if(def && g && def.type==="text" && def.kind!=="stat") fitTextToFixedBox(el, g, def);
+        if(def && g && def.type==="text" && def.kind!=="stat") applyLayerAutofit(el, g, def);
       });
     });
   });
@@ -5815,8 +6153,8 @@ function buildTextFields(){
       deleteTextField(key);
     });
     hdr.append(lbl, editBtn, delBtn);
-    const i=document.createElement("input");
-    i.type="text";
+    const i=document.createElement("textarea");
+    i.rows=3;
     i.id="tf_"+key;
     i.value=state.text[key]??"";
     i.placeholder=textFieldPlaceholderFor(key, layers);
@@ -5847,7 +6185,7 @@ function applyStory(s, opts={}){
   else { applyTemplateHeaderColors(); render(); }
   updateTestBanner();
 }
-async function loadStoriesFromUrl(url, storyIndex=0){
+async function loadStoriesFromUrl(url, storyIndex=0, opts={}){
   try{
     let a;
     try{
@@ -5862,34 +6200,106 @@ async function loadStoriesFromUrl(url, storyIndex=0){
     }
     const arr=Array.isArray(a)?a:(Array.isArray(a.stories)?a.stories:[a]);
     state.stories=arr.filter(s=>s&&typeof s==="object");
-    state.storyIndex=state.stories.length
+    // Default: do NOT auto-apply a story — keep baked/DB template text values.
+    // Pass { apply:true } only when the user explicitly picks Load / Upload.
+    const apply=opts.apply===true;
+    state.storyIndex=apply && state.stories.length
       ? Math.max(0, Math.min(storyIndex, state.stories.length-1)) : -1;
     buildStorySelect();
-    if(state.storyIndex>=0) applyStory(state.stories[state.storyIndex]);
-    else updateTestBanner();
+    if(apply && state.storyIndex>=0) applyStory(state.stories[state.storyIndex]);
+    else {
+      setStoryStatus(
+        state.stories.length
+          ? `${state.stories.length} stories available — using saved template values (pick a story to override).`
+          : "No stories loaded.",
+      );
+      updateTestBanner();
+    }
     scheduleSave();
   }catch(e){ setStoryStatus("Failed to load stories: "+(e&&e.message||e)); }
 }
 function buildStorySelect(){
   const wrap=document.getElementById("storyControls"), sel=document.getElementById("storySelect");
   if(!state.stories.length){ wrap.style.display="none"; return; }
-  state.storyIndex=Math.max(0, Math.min(state.storyIndex, state.stories.length-1));
+  if(state.storyIndex>=0){
+    state.storyIndex=Math.max(0, Math.min(state.storyIndex, state.stories.length-1));
+  }
   wrap.style.display="block";
-  sel.innerHTML=state.stories.map((s,i)=>
+  sel.innerHTML=
+    `<option value="-1">Saved template values</option>`+
+    state.stories.map((s,i)=>
     `<option value="${i}">${i+1}. ${esc(s.player_name||s.slug||"story")}${s.team_name?" — "+esc(s.team_name):""}</option>`).join("");
-  sel.value=String(state.storyIndex);
-  sel.onchange=e=>{ state.storyIndex=+e.target.value; applyStory(state.stories[state.storyIndex]); scheduleSave(); };
-  setStoryStatus(`${state.stories.length} stories loaded — ${state.storyIndex+1} selected.`);
+  sel.value=String(state.storyIndex>=0?state.storyIndex:-1);
+  sel.onchange=e=>{
+    const i=+e.target.value;
+    if(i<0){
+      state.storyIndex=-1;
+      applyTemplateTextFromPlaceholders(state.template, { overwrite:true });
+      buildTextFields();
+      render();
+      setStoryStatus(`${state.stories.length} stories available — using saved template values.`);
+    } else {
+      state.storyIndex=i;
+      applyStory(state.stories[state.storyIndex]);
+      setStoryStatus(`${state.stories.length} stories loaded — ${state.storyIndex+1} selected.`);
+    }
+    scheduleSave();
+  };
+  if(state.storyIndex<0){
+    setStoryStatus(`${state.stories.length} stories available — using saved template values.`);
+  } else {
+    setStoryStatus(`${state.stories.length} stories loaded — ${state.storyIndex+1} selected.`);
+  }
 }
 function gotoStory(d){
   if(!state.stories.length) return;
-  state.storyIndex=(state.storyIndex+d+state.stories.length)%state.stories.length;
+  if(state.storyIndex<0) state.storyIndex=0;
+  else state.storyIndex=(state.storyIndex+d+state.stories.length)%state.stories.length;
   document.getElementById("storySelect").value=String(state.storyIndex);
   applyStory(state.stories[state.storyIndex]);
   setStoryStatus(`${state.stories.length} stories loaded — ${state.storyIndex+1} selected.`);
   scheduleSave();
 }
 function setStoryStatus(t){ const e=document.getElementById("storyStatus"); if(e) e.textContent=t; }
+/** Restore saved text into live state when opening a DB/baked template. */
+function applyTemplateTextFromPlaceholders(templateId, opts={}){
+  const tid=templateId||state.template;
+  const t=TEMPLATES[tid];
+  if(!t) return;
+  const overwrite=!!opts.overwrite;
+  const setVal=(key, val)=>{
+    if(val==null) return;
+    if(overwrite || state.text[key]==null || state.text[key]===""){
+      state.text[key]=String(val);
+    }
+  };
+  // 1) Prefer explicit defaults.text from Save (actual edited values)
+  const bakedText=t._json?.defaults?.text;
+  if(bakedText && typeof bakedText==="object"){
+    for(const [key, val] of Object.entries(bakedText)){
+      setVal(key, val);
+    }
+  }
+  // 2) Layer placeholders / placeholderNum / placeholderLabel as fallback
+  const jsonLayers=Array.isArray(t._json?.layers)?t._json.layers:[];
+  for(const layer of jsonLayers){
+    if(!layer||layer.type!=="text"||!layer.bind) continue;
+    if(layer.placeholder!=null) setVal(layer.bind, layer.placeholder);
+    if(layer.kind==="stat"){
+      if(layer.placeholderNum!=null) setVal(layer.bind+"num", layer.placeholderNum);
+      if(layer.placeholderLabel!=null) setVal(layer.bind+"label", layer.placeholderLabel);
+    }
+  }
+  const runtime=Object.assign({}, t.layers||{}, state.extraLayers[tid]||{});
+  for(const def of Object.values(runtime)){
+    if(!def||def.type!=="text"||!def.bind) continue;
+    if(def.placeholder!=null) setVal(def.bind, def.placeholder);
+    if(def.kind==="stat"){
+      if(def.placeholderNum!=null) setVal(def.bind+"num", def.placeholderNum);
+      if(def.placeholderLabel!=null) setVal(def.bind+"label", def.placeholderLabel);
+    }
+  }
+}
 document.getElementById("storyFile").onchange=e=>{
   const file=e.target.files[0]; if(!file) return;
   const r=new FileReader();
@@ -5897,9 +6307,10 @@ document.getElementById("storyFile").onchange=e=>{
     let arr; try{ arr=JSON.parse(r.result); }catch(err){ setStoryStatus("Invalid JSON: "+err.message); return; }
     if(!Array.isArray(arr)) arr = Array.isArray(arr.stories) ? arr.stories : [arr];
     state.stories = arr.filter(s=>s && typeof s==="object");
-    state.storyIndex = state.stories.length ? 0 : -1;
+    // Keep template values until user picks a story
+    state.storyIndex = -1;
     buildStorySelect();
-    if(state.storyIndex>=0) applyStory(state.stories[0]);
+    updateTestBanner();
     scheduleSave();
   };
   r.readAsText(file);
@@ -5907,7 +6318,7 @@ document.getElementById("storyFile").onchange=e=>{
 };
 document.getElementById("storyPrev").onclick=()=>gotoStory(-1);
 document.getElementById("storyNext").onclick=()=>gotoStory(1);
-document.getElementById("loadBundledStories").onclick=()=>loadStoriesFromUrl(BUNDLED_STORIES_URL, state.storyIndex>=0?state.storyIndex:0);
+document.getElementById("loadBundledStories").onclick=()=>loadStoriesFromUrl(BUNDLED_STORIES_URL, 0, { apply:false });
 
 function exportLayoutJSON(){
   const t=state.template;
@@ -5973,7 +6384,25 @@ function layerDefToJson(id, def, g){
   const out={ id, type:def.type||"text" };
   if(def.bind) out.bind=def.bind;
   if(def.kind) out.kind=def.kind;
-  if(def.placeholder) out.placeholder=def.placeholder;
+  // Prefer live editor text over the seed hint so Save keeps what the user typed
+  if(def.bind && Object.prototype.hasOwnProperty.call(state.text, def.bind)){
+    const live=String(state.text[def.bind]??"");
+    if(live.length) out.placeholder=live;
+    else if(def.placeholder) out.placeholder=def.placeholder;
+  } else if(def.placeholder){
+    out.placeholder=def.placeholder;
+  }
+  // Stat layers: also bake num/label live values
+  if(def.kind==="stat" && def.bind){
+    const numKey=def.bind+"num";
+    const labelKey=def.bind+"label";
+    if(Object.prototype.hasOwnProperty.call(state.text, numKey) && String(state.text[numKey]??"").length){
+      out.placeholderNum=String(state.text[numKey]);
+    } else if(def.placeholderNum) out.placeholderNum=def.placeholderNum;
+    if(Object.prototype.hasOwnProperty.call(state.text, labelKey) && String(state.text[labelKey]??"").length){
+      out.placeholderLabel=String(state.text[labelKey]);
+    } else if(def.placeholderLabel) out.placeholderLabel=def.placeholderLabel;
+  }
   out.x=Math.round(g.x??def.x??0);
   out.y=Math.round(g.y??def.y??0);
   out.w=Math.round(g.w??def.w??100);
@@ -6024,6 +6453,10 @@ function layerDefToJson(id, def, g){
     if(ls) out.ls=ls;
     const lh=g.lh??def.lh;
     if(lh!=null && lh!==1) out.lh=lh;
+    // Persist per-field auto-fit (default on). Only write when off so JSON stays small,
+    // but also write true when the layer def previously forced false.
+    if(g.autoFit===false) out.autoFit=false;
+    else if(def.autoFit===false) out.autoFit=true;
     if(g.italic??def.italic) out.italic=true;
     if(g.fixedBox || g.manualSize || def.manualSize) out.manualSize=true;
     if(g.underline??def.underline){
@@ -6073,7 +6506,6 @@ function layerDefToJson(id, def, g){
       }
     }
     if(def.hollow||g.hollow) out.hollow=true;
-    if(!out.placeholder && def.bind && state.text[def.bind]) out.placeholder=String(state.text[def.bind]);
   } else if(def.type==="image"){
     const fit=g.fit||def.fit;
     if(fit) out.fit=fit;
@@ -6203,6 +6635,7 @@ function buildFrozenTemplateJSON(opts={}){
   // Also keep prior defaults when current session has no durable image yet
   const prevDefaults=base.defaults?.images || {};
   const mergedDefaults={ ...prevDefaults, ...defaultImages };
+  const defaultText=collectTemplateDefaultText(srcId);
 
   return {
     ...base,
@@ -6218,6 +6651,7 @@ function buildFrozenTemplateJSON(opts={}){
     defaults:{
       ...(base.defaults||{}),
       images:mergedDefaults,
+      text:defaultText,
     },
     layers,
     automation:{
@@ -6225,7 +6659,7 @@ function buildFrozenTemplateJSON(opts={}){
       swapFields:swapFieldsList.length?swapFieldsList:(base.automation?.swapFields||[]),
       swapImages:base.automation?.swapImages||["player","logo","conference","sponsor","background"],
       fieldLabels,
-      note:"Frozen layout from editor. Default player/background images are baked in; Automate may override via API.",
+      note:"Frozen layout from editor. Default player/background images and text values are baked in; Automate may override via API.",
     },
     _bakeMeta:{
       bakedAt:new Date().toISOString(),
@@ -6233,8 +6667,36 @@ function buildFrozenTemplateJSON(opts={}){
       layerCount:layers.length,
       shapeCount,
       imageSlots:Object.keys(mergedDefaults),
+      textKeys:Object.keys(defaultText),
     },
   };
+}
+
+/** Snapshot of live text values for this template (what Save should restore on open). */
+function collectTemplateDefaultText(templateId){
+  const tid=templateId||state.template;
+  const defs=Object.assign({}, TEMPLATES[tid]?.layers||{}, state.extraLayers[tid]||{});
+  const binds=new Set(
+    collectTextBindsFromLayers(defs, TEMPLATES[tid]?._json?.automation?.swapFields, tid),
+  );
+  for(const def of Object.values(defs)){
+    if(!def||def.type!=="text"||!def.bind) continue;
+    binds.add(def.bind);
+    if(def.kind==="stat"){
+      binds.add(def.bind+"num");
+      binds.add(def.bind+"label");
+    }
+  }
+  // Shared fields often used by composite layers
+  for(const k of ["playerName","teamName","playerClass","position","hashtag","sport","eyebrow","heroNumber","heroDesc","callout"]){
+    if(Object.prototype.hasOwnProperty.call(state.text, k)) binds.add(k);
+  }
+  const out={};
+  for(const key of binds){
+    if(!Object.prototype.hasOwnProperty.call(state.text, key)) continue;
+    out[key]=String(state.text[key]??"");
+  }
+  return out;
 }
 
 function downloadJSON(obj, filename){
@@ -6400,6 +6862,8 @@ async function ensureDurableTemplateImages(templateId){
 }
 
 async function bakeEditorIntoTemplate(download=true){
+  // Commit any in-progress canvas text edit so Save captures "1" not the old value
+  flushActiveInlineTextEdit();
   const idInput=document.getElementById("bakeTemplateId");
   const nameInput=document.getElementById("bakeTemplateName");
   const id=(idInput?.value||state.template).trim().replace(/[^\w-]+/g,"_")||state.template;
@@ -6436,6 +6900,11 @@ async function bakeEditorIntoTemplate(download=true){
         return [lid, { ...rest, font:F[font]||font }];
       })),
     };
+  }
+
+  // Keep live text in sync with what we just baked (so refresh/open matches Save)
+  if(json.defaults?.text && typeof json.defaults.text==="object"){
+    Object.assign(state.text, json.defaults.text);
   }
 
   // Persist bake so Automate (headless) can restore align/layout without downloading JSON
@@ -6582,15 +7051,17 @@ document.getElementById("detectPal").onclick=()=>{
    ZOOM / FIT
 ============================================================ */
 const main=document.getElementById("main"), wrap=document.getElementById("stageWrap"), zlabel=document.getElementById("zoomlabel");
+const stageScroll=document.getElementById("stageScroll") || main;
 let _scale=1;
 let _zoomRaf=0;
 function isHeadless(){ return document.body.classList.contains("headless"); }
 function currentScale(){ return _scale; }
 function fitScale(){
-  // Measure the viewport panel only — never let #stageWrap size feed back into this.
+  // Measure the scroll viewport only — never let #stageWrap size feed back into this.
   const pad=isHeadless()?0:48;
-  const w=Math.max(0, main.clientWidth-pad);
-  const h=Math.max(0, main.clientHeight-pad);
+  const box=stageScroll || main;
+  const w=Math.max(0, box.clientWidth-pad);
+  const h=Math.max(0, box.clientHeight-pad);
   if(w<8 || h<8) return 0.2;
   const s=Math.min(w/SW, h/SH);
   // Clamp so a bad measurement / export flash can't blow up the canvas
@@ -6659,6 +7130,7 @@ function loadImageFromUrl(key, url){
         applyHypeLowerThirdDefault();
         if(state.template==="magazine" && !isFrozenTemplate(state.template)) applyMagazineLayoutDefault();
       }
+      ensureImageSlotLayer(key);
       revealImageLayers(key);
       fitImageLayer(key, im.naturalWidth/im.naturalHeight);
       if(key==="player" && shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
@@ -6974,7 +7446,9 @@ function buildEditorSnapshot(){
         font:g.font||def.font||F.sans,
         size:fontPx,
         fitSize:g.fitSize??null,
+        autoFit:g.autoFit!==false && def.autoFit!==false,
         ls:g.ls??def.ls??0,
+        lh:g.lh??def.lh??1,
         italic:!!(g.italic??def.italic),
         underline:!!(g.underline??def.underline),
         textTransform:g.textTransform??def.textTransform??null,
@@ -7063,6 +7537,28 @@ function notifyEditorBridge(reason){
     const snap=buildEditorSnapshot();
     _editorSubs.forEach(cb=>{ try{ cb(snap, reason||"update"); }catch(e){ console.warn(e); } });
   }, 40);
+}
+
+/** Allocate an id that is never the source and not already in the engine/DB set. */
+function allocUniqueTemplateId(rawName, { forbid=null, existing=[] }={}){
+  let id=String(rawName||"").trim().replace(/[^\w-]+/g,"_")||("copy_"+Date.now().toString(36));
+  if(/^\d/.test(id)) id="_"+id;
+  const taken=new Set(
+    [
+      ...Object.keys(TEMPLATES||{}),
+      ...(ENABLED_TEMPLATES||[]),
+      ...[...(REMOTE_TEMPLATE_IDS||[])],
+      ...existing,
+    ].map(String).filter(Boolean),
+  );
+  if(forbid) taken.add(String(forbid));
+  // Always differ from the template we copied
+  if(forbid && id===String(forbid)) id=String(forbid)+"_copy";
+  let base=id, n=2;
+  while(taken.has(id)){
+    id=base+"_"+n++;
+  }
+  return id;
 }
 
 window.__RENDER_API_V3__={
@@ -7226,8 +7722,8 @@ window.__RENDER_API_V3__={
   setTextValue(key, value){
     if(!key) return buildEditorSnapshot();
     state.text[key]=value??"";
-    try{ buildTextFields(); }catch(_){}
-    render();
+    // Do not rebuild sidebar fields here — remounting inputs jumps the caret to the end
+    queueTextPreview();
     scheduleSave();
     return buildEditorSnapshot();
   },
@@ -7266,8 +7762,36 @@ window.__RENDER_API_V3__={
       for(const k of blocked) delete patch[k];
     }
 
-    for(const k of ["x","y","w","h","opacity","radius","ls","zoom","borderW","borderColor"]){
+    const prevW=g.w, prevH=g.h;
+    const prevPref=def.type==="text" ? textPreferredSize(g, def) : null;
+    for(const k of ["x","y","w","h","opacity","radius","ls","lh","zoom","borderW","borderColor"]){
       if(patch[k]!=null) g[k]=patch[k];
+    }
+    // Text box W/H from React panel: scale preferred font with the box (same as canvas handles).
+    // Does not change autoFit — only updates preferred px; autofit still runs on render.
+    if(def.type==="text" && def.kind!=="stat" && patch.size==null && patch.baseSize==null && prevPref!=null){
+      let scale=1;
+      if(patch.w!=null && patch.h!=null && prevW>0 && prevH>0){
+        scale=Math.sqrt((g.w/prevW)*(g.h/prevH));
+      } else if(patch.w!=null && prevW>0){
+        scale=g.w/prevW;
+      } else if(patch.h!=null && prevH>0){
+        scale=g.h/prevH;
+      }
+      if(scale!==1 && Number.isFinite(scale) && scale>0){
+        const next=Math.max(8, Math.min(400, Math.round(prevPref*scale)));
+        g.size=next; g.baseSize=next; g.manualSize=true;
+      }
+      if(patch.w!=null || patch.h!=null){
+        g.fixedBox=true; g.userResizedBox=true;
+      }
+    }
+    if(patch.autoFit!=null){
+      g.autoFit=!!patch.autoFit;
+      const runtime=TEMPLATES[state.template]?.layers?.[lid];
+      if(runtime) runtime.autoFit=g.autoFit;
+      const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===lid);
+      if(jl) jl.autoFit=g.autoFit;
     }
     if(patch.z!=null) g.z=+patch.z;
     if(patch.hollow!=null){ g.hollow=!!patch.hollow; mark(); }
@@ -7508,12 +8032,12 @@ window.__RENDER_API_V3__={
     if(srcId!==state.template){
       try{ doSwitchTemplate(srcId); }catch(_){ state.template=srcId; ensureLayout(); }
     }
+    flushActiveInlineTextEdit();
     await ensureDurableTemplateImages(srcId);
     const rawName=String(opts.name||`${TEMPLATES[srcId].name||srcId} copy`).trim()||"Copy";
-    let id=String(opts.newId||rawName).trim().replace(/[^\w-]+/g,"_")||("copy_"+Date.now().toString(36));
-    if(/^\d/.test(id)) id="_"+id;
-    let base=id, n=2;
-    while(TEMPLATES[id] || ENABLED_TEMPLATES.includes(id)) id=base+"_"+n++;
+    const existing=Array.isArray(opts.existingIds)?opts.existingIds:[];
+    const id=allocUniqueTemplateId(rawName, { forbid:srcId, existing });
+    if(id===srcId) throw new Error("Copy must use a different template id");
     const json=buildFrozenTemplateJSON({ id, name:rawName });
     json.id=id;
     json.name=rawName;
@@ -7523,6 +8047,8 @@ window.__RENDER_API_V3__={
     if(!json._bakeMeta) json._bakeMeta={};
     json._bakeMeta.duplicatedFrom=srcId;
     json._bakeMeta.bakedAt=new Date().toISOString();
+    // Belt-and-suspenders: never let cloned JSON keep the source id
+    if(json.id===srcId) json.id=id;
     const loader=window.PosterTemplateLoader;
     if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
     else {
@@ -7543,15 +8069,27 @@ window.__RENDER_API_V3__={
     if(json.defaults?.images){
       seedTemplateImagesFromDefaults(id, json.defaults.images, { onlyMissing:false });
     }
+    // Copy layout/logo from source onto the NEW id (don't leave them only on src)
+    try{
+      if(state.layouts[srcId]) state.layouts[id]=JSON.parse(JSON.stringify(state.layouts[srcId]));
+      else state.layouts[id]={};
+    }catch(_){ state.layouts[id]={}; }
     state.extraLayers[id]={};
-    state.layouts[id]=state.layouts[id]||{};
     state.logoSettings[id]=Object.assign({}, logoSettingsOf(srcId));
     try{ doSwitchTemplate(id); }catch(_){ state.template=id; }
     resetLayoutFromTemplate(id, { freeze:true, clearExtras:true });
+    applyTemplateTextFromPlaceholders(id, { overwrite:true });
+    try{
+      const idInput=document.getElementById("bakeTemplateId");
+      const nameInput=document.getElementById("bakeTemplateName");
+      if(idInput) idInput.value=id;
+      if(nameInput) nameInput.value=rawName;
+    }catch(_){}
     try{ buildTplChips(); }catch(_){}
+    buildTextFields();
     render();
     notifyEditorBridge("duplicate-template");
-    return { ok:true, id, name:rawName, json, snapshot:buildEditorSnapshot() };
+    return { ok:true, id, name:rawName, sourceId:srcId, json, snapshot:buildEditorSnapshot() };
   },
   listShapePresets(){
     return Object.entries(SHAPE_PRESETS).map(([id,p])=>({
@@ -7656,8 +8194,22 @@ window.__RENDER_API_V3__={
     }));
   },
   setStoryIndex(i){
-    if(!state.stories?.length) return buildEditorSnapshot();
-    state.storyIndex=Math.max(0, Math.min(+i, state.stories.length-1));
+    if(!state.stories?.length && +i>=0) return buildEditorSnapshot();
+    const idx=+i;
+    if(idx<0 || Number.isNaN(idx)){
+      state.storyIndex=-1;
+      applyTemplateTextFromPlaceholders(state.template, { overwrite:true });
+      try{
+        const sel=document.getElementById("storySelect");
+        if(sel) sel.value="-1";
+      }catch(_){}
+      buildTextFields();
+      render();
+      scheduleSave();
+      notifyEditorBridge("story");
+      return buildEditorSnapshot();
+    }
+    state.storyIndex=Math.max(0, Math.min(idx, state.stories.length-1));
     applyStory(state.stories[state.storyIndex]);
     try{
       const sel=document.getElementById("storySelect");
@@ -7917,10 +8469,14 @@ async function init(){
   const qp=qs.get("tpl");
   const storyParam=+(qs.get("story")||0)||0;
   const surl=qs.get("storiesurl");
+  const applyStoryParam=qs.get("applyStory")==="1" || qs.has("story");
   if(surl){
-    loadStoriesFromUrl(surl, storyParam);
+    loadStoriesFromUrl(surl, storyParam, { apply:applyStoryParam });
   } else if(!state.stories.length){
-    loadStoriesFromUrl(BUNDLED_STORIES_URL, storyParam);
+    // Load story list for the picker, but do not overwrite DB/baked template text
+    loadStoriesFromUrl(BUNDLED_STORIES_URL, storyParam, { apply:false });
+  } else {
+    state.storyIndex=-1;
   }
   cP.value=state.colors.primary; cS.value=state.colors.secondary;
   const ap=document.getElementById("autoPal"); if(ap) ap.checked=state.autoPalette;
@@ -7938,6 +8494,7 @@ async function init(){
   ensureLayout();
   if(isFrozenTemplate(state.template)){
     resetLayoutFromTemplate(state.template, { freeze:true });
+    applyTemplateTextFromPlaceholders(state.template, { overwrite:true });
   } else {
     if(state.template==="spotlight") restoreSpotlightLayout(state.spotlightVariant);
     if(state.template==="neo_brutalist") applyNeoBrutalistLayoutDefault();
@@ -7966,6 +8523,15 @@ window.__TEST_V3__={
   snapshotSpotlightLayout,
   restoreSpotlightLayout,
   setStoryIndex(i){
+    if(i==null || +i<0 || Number.isNaN(+i)){
+      state.storyIndex=-1;
+      applyTemplateTextFromPlaceholders(state.template, { overwrite:true });
+      try{ document.getElementById("storySelect").value="-1"; }catch(_){}
+      buildTextFields();
+      render();
+      scheduleSave();
+      return;
+    }
     if(!state.stories.length) return;
     state.storyIndex=Math.max(0, Math.min(i, state.stories.length-1));
     document.getElementById("storySelect").value=String(state.storyIndex);

@@ -7,6 +7,7 @@ export default function StageHost({ iframeRef, src, onLoad, className = '' }) {
         src={src}
         onLoad={onLoad}
         className="absolute inset-0 h-full w-full border-0 bg-[#f4f7f8]"
+        style={{ touchAction: 'pan-x pan-y' }}
       />
     </div>
   )
