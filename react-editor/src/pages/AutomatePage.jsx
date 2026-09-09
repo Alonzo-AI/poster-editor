@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import StageHost from '../components/StageHost.jsx'
 import SmartCropModal from '../components/SmartCropModal.jsx'
+import PropertiesPanel from '../components/PropertiesPanel.jsx'
+import ContextToolbar from '../components/ContextToolbar.jsx'
+import StudioSidePanel from '../components/StudioSidePanel.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import {
   apiHealth,
@@ -31,8 +34,22 @@ function pickDefaultTemplate(list) {
   )
 }
 
+function Panel({ title, children, className = '', action = null }) {
+  return (
+    <section className={`border-b border-line/80 ${className}`}>
+      {title ? (
+        <div className="flex items-center justify-between gap-2 px-3.5 pt-3.5 pb-1.5">
+          <h2 className="text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">{title}</h2>
+          {action}
+        </div>
+      ) : null}
+      <div className="px-3.5 pb-3.5">{children}</div>
+    </section>
+  )
+}
+
 export default function AutomatePage({ Nav }) {
-  const { iframeRef, src, api, ready, error, onLoad } = usePosterEngine({ headless: true })
+  const { iframeRef, src, api, snapshot, ready, error, onLoad } = usePosterEngine({ headless: true })
   const [templates, setTemplates] = useState([])
   const [dbCatalog, setDbCatalog] = useState([])
   const [templateId, setTemplateId] = useState(null)
@@ -48,6 +65,10 @@ export default function AutomatePage({ Nav }) {
   const [smartCrop, setSmartCrop] = useState(null)
   const [cutoutBusy, setCutoutBusy] = useState(false)
   const [cutoutDone, setCutoutDone] = useState(false)
+  /** Editor-like tools for Automate only — does not change fill/export/DB flows. */
+  const [editMode, setEditMode] = useState(false)
+  const [studioMode, setStudioMode] = useState(null)
+  const [shapePresets, setShapePresets] = useState([])
 
   const filteredTemplates = useMemo(
     () => templates.filter((t) => (t.category || 'player') === formatCategory),
@@ -55,6 +76,8 @@ export default function AutomatePage({ Nav }) {
   )
 
   const current = templates.find((t) => t.id === templateId)
+  const layers = snapshot?.layers || []
+  const selected = snapshot?.selected || null
 
   const refreshFromDb = useCallback(async () => {
     if (!api) return []
@@ -119,7 +142,7 @@ export default function AutomatePage({ Nav }) {
         setStatus('Update failed: ' + (e.message || e))
       }
     },
-    [api, templateId, text, colors, images, dbCatalog],
+    [api, templateId, text, colors, images, dbCatalog, templates],
   )
 
   function onResetLayout() {
@@ -132,6 +155,53 @@ export default function AutomatePage({ Nav }) {
       setStatus('Reset failed: ' + (e.message || e))
     }
   }
+
+  function syncFieldsFromEngine() {
+    if (!api) return
+    try {
+      const nextFields = api.listTextFields?.() || []
+      if (Array.isArray(nextFields) && nextFields.length) setFields(nextFields)
+      const slots = api.listImageSlots?.() || []
+      if (Array.isArray(slots) && slots.length) {
+        setImageSlots(
+          slots.map((s) => ({
+            key: s.key,
+            label: s.label || s.key,
+          })),
+        )
+      }
+      const snap = api.getEditorSnapshot?.()
+      if (snap?.text && typeof snap.text === 'object') {
+        setText((prev) => ({ ...prev, ...snap.text }))
+      }
+      if (snap?.colors?.primary || snap?.colors?.secondary) {
+        setColors((c) => ({
+          primary: snap.colors.primary || c.primary,
+          secondary: snap.colors.secondary || c.secondary,
+        }))
+      }
+    } catch (_) {}
+  }
+
+  function enterEditMode() {
+    setEditMode(true)
+    setStudioMode(null)
+    try {
+      const presets = api?.listShapePresets?.() || []
+      setShapePresets(Array.isArray(presets) ? presets : [])
+    } catch (_) {
+      setShapePresets([])
+    }
+    setStatus('Edit automate · styles, layers, shapes — session only (not saved to DB)')
+  }
+
+  function exitEditMode() {
+    setEditMode(false)
+    setStudioMode(null)
+    syncFieldsFromEngine()
+    setStatus('Edit closed · fill & export unchanged · layout tweaks kept for this session')
+  }
+
   useEffect(() => {
     if (!ready || !api) return
     let cancelled = false
@@ -193,16 +263,17 @@ export default function AutomatePage({ Nav }) {
     })
   }, [templateId, templates])
 
+  // Auto-apply fill values — paused while Edit automate is open so canvas tools don't fight the form
   useEffect(() => {
-    if (!ready || !templateId) return
+    if (!ready || !templateId || editMode) return
     const t = setTimeout(() => apply(false), 120)
     return () => clearTimeout(t)
-  }, [text, colors, templateId, ready]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [text, colors, templateId, ready, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!ready || !templateId) return
+    if (!ready || !templateId || editMode) return
     apply(true)
-  }, [images, templateId, ready]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [images, templateId, ready, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onExport() {
     if (!api?.exportPng) return
@@ -267,13 +338,13 @@ export default function AutomatePage({ Nav }) {
         return null
       }
       setCutoutDone(true)
-      const src = res.src || api.getImageSlot?.('player')?.src
-      if (src) {
-        setImages((img) => ({ ...img, player: src }))
-        setSmartCrop((s) => (s ? { ...s, src } : s))
+      const srcOut = res.src || api.getImageSlot?.('player')?.src
+      if (srcOut) {
+        setImages((img) => ({ ...img, player: srcOut }))
+        setSmartCrop((s) => (s ? { ...s, src: srcOut } : s))
       }
       setStatus('Background removed')
-      return src || null
+      return srcOut || null
     } catch (e) {
       setCutoutDone(false)
       setStatus('Background removal failed: ' + (e.message || e))
@@ -306,10 +377,21 @@ export default function AutomatePage({ Nav }) {
         <div>
           <div className="text-sm font-medium text-paper">Automate</div>
           <div className="text-[11px] text-muted">
-            Fill copy · drag on canvas to tweak · export PNG (not saved to DB)
+            {editMode
+              ? 'Edit mode · styles & layers (session only · not saved to DB)'
+              : 'Fill copy · drag on canvas to tweak · export PNG (not saved to DB)'}
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className={editMode ? 'ui-btn ui-btn-primary' : 'ui-btn'}
+            disabled={!ready || !templateId}
+            title={editMode ? 'Close editor tools' : 'Open editor-like tools for this session'}
+            onClick={() => (editMode ? exitEditMode() : enterEditMode())}
+          >
+            {editMode ? 'Done editing' : 'Edit automate'}
+          </button>
           <button
             type="button"
             className="ui-btn"
@@ -333,14 +415,14 @@ export default function AutomatePage({ Nav }) {
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
-      <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto border-r border-line bg-panel p-3">
-        <div className="mb-1 hidden">
-          <div className="mt-3">
-            <Nav />
-          </div>
-        </div>
-
+      <div
+        className={`grid min-h-0 flex-1 overflow-hidden ${
+          editMode
+            ? 'grid-cols-[minmax(200px,300px)_minmax(0,1fr)_minmax(240px,300px)]'
+            : 'grid-cols-[320px_minmax(0,1fr)]'
+        }`}
+      >
+      <aside className="flex min-h-0 min-w-0 flex-col overflow-y-auto border-r border-line bg-panel p-3">
         <section className="mb-3 rounded-xl border border-line bg-panel p-3.5 shadow-sm">
           <div className="mb-2 flex items-center justify-between gap-2">
             <h2 className="text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Template</h2>
@@ -539,21 +621,141 @@ export default function AutomatePage({ Nav }) {
         <p className="mt-1 text-xs text-dim">{status}</p>
       </aside>
 
-      <main className="ui-canvas-well relative flex min-w-0 flex-1 items-center justify-center overflow-hidden">
-        <div className="relative aspect-[1080/1350] h-[min(92vh,920px)] max-h-[92vh] w-auto max-w-[min(92%,520px)] rounded-sm shadow-[0_16px_48px_rgba(14,99,155,0.14)] ring-1 ring-line">
-          {!ready && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-panel/90 text-xs text-dim">
-              {error || 'Starting poster engine…'}
-            </div>
-          )}
-          <StageHost
-            iframeRef={iframeRef}
-            src={src}
-            onLoad={onLoad}
-            className="!absolute inset-0 !flex-none rounded-sm"
+      {/* Center: canvas (+ editor chrome only in Edit automate) */}
+      <div className="flex min-h-0 min-w-0 overflow-hidden">
+        {editMode ? (
+          <StudioSidePanel
+            mode={studioMode}
+            onClose={() => setStudioMode(null)}
+            api={api}
+            selected={selected}
+            layers={layers}
           />
-        </div>
-      </main>
+        ) : null}
+        <main className="ui-canvas-well relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {editMode ? (
+            <ContextToolbar
+              api={api}
+              selected={selected}
+              layers={layers}
+              studioMode={studioMode}
+              onStudioMode={setStudioMode}
+            />
+          ) : null}
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+            <div className="relative aspect-[1080/1350] h-[min(92vh,920px)] max-h-[92vh] w-auto max-w-[min(92%,520px)] rounded-sm shadow-[0_16px_48px_rgba(14,99,155,0.14)] ring-1 ring-line">
+              {!ready && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-panel/90 text-xs text-dim">
+                  {error || 'Starting poster engine…'}
+                </div>
+              )}
+              <StageHost
+                iframeRef={iframeRef}
+                src={src}
+                onLoad={onLoad}
+                className="!absolute inset-0 !flex-none rounded-sm"
+              />
+            </div>
+            {editMode ? (
+              <div className="absolute bottom-3 right-3 z-10 flex gap-1 rounded-md border border-line bg-panel/95 p-1 shadow-sm backdrop-blur">
+                <button type="button" className="ui-btn px-2 py-1 text-[11px]" onClick={() => api?.zoomOut?.()}>−</button>
+                <button type="button" className="ui-btn px-2 py-1 text-[11px]" onClick={() => api?.zoomFit?.()}>Fit</button>
+                <button type="button" className="ui-btn px-2 py-1 text-[11px]" onClick={() => api?.zoomIn?.()}>+</button>
+              </div>
+            ) : null}
+          </div>
+        </main>
+      </div>
+
+      {/* Right: editor tools — only when Edit automate is on */}
+      {editMode ? (
+        <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-line bg-panel">
+          <div className="shrink-0 border-b border-line px-3.5 py-3">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Editor tools</div>
+            <div className="mt-0.5 truncate text-[12px] text-paper">
+              {selected ? `${selected.type} · ${selected.id}` : 'Select a layer on the canvas'}
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+            <Panel title="Layers">
+              <ul className="space-y-0.5">
+                {[...layers].reverse().map((layer) => (
+                  <li key={layer.id}>
+                    <button
+                      type="button"
+                      onClick={() => api?.selectLayer?.(layer.id)}
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] ${
+                        snapshot?.selectedId === layer.id
+                          ? 'bg-panel2 text-paper'
+                          : 'text-dim hover:bg-inset hover:text-paper'
+                      }`}
+                    >
+                      <span className="w-10 shrink-0 text-[10px] uppercase text-muted">
+                        {layer.type}
+                      </span>
+                      <span className="truncate">{layer.label}</span>
+                    </button>
+                  </li>
+                ))}
+                {!layers.length ? (
+                  <li className="text-[11px] text-muted">No layers</li>
+                ) : null}
+              </ul>
+            </Panel>
+
+            <Panel title="Add">
+              <div className="mb-2 flex gap-1.5">
+                <button
+                  type="button"
+                  className="ui-btn flex-1 py-1.5 text-[11px]"
+                  onClick={() => {
+                    const label = window.prompt('New text field label', 'New text')
+                    if (!label?.trim()) return
+                    api?.addTextField?.({ label: String(label).trim() })
+                    syncFieldsFromEngine()
+                    setStatus(`Added text “${label.trim()}” (session only)`)
+                  }}
+                >
+                  + Text
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(shapePresets.length
+                  ? shapePresets
+                  : ['circle', 'square', 'rectangle', 'rounded', 'pill', 'triangle'].map((id) => ({
+                      id,
+                      label: id,
+                    }))
+                ).map((p) => (
+                  <button
+                    key={p.id || p}
+                    type="button"
+                    className="rounded border border-line bg-inset px-1 py-2 text-[10px] capitalize text-dim hover:border-blaze hover:text-paper"
+                    onClick={() => {
+                      api?.addShape?.(p.id || p)
+                      setStatus('Added shape (session only)')
+                    }}
+                  >
+                    {p.label || p.id || p}
+                  </button>
+                ))}
+              </div>
+            </Panel>
+
+            <div className="p-3.5">
+              <PropertiesPanel api={api} selected={selected} snapshot={snapshot} />
+            </div>
+          </div>
+          <div className="shrink-0 space-y-2 border-t border-line p-3.5">
+            <button type="button" className="ui-btn w-full" onClick={exitEditMode}>
+              Done editing
+            </button>
+            <p className="text-[10px] leading-snug text-muted">
+              Edits here are for this Automate session / export only — they are not written to Atlas.
+            </p>
+          </div>
+        </aside>
+      ) : null}
       </div>
     </div>
 
