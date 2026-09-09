@@ -774,13 +774,13 @@
           <button class="btn" id="bakeTemplateBtn" style="flex:1">Save</button>
           <button class="btn sec" id="exportFrozenTemplate" style="flex:1">Download template</button>
         </div>
-        <div class="mini" style="margin-top:6px"><b>Save</b> → updates this session + in-memory template. <b>Download template</b> → get <code>{id}.json</code> to place in <code>templates/</code> and list in <code>manifest.json</code>.</div>
+        <div class="mini" style="margin-top:6px"><b>Save</b> → updates this session + MongoDB. <b>Download template</b> → get a local <code>{id}.json</code> backup.</div>
         <label class="fld" style="margin-top:10px">Save as template id</label>
         <input type="text" id="bakeTemplateId" placeholder="e.g. cc11">
         <label class="fld">Display name</label>
         <input type="text" id="bakeTemplateName" placeholder="e.g. Coastal Sideline">
         <button class="btn sec" id="exportLayout" style="margin-top:8px">⬇ Download layout overrides only</button>
-        <div class="mini" style="margin-top:6px">After download, replace the file under <code>templates/</code> and add its filename to <code>templates/manifest.json</code>, then refresh. Automate loads the same JSON list.</div>
+        <div class="mini" style="margin-top:6px">Templates load from MongoDB. Download is only for offline backup.</div>
         <button class="btn sec" id="resetLayout" style="margin-top:10px">Reset positions for this template</button>
         <div class="mini">Resets all layer positions, sizes & fonts to the template defaults. Your text and images are kept.</div>
         <label class="fld" style="margin-top:10px;display:flex;align-items:center;gap:7px;cursor:pointer">
@@ -1191,9 +1191,10 @@ function updateTemplateLoadBanner(loadedIds){
     el.textContent="Could not load templates/manifest.json — serve via a local server (not file://).";
     return;
   }
+  // Disk seeds are optional — React Editor/Automate load templates from Mongo.
   if(!loadedIds?.length){
-    el.style.display="block";
-    el.textContent="No templates loaded. Add JSON files to templates/ and list them in templates/manifest.json.";
+    el.style.display="none";
+    el.textContent="";
     return;
   }
   el.style.display="none";
