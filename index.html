@@ -15,7 +15,6 @@
 <script src="renderer/template-loader.js"></script>
 <script src="renderer/photo-palette.js"></script>
 <script src="renderer/magazine-header-colors.js"></script>
-<script src="stories.players.js"></script>
 <style>
   @font-face{
     font-family:"Avenir Regular";
@@ -593,10 +592,14 @@
   #testBanner b{color:#fff;font-weight:700;}
   body.headless #side,body.headless #toolbar,body.headless .hint,body.headless #zoomlabel,body.headless #testBanner{display:none!important;}
   body.headless #app{grid-template-columns:1fr;width:100%;height:100%;}
-  body.headless html,body.headless body{width:100%;height:100%;overflow:hidden;}
-  body.headless #main{width:100%;height:100%;padding:0;background:#0a0b0e;overflow:hidden;}
-  body.headless #stageScroll{overflow:hidden;padding:0;align-items:stretch;justify-content:stretch;}
-  body.headless #stageWrap{box-shadow:none;margin:0;}
+  body.headless html,body.headless body{width:100%;height:100%;overflow:hidden;background:#f4f7f8!important;}
+  body.headless #main{width:100%;height:100%;padding:0;background:#f4f7f8!important;overflow:hidden;}
+  body.headless #stageScroll{
+    overflow:hidden;padding:0;
+    display:flex;align-items:center;justify-content:center;
+    background:#f4f7f8!important;
+  }
+  body.headless #stageWrap{box-shadow:none;margin:0;flex:none;}
   body.headless #stage{box-shadow:none;}
   body.headless .layer{cursor:move;}
   body.headless .layer.sel{outline:2px solid #0ea5e9;outline-offset:1px;}
@@ -676,7 +679,7 @@
       <div class="body" id="vaporGlassControls"></div>
     </details>
 
-    <details class="group" open>
+    <details class="group" id="storiesSection" style="display:none">
       <summary>Stories (JSON)</summary>
       <div class="body">
         <button class="btn sec" id="loadBundledStories" type="button">Load bundled stories</button>
@@ -690,7 +693,7 @@
             <button class="btn sec" id="storyNext">Next ▶</button>
           </div>
         </div>
-        <div class="mini" id="storyStatus">Loads text, stats & brand colors per player. Upload each player's photo & team logo separately.</div>
+        <div class="mini" id="storyStatus">Stories disabled — template text comes from Mongo / editor fields.</div>
       </div>
     </details>
 
@@ -727,18 +730,11 @@
     <details class="group" open>
       <summary>Asset library</summary>
       <div class="body">
-        <div class="seg" id="libSlotFilter" style="margin-bottom:8px;flex-wrap:wrap">
+        <div class="seg" id="libSlotFilter" style="margin-bottom:8px;flex-wrap:wrap;display:none">
           <button data-slot="all" class="on">All</button>
-          <button data-slot="player">Player</button>
-          <button data-slot="background">BG</button>
-          <button data-slot="logo">Logo</button>
-          <button data-slot="conference">Conf</button>
-          <button data-slot="sponsor">Sponsor</button>
-          <button data-slot="shape">Shapes</button>
-          <button data-slot="effect">Effects</button>
         </div>
         <div id="assetLibrary" class="libgrid"></div>
-        <div class="mini" style="margin-top:8px">Click an asset to drop it on the poster. <b>Shapes</b> are placed in the center of the canvas (not the conference logo slot). Add files under <code>assets/</code> and list them in <code>assets/library.json</code>.</div>
+        <div class="mini" style="margin-top:8px">Library presets removed. Use <b>Shapes</b> below, or upload images in the Images panel (saved to S3).</div>
       </div>
     </details>
 
@@ -1707,7 +1703,7 @@ function migrateVaporGlassCardLayout(d){
 }
 
 /* Spotlight variant presets (legacy — only if a spotlight JSON template is added later) */
-const BUNDLED_STORIES_URL = "./stories.players.json";
+const BUNDLED_STORIES_URL = ""; // bundled stories removed — templates use Mongo text
 function spotlightDecoBase(opts={}){
   const s=state.colors.secondary;
   const spotX=opts.spotX??"50%", spotY=opts.spotY??"32%", spotOff=opts.spotOff??"-42%";
@@ -3434,6 +3430,8 @@ function doSwitchTemplate(id){
     if(next==="vapor_motion") applyVaporMotionLayoutDefault();
     if(next==="salukis_clean"||next==="salukis_dark") applySalukisLayoutDefault();
   }
+  // Older templates (e.g. SIU) may lack logo/conference layers — add empty slots safely
+  ensureStandardImageSlots();
   // Restore baked/disk default player + background for this template
   applyTemplateDefaultImages(next, { onlyMissing:true }).then(()=>{
     buildAssets();
@@ -3845,7 +3843,7 @@ function render(){
   for(const [id,def] of Object.entries(layersOf())){
     const g = L[id];
     if(!g || g.hidden) continue;
-    if(def.type==="image" && ["background","sponsor","conference"].includes(def.bind) && !imagesOf()[def.bind]) continue;
+    if(def.type==="image" && ["background","sponsor","conference","logo"].includes(def.bind) && !imagesOf()[def.bind]) continue;
     const isBlock=def.type==="block" || !!def.shape || !!g.shape || /^shape_/.test(id);
     const el = document.createElement("div");
     el.className = "layer " + (def.type==="text"&&!isBlock?"txt": def.type==="glass"?"glass": isBlock?"block":"img");
@@ -5352,8 +5350,9 @@ function findImageLayerId(bind){
 /**
  * Many templates list logo/conference in swapImages but have no canvas layer.
  * Create a visible layer on upload so the image actually appears on the poster.
+ * opts.select — select the new layer (default true for upload UX).
  */
-function ensureImageSlotLayer(bind){
+function ensureImageSlotLayer(bind, opts={}){
   const key=String(bind||"");
   if(!["logo","conference","sponsor"].includes(key)) return findImageLayerId(key);
   const existing=findImageLayerId(key);
@@ -5394,10 +5393,20 @@ function ensureImageSlotLayer(bind){
   Object.assign(L[id], {
     x:def.x, y:def.y, w:def.w, h:def.h, z:def.z,
     fit:"contain", zoom:1, cropX:0.5, cropY:0.5,
-    hidden:false, opacity:1, lockAspect:true,
+    // Hide until an image is uploaded — avoids empty frames disturbing the layout
+    hidden:true, opacity:1, lockAspect:true,
   });
-  try{ select(id); }catch(_){}
+  if(opts.select!==false){
+    try{ select(id); }catch(_){}
+  }
   return id;
+}
+/** Ensure logo + conference layers exist on the active template (no selection churn). */
+function ensureStandardImageSlots(){
+  try{
+    ensureImageSlotLayer("logo", { select:false });
+    ensureImageSlotLayer("conference", { select:false });
+  }catch(_){}
 }
 function applyImageSrc(key, url, stored){
   return new Promise((resolve)=>{
@@ -6342,7 +6351,9 @@ document.getElementById("storyFile").onchange=e=>{
 };
 document.getElementById("storyPrev").onclick=()=>gotoStory(-1);
 document.getElementById("storyNext").onclick=()=>gotoStory(1);
-document.getElementById("loadBundledStories").onclick=()=>loadStoriesFromUrl(BUNDLED_STORIES_URL, 0, { apply:false });
+document.getElementById("loadBundledStories").onclick=()=>{
+  setStoryStatus("Bundled stories removed. Use template text fields or Automate payload.");
+};
 
 function exportLayoutJSON(){
   const t=state.template;
@@ -7255,19 +7266,26 @@ document.getElementById("libSlotFilter")?.querySelectorAll("[data-slot]").forEac
   };
 });
 async function captureStagePng(opts={}){
-  const outScale=opts.scale!=null?+opts.scale:2;
+  // Exact poster pixels (1080×1350). Use opts.scale=2 only when a 2× export is requested.
+  const outScale=opts.scale!=null?Math.max(0.25, +opts.scale):1;
+  const targetW=Math.round(SW*outScale);
+  const targetH=Math.round(SH*outScale);
   const prevSel=state.selected; select(null);
   const guideWasOn=state.showFrameGuide;
   stage.classList.remove("frameGuide");
   // Park the stage off-screen at native size so export never expands #main / iframe layout
+  // (Automate headless iframe is small — without this, html2canvas can capture preview size.)
   const prev={
     transform:stage.style.transform,
+    stageW:stage.style.width,
+    stageH:stage.style.height,
     w:wrap.style.width,
     h:wrap.style.height,
     pos:wrap.style.position,
     left:wrap.style.left,
     top:wrap.style.top,
     z:wrap.style.zIndex,
+    wrapTransform:wrap.style.transform,
   };
   wrap.style.position="fixed";
   wrap.style.left="-12000px";
@@ -7275,21 +7293,34 @@ async function captureStagePng(opts={}){
   wrap.style.zIndex="-1";
   wrap.style.width=SW+"px";
   wrap.style.height=SH+"px";
+  wrap.style.transform="none";
+  stage.style.width=SW+"px";
+  stage.style.height=SH+"px";
   stage.style.transform="none";
   if(document.fonts?.ready) await document.fonts.ready;
   render();
-  await new Promise(r=>setTimeout(r, opts.settleMs!=null?opts.settleMs:120));
+  await new Promise(r=>setTimeout(r, opts.settleMs!=null?opts.settleMs:160));
   let canvas;
   try{
     canvas=await html2canvas(stage,{
       scale:outScale,
       backgroundColor:null,
       useCORS:true,
+      allowTaint:false,
       logging:false,
       width:SW,
       height:SH,
+      windowWidth:SW,
+      windowHeight:SH,
+      x:0,
+      y:0,
+      scrollX:0,
+      scrollY:0,
       // html2canvas often drops CSS clip-path — redraw clipped shapes as SVG fills
       onclone(_doc, clone){
+        clone.style.width=SW+"px";
+        clone.style.height=SH+"px";
+        clone.style.transform="none";
         clone.querySelectorAll(".layer.block").forEach(el=>{
           const clip=el.dataset.clip || el.style.clipPath || el.style.webkitClipPath;
           if(!clip || clip==="none") return;
@@ -7314,6 +7345,19 @@ async function captureStagePng(opts={}){
         });
       },
     });
+    // Guarantee exact output size even if html2canvas mis-measured a small Automate iframe
+    if(!canvas || canvas.width!==targetW || canvas.height!==targetH){
+      const fixed=document.createElement("canvas");
+      fixed.width=targetW;
+      fixed.height=targetH;
+      const ctx=fixed.getContext("2d");
+      ctx.imageSmoothingEnabled=true;
+      ctx.imageSmoothingQuality="high";
+      if(canvas && canvas.width && canvas.height){
+        ctx.drawImage(canvas, 0, 0, targetW, targetH);
+      }
+      canvas=fixed;
+    }
   }finally{
     wrap.style.position=prev.pos;
     wrap.style.left=prev.left;
@@ -7321,6 +7365,9 @@ async function captureStagePng(opts={}){
     wrap.style.zIndex=prev.z;
     wrap.style.width=prev.w;
     wrap.style.height=prev.h;
+    wrap.style.transform=prev.wrapTransform;
+    stage.style.width=prev.stageW;
+    stage.style.height=prev.stageH;
     stage.style.transform=prev.transform;
     if(guideWasOn) stage.classList.add("frameGuide");
     applyZoom();
@@ -7620,6 +7667,7 @@ window.__RENDER_API_V3__={
     if(payload.canvas_background) state.canvasOverride=payload.canvas_background;
     // Load template's baked default player/bg first; API images override below
     await applyTemplateDefaultImages(state.template, { onlyMissing:true });
+    ensureStandardImageSlots();
     const imageMap={
       player: payload.player_image||payload.playerImageUrl||payload.player,
       background: payload.background_image||payload.backgroundImageUrl||payload.background,
@@ -8501,17 +8549,16 @@ async function init(){
   // Embed keeps editor session so React shell shares freeze/bake state
   if(!headless) loadState();
   state.zoom=null;
+  // Bundled stories removed — never restore story picker data into the editor
+  state.stories=[];
+  state.storyIndex=-1;
   const qp=qs.get("tpl");
   const storyParam=+(qs.get("story")||0)||0;
   const surl=qs.get("storiesurl");
   const applyStoryParam=qs.get("applyStory")==="1" || qs.has("story");
+  // Optional external stories URL only (no local bundled file)
   if(surl){
     loadStoriesFromUrl(surl, storyParam, { apply:applyStoryParam });
-  } else if(!state.stories.length){
-    // Load story list for the picker, but do not overwrite DB/baked template text
-    loadStoriesFromUrl(BUNDLED_STORIES_URL, storyParam, { apply:false });
-  } else {
-    state.storyIndex=-1;
   }
   cP.value=state.colors.primary; cS.value=state.colors.secondary;
   const ap=document.getElementById("autoPal"); if(ap) ap.checked=state.autoPalette;
@@ -8525,6 +8572,7 @@ async function init(){
   else state.template=ensureEnabledTemplate(state.template);
   // Ensure baked default player/bg appear after restart
   await applyTemplateDefaultImages(state.template, { onlyMissing:true });
+  ensureStandardImageSlots();
   seedFieldLabelsFromTemplate(state.template);
   ensureLayout();
   if(isFrozenTemplate(state.template)){

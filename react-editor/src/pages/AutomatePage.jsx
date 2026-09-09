@@ -667,8 +667,9 @@ export default function AutomatePage({ Nav }) {
               onStudioMode={setStudioMode}
             />
           ) : null}
-          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-            <div className="relative aspect-[1080/1350] h-[min(92vh,920px)] max-h-[92vh] w-auto max-w-[min(92%,520px)] rounded-sm shadow-[0_16px_48px_rgba(14,99,155,0.14)] ring-1 ring-line">
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-3">
+            {/* Width-driven 4:5 box — do not set height+max-width together (leaves black gap under stage). */}
+            <div className="relative aspect-[1080/1350] w-[min(100%,520px)] max-h-[min(92vh,920px)] overflow-hidden rounded-sm bg-[#f4f7f8] shadow-[0_16px_48px_rgba(14,99,155,0.14)] ring-1 ring-line">
               {!ready && (
                 <div className="absolute inset-0 z-20 flex items-center justify-center bg-panel/90 text-xs text-dim">
                   {error || 'Starting poster engine…'}
@@ -678,7 +679,7 @@ export default function AutomatePage({ Nav }) {
                 iframeRef={iframeRef}
                 src={src}
                 onLoad={onLoad}
-                className="!absolute inset-0 !flex-none rounded-sm"
+                className="!absolute inset-0 !h-full !w-full !flex-none rounded-sm"
               />
             </div>
             {editMode ? (

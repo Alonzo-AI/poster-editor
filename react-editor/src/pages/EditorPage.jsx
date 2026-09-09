@@ -19,15 +19,6 @@ import { uploadDataUrlToS3, uploadImageOrDataUrl, isRemoteImageUrl } from '../ap
 
 const inputClass = 'ui-input'
 
-function portalAssetUrl(src) {
-  if (!src) return ''
-  if (/^(https?:|data:|blob:)/i.test(src)) return src
-  if (src.startsWith('/portal/')) return src
-  if (src.startsWith('/')) return src
-  const clean = String(src).replace(/^\.\//, '')
-  return `/portal/${clean.split('/').map(encodeURIComponent).join('/')}`
-}
-
 function Panel({ title, children, className = '', action = null }) {
   return (
     <section className={`border-b border-line/80 ${className}`}>
@@ -57,10 +48,7 @@ export default function EditorPage({ Nav }) {
   })
   const [templates, setTemplates] = useState([])
   const [dbCatalog, setDbCatalog] = useState([]) // stable Mongo names (lite)
-  const [stories, setStories] = useState([])
-  const [assets, setAssets] = useState([])
   const [imageSlots, setImageSlots] = useState([])
-  const [assetFilter, setAssetFilter] = useState('all')
   const [status, setStatus] = useState('')
   const [bakeId, setBakeId] = useState('')
   const [bakeName, setBakeName] = useState('')
@@ -201,8 +189,6 @@ export default function EditorPage({ Nav }) {
   useEffect(() => {
     if (!api) return
     try {
-      if (api.listStories) setStories(api.listStories() || [])
-      if (api.listAssetLibrary) setAssets(api.listAssetLibrary() || [])
       if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
     } catch (e) {
       console.warn(e)
@@ -228,21 +214,6 @@ export default function EditorPage({ Nav }) {
     if (api?.listShapePresets) return api.listShapePresets()
     return (snapshot?.shapePresets || []).map((id) => ({ id, label: id }))
   }, [api, snapshot?.shapePresets])
-
-  const filteredAssets = useMemo(() => {
-    const list =
-      assetFilter === 'all'
-        ? assets
-        : assetFilter === 'shape'
-          ? assets.filter((a) => a.isShape)
-          : assetFilter === 'effect'
-            ? assets.filter((a) => a.isEffect || a.slot === 'effect')
-            : assets.filter((a) => a.slot === assetFilter)
-    return list.map((a) => ({
-      ...a,
-      thumb: portalAssetUrl(a.src),
-    }))
-  }, [assets, assetFilter])
 
   async function uploadSlotImage(file, slotKey) {
     setStatus(`Uploading ${slotKey} to S3…`)
@@ -553,24 +524,6 @@ export default function EditorPage({ Nav }) {
       setStatus(e.message || 'Smart crop failed')
     }
   }
-
-  async function onApplyAsset(id) {
-    if (!api?.applyLibraryAsset) return
-    setStatus('Loading asset…')
-    try {
-      await api.applyLibraryAsset(id)
-      if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
-      const asset = assets.find((a) => a.id === id)
-      if (asset?.slot === 'player') {
-        const slot = api.getImageSlot?.('player')
-        if (slot?.src) await openSmartCropForSlot('player', slot.src, 'Player image')
-      }
-      setStatus('Asset applied')
-    } catch (e) {
-      setStatus(e.message || 'Asset failed')
-    }
-  }
-
 
   return (
     <>
@@ -994,34 +947,6 @@ export default function EditorPage({ Nav }) {
               </ul>
             </Panel>
 
-            <Panel title="Stories">
-              {stories.length ? (
-                <>
-                  <select
-                    className={inputClass}
-                    value={
-                      snapshot?.storyIndex != null && snapshot.storyIndex >= 0
-                        ? snapshot.storyIndex
-                        : -1
-                    }
-                    onChange={(e) => api?.setStoryIndex?.(+e.target.value)}
-                  >
-                    <option value={-1}>Saved template values</option>
-                    {stories.map((s) => (
-                      <option key={s.index} value={s.index}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-1.5 text-[10px] text-muted">
-                    Default keeps DB/Save text. Pick a story only to override.
-                  </p>
-                </>
-              ) : (
-                <p className="text-[11px] text-muted">No stories</p>
-              )}
-            </Panel>
-
             <Panel title="Images">
               {imageSlots.map((slot) => (
                 <div key={slot.key} className="mb-2 flex items-center gap-2">
@@ -1093,59 +1018,9 @@ export default function EditorPage({ Nav }) {
             </Panel>
 
             <Panel title="Assets">
-              <select
-                className={`${inputClass} mb-2`}
-                value={assetFilter}
-                onChange={(e) => setAssetFilter(e.target.value)}
-              >
-                <option value="all">All</option>
-                <option value="player">Player</option>
-                <option value="background">Background</option>
-                <option value="logo">Logo</option>
-                <option value="conference">Conference</option>
-                <option value="sponsor">Sponsor</option>
-                <option value="shape">Shapes</option>
-                <option value="effect">Effects</option>
-              </select>
-              <div className="grid max-h-52 grid-cols-3 gap-1.5 overflow-y-auto">
-                {filteredAssets.map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    title={a.name}
-                    onClick={() => onApplyAsset(a.id)}
-                    className="overflow-hidden rounded border border-line bg-white text-left hover:border-blaze"
-                  >
-                    <div className="flex h-14 items-center justify-center bg-[#eef3f8] p-1">
-                      {a.thumb ? (
-                        <img
-                          src={a.thumb}
-                          alt=""
-                          className="max-h-full max-w-full object-contain"
-                          loading="lazy"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none'
-                            const fb = e.currentTarget.nextElementSibling
-                            if (fb) fb.hidden = false
-                          }}
-                        />
-                      ) : null}
-                      <span
-                        className="px-1 text-center text-[9px] leading-tight text-muted"
-                        hidden={!!a.thumb}
-                      >
-                        {a.name}
-                      </span>
-                    </div>
-                    <div className="truncate border-t border-line px-1 py-0.5 text-[9px] text-dim">
-                      {a.name}
-                    </div>
-                  </button>
-                ))}
-                {!filteredAssets.length ? (
-                  <p className="col-span-3 text-[11px] text-muted">No assets in this filter</p>
-                ) : null}
-              </div>
+              <p className="text-[11px] text-muted">
+                Library presets removed. Use Shapes below, or upload images (S3).
+              </p>
             </Panel>
 
             <Panel title="Shapes">
