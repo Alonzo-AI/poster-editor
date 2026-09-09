@@ -15,6 +15,7 @@ import {
   ensureTemplateInEngine,
   markTemplateHydrated,
 } from '../api/templatesApi.js'
+import { uploadDataUrlToS3, uploadImageOrDataUrl, isRemoteImageUrl } from '../api/uploadsApi.js'
 
 const inputClass = 'ui-input'
 
@@ -243,13 +244,33 @@ export default function EditorPage({ Nav }) {
     }))
   }, [assets, assetFilter])
 
-  function readFileAsDataURL(file) {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader()
-      r.onload = () => resolve(r.result)
-      r.onerror = reject
-      r.readAsDataURL(file)
+  async function uploadSlotImage(file, slotKey) {
+    setStatus(`Uploading ${slotKey} to S3…`)
+    const { url, via, error } = await uploadImageOrDataUrl(file, {
+      folder: `templates/${slotKey}`,
     })
+    if (via === 's3') setStatus(`${slotKey} uploaded`)
+    else setStatus(`S3 upload failed (${error}) · using local image for now`)
+    return url
+  }
+
+  /** Cutout / smart-crop bake produce data URLs — push those to S3 before Save bakes JSON. */
+  async function persistProcessedImage(slotKey, src) {
+    if (!src || !api?.setImageSlot) return src
+    if (isRemoteImageUrl(src)) return src
+    if (!String(src).startsWith('data:') && !String(src).startsWith('blob:')) return src
+    try {
+      setStatus(`Uploading processed ${slotKey} to S3…`)
+      const url = await uploadDataUrlToS3(src, { folder: `templates/${slotKey}` })
+      await api.setImageSlot(slotKey, url)
+      if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
+      setStatus(`${slotKey} stored on S3`)
+      return url
+    } catch (e) {
+      console.warn('[upload] processed image S3 failed:', e.message || e)
+      setStatus(`Processed image kept locally (S3: ${e.message || e})`)
+      return src
+    }
   }
 
   async function onExport() {
@@ -501,7 +522,8 @@ export default function EditorPage({ Nav }) {
       }
       setCutoutDone(true)
       if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
-      const src = res.src || api.getImageSlot?.('player')?.src
+      let src = res.src || api.getImageSlot?.('player')?.src
+      if (src) src = await persistProcessedImage('player', src)
       if (src) setSmartCrop((s) => (s ? { ...s, src } : s))
       setStatus('Background removed')
       return src || null
@@ -519,6 +541,10 @@ export default function EditorPage({ Nav }) {
     try {
       await api.applySmartCrop(smartCrop.key, { zoom, cropX, cropY, bake })
       if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
+      if (bake !== false) {
+        const src = api.getImageSlot?.(smartCrop.key)?.src
+        await persistProcessedImage(smartCrop.key, src)
+      }
       setStatus(
         `Fitted ${smartCrop.label.toLowerCase()} to ${smartCrop.frameW}×${smartCrop.frameH}`,
       )
@@ -1030,11 +1056,15 @@ export default function EditorPage({ Nav }) {
                         const file = e.target.files?.[0]
                         e.target.value = ''
                         if (!file || !api?.setImageSlot) return
-                        const url = await readFileAsDataURL(file)
-                        await api.setImageSlot(slot.key, url)
-                        if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
-                        if (slot.key === 'player') {
-                          await openSmartCropForSlot('player', url, slot.label)
+                        try {
+                          const url = await uploadSlotImage(file, slot.key)
+                          await api.setImageSlot(slot.key, url)
+                          if (api.listImageSlots) setImageSlots(api.listImageSlots() || [])
+                          if (slot.key === 'player') {
+                            await openSmartCropForSlot('player', url, slot.label)
+                          }
+                        } catch (err) {
+                          setStatus(err.message || 'Image upload failed')
                         }
                       }}
                     />

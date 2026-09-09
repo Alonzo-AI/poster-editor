@@ -12,6 +12,7 @@ import {
   listDbTemplates,
   mergeTemplateCatalog,
 } from '../api/templatesApi.js'
+import { uploadDataUrlToS3, uploadImageOrDataUrl, isRemoteImageUrl } from '../api/uploadsApi.js'
 
 const inputClass = 'ui-input'
 
@@ -292,13 +293,33 @@ export default function AutomatePage({ Nav }) {
     }
   }
 
-  function readFile(file) {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader()
-      r.onload = () => resolve(r.result)
-      r.onerror = reject
-      r.readAsDataURL(file)
+  async function uploadSlotImage(file, slotKey) {
+    setStatus(`Uploading ${slotKey} to S3…`)
+    const { url, via, error } = await uploadImageOrDataUrl(file, {
+      folder: `automate/${slotKey}`,
     })
+    if (via === 's3') setStatus(`${slotKey} uploaded`)
+    else setStatus(`S3 upload failed (${error}) · using local image`)
+    return url
+  }
+
+  async function persistProcessedImage(slotKey, src) {
+    if (!src) return src
+    if (isRemoteImageUrl(src)) return src
+    if (!String(src).startsWith('data:') && !String(src).startsWith('blob:')) return src
+    try {
+      setStatus(`Uploading processed ${slotKey} to S3…`)
+      const url = await uploadDataUrlToS3(src, { folder: `automate/${slotKey}` })
+      setImages((img) => ({ ...img, [slotKey]: url }))
+      try {
+        await api?.setImageSlot?.(slotKey, url)
+      } catch (_) {}
+      setStatus(`${slotKey} stored on S3`)
+      return url
+    } catch (e) {
+      console.warn('[upload] processed image S3 failed:', e.message || e)
+      return src
+    }
   }
 
   async function openPlayerSmartCrop(url) {
@@ -338,7 +359,8 @@ export default function AutomatePage({ Nav }) {
         return null
       }
       setCutoutDone(true)
-      const srcOut = res.src || api.getImageSlot?.('player')?.src
+      let srcOut = res.src || api.getImageSlot?.('player')?.src
+      if (srcOut) srcOut = await persistProcessedImage('player', srcOut)
       if (srcOut) {
         setImages((img) => ({ ...img, player: srcOut }))
         setSmartCrop((s) => (s ? { ...s, src: srcOut } : s))
@@ -359,10 +381,9 @@ export default function AutomatePage({ Nav }) {
     try {
       await apply(true, { resetLayout: false })
       await api.applySmartCrop?.(smartCrop.key, { zoom, cropX, cropY, bake })
-      const baked = api.getImageSlot?.('player')
-      if (baked?.src) {
-        setImages((img) => ({ ...img, player: baked.src }))
-      }
+      let src = api.getImageSlot?.('player')?.src
+      if (bake !== false && src) src = await persistProcessedImage('player', src)
+      if (src) setImages((img) => ({ ...img, player: src }))
       setStatus(`Player fitted to ${smartCrop.frameW}×${smartCrop.frameH}`)
       setSmartCrop(null)
     } catch (e) {
@@ -561,11 +582,15 @@ export default function AutomatePage({ Nav }) {
                       const file = e.target.files?.[0]
                       e.target.value = ''
                       if (!file) return
-                      const url = await readFile(file)
-                      if (slot.key === 'player') {
-                        await openPlayerSmartCrop(url)
-                      } else {
-                        setImages((img) => ({ ...img, [slot.key]: url }))
+                      try {
+                        const url = await uploadSlotImage(file, slot.key)
+                        if (slot.key === 'player') {
+                          await openPlayerSmartCrop(url)
+                        } else {
+                          setImages((img) => ({ ...img, [slot.key]: url }))
+                        }
+                      } catch (err) {
+                        setStatus(err.message || 'Image upload failed')
                       }
                     }}
                   />

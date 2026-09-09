@@ -5441,15 +5441,25 @@ function loadImage(key,file){
     }
     else if(key==="logo" && state.autoPalette && shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
     buildAssets(); buildLogoControls(); render();
-    const keepAlpha =
-      key==="logo" || key==="sponsor" || key==="conference" || key==="player" ||
-      file.type==="image/png" || imageHasAlpha(im);
-    const maxDim = (key==="logo"||key==="sponsor"||key==="conference") ? 760 : 1800;
-    compressImage(blobUrl, maxDim, keepAlpha?"image/png":"image/jpeg", keepAlpha?0.92:0.88)
-      .then(d=>{
-        if(!imagesOf()[key]) return;
-        imagesOf()[key].stored=d;
-        scheduleSave();
+    // Prefer S3 URL for durable Save; fall back to compressed data URL if upload fails.
+    uploadFileToS3(file, key)
+      .then(url=>{
+        if(!imagesOf()[key] || !url) return null;
+        return loadImageFromUrl(key, url).then(()=>url);
+      })
+      .catch(()=>null)
+      .then(url=>{
+        if(url || !imagesOf()[key]) return;
+        const keepAlpha =
+          key==="logo" || key==="sponsor" || key==="conference" || key==="player" ||
+          file.type==="image/png" || imageHasAlpha(im);
+        const maxDim = (key==="logo"||key==="sponsor"||key==="conference") ? 760 : 1800;
+        return compressImage(blobUrl, maxDim, keepAlpha?"image/png":"image/jpeg", keepAlpha?0.92:0.88)
+          .then(d=>{
+            if(!imagesOf()[key]) return;
+            imagesOf()[key].stored=d;
+            scheduleSave();
+          });
       });
   };
   im.onerror=()=>{
@@ -5457,6 +5467,19 @@ function loadImage(key,file){
     alert("Could not read that image. Try another PNG or JPG.");
   };
   im.src=blobUrl;
+}
+
+/** Upload a File to S3 via API (same-origin /api proxy). Returns https URL. */
+async function uploadFileToS3(file, slotKey){
+  if(!file) throw new Error("No file");
+  const body=new FormData();
+  body.append("file", file, file.name||`${slotKey||"image"}.png`);
+  body.append("folder", `templates/${slotKey||"uploads"}`);
+  const res=await fetch("/api/uploads",{ method:"POST", body });
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error||res.statusText||"Upload failed");
+  if(!data.url) throw new Error("Upload succeeded but no URL returned");
+  return data.url;
 }
 
 /* ---- palette extraction from the team logo ---- */
@@ -6835,17 +6858,28 @@ function restoreBakedTemplates(){
   return n;
 }
 
-/** Ensure blob: uploads are compressed to durable data URLs before Save. */
+/** Ensure blob: uploads are durable before Save. Keep http(s) S3 URLs as-is (no base64). */
 async function ensureDurableTemplateImages(templateId){
   const slots=imagesOf(templateId);
   const tasks=[];
   for(const key of TEMPLATE_DEFAULT_IMAGE_KEYS){
     const slot=slots[key];
     if(!slot?.src) continue;
-    if(slot.stored && !String(slot.stored).startsWith("blob:")) continue;
-    const src=slot.src;
+    const stored=String(slot.stored||"");
+    const src=String(slot.src||"");
+    const isRemote =
+      /^https?:\/\//i.test(stored) ||
+      /^https?:\/\//i.test(src) ||
+      stored.startsWith("/api/media/") ||
+      src.startsWith("/api/media/");
+    // Already durable remote URL (S3 / media proxy) — do not re-encode to base64
+    if(isRemote){
+      if(!stored && src) slot.stored=src;
+      continue;
+    }
+    if(slot.stored && !stored.startsWith("blob:")) continue;
     if(!src) continue;
-    const keepAlpha=key==="logo"||key==="sponsor"||key==="conference"||key==="player"||String(src).includes("image/png");
+    const keepAlpha=key==="logo"||key==="sponsor"||key==="conference"||key==="player"||src.includes("image/png");
     const maxDim=(key==="logo"||key==="sponsor"||key==="conference")?760:1800;
     tasks.push(
       compressImage(src, maxDim, keepAlpha?"image/png":"image/jpeg", keepAlpha?0.92:0.85)

@@ -103,7 +103,8 @@ export async function saveTemplateToDb(json, { id } = {}) {
   }
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 180000)
+  // Max wait for Save (not a pre-delay). Keep enough headroom for ~4MB templates on Atlas.
+  const timer = setTimeout(() => controller.abort(), 60000)
   let res
   try {
     res = await fetch(`${API}/templates/${encodeURIComponent(tid)}`, {

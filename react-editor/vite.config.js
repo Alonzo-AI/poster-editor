@@ -65,9 +65,9 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8787',
         changeOrigin: true,
-        // San_Jose-sized templates (~1MB+) are slow via Atlas — don't drop Saves
-        timeout: 180000,
-        proxyTimeout: 180000,
+        // Max proxy wait for Save/load — not a delay before the request starts
+        timeout: 60000,
+        proxyTimeout: 60000,
       },
     },
   },
