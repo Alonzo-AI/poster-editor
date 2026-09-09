@@ -515,6 +515,7 @@
   }
   .layer.txt.fixed-box > .txt-clip{
     position:absolute;inset:0;overflow:hidden;
+    overflow-clip-margin:0.2em;
     display:flex;flex-direction:column;justify-content:center;
   }
   .layer.txt.fixed-box > .txt-clip[data-valign="top"]{justify-content:flex-start;}
@@ -574,8 +575,14 @@
   /* React shell embed: hide vanilla chrome; keep stage + zoom toolbar */
   body.embed #side,body.embed .hint,body.embed #testBanner,body.embed #labBanner,body.embed #templateLoadBanner{display:none!important;}
   body.embed #app{grid-template-columns:1fr;width:100%;height:100%;}
-  body.embed html,body.embed body{width:100%;height:100%;overflow:hidden;}
-  body.embed #main{width:100%;height:100%;padding:0;background:transparent;}
+  body.embed html,body.embed body{width:100%;height:100%;overflow:hidden;background:#f4f7f8!important;}
+  body.embed #main{
+    width:100%;height:100%;padding:0;
+    background:#f4f7f8!important;
+  }
+  body.embed #stage{
+    box-shadow:0 8px 32px rgba(15,23,42,.12), 0 0 0 1px rgba(15,23,42,.06);
+  }
   body.embed #zoomlabel{display:none!important;}
   #labBanner{
     margin:0 0 12px;padding:11px 12px;border-radius:var(--radius);
@@ -1020,6 +1027,28 @@ function clearTextGradientPaint(node){
   node.style.backgroundClip="";
   node.style.webkitTextFillColor="";
 }
+/** Room for glyph ink so background-clip:text doesn't flatten letter tops. */
+function clearTextGradientInkRoom(node){
+  if(!node) return;
+  node.style.paddingTop="";
+  node.style.paddingBottom="";
+  node.style.marginTop="";
+  node.style.marginBottom="";
+  node.style.lineHeight="";
+  node.style.boxDecorationBreak="";
+  node.style.webkitBoxDecorationBreak="";
+}
+function applyTextGradientInkRoom(node){
+  if(!node) return;
+  // Expand paint box without growing layout footprint (margin cancels padding)
+  node.style.paddingTop="0.14em";
+  node.style.paddingBottom="0.12em";
+  node.style.marginTop="-0.14em";
+  node.style.marginBottom="-0.12em";
+  node.style.lineHeight="1.12";
+  node.style.boxDecorationBreak="clone";
+  node.style.webkitBoxDecorationBreak="clone";
+}
 /**
  * Paint text fill: solid color or gradient (same geo.gradient as shapes).
  * Prefer .txt-flow so layer chip background (bg) is unaffected.
@@ -1043,6 +1072,8 @@ function applyTextGradientPaint(el, def, g, textColor){
   clearTextGradientPaint(el);
   if(flow) clearTextGradientPaint(flow);
   el.querySelectorAll(".s-n, .s-l").forEach(clearTextGradientPaint);
+  clearTextGradientInkRoom(el);
+  if(flow) clearTextGradientInkRoom(flow);
 
   if(hollow){
     el.style.color="transparent";
@@ -1057,6 +1088,7 @@ function applyTextGradientPaint(el, def, g, textColor){
       node.style.backgroundClip="text";
       node.style.webkitTextFillColor="transparent";
       node.style.color="transparent";
+      applyTextGradientInkRoom(node);
     };
     if(def.kind==="stat"){
       applyClip(el);
@@ -4264,31 +4296,37 @@ function applyTextLayerVisuals(el, def, g, layerId){
     const n=el.querySelector(".s-n"), l=el.querySelector(".s-l");
     const vaporStatColor=state.template==="vapor_motion" ? vaporMotionTextColorForLayer(id) : null;
     const vaporStatLabelColor=state.template==="vapor_motion" ? vaporMotionLayerTokens().muted : null;
+    const fillPaint=applyTextGradientPaint(el, def, g, textColor);
     if(n){
-      n.style.color=vaporStatColor || textColor;
-      applyTextStrokePaint(n, def, g, vaporStatColor || textColor);
+      if(!fillPaint.grad && !hollow){
+        n.style.color=vaporStatColor || textColor;
+        applyTextStrokePaint(n, def, g, vaporStatColor || textColor);
+      }
     }
     if(l){
-      const lc=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
-      l.style.color=lc;
-      applyTextStrokePaint(l, def, g, lc);
+      if(!fillPaint.grad && !hollow){
+        const lc=vaporStatLabelColor || roleColor(g.labelColor || g.color || def.color || "white");
+        l.style.color=lc;
+        applyTextStrokePaint(l, def, g, lc);
+      }
     }
     if(g.manualSize) syncTextLayerHeight(el, g, def);
     else applyTextBoxAlign(el, def, g);
     return;
   }
+  const fillPaint=applyTextGradientPaint(el, def, g, textColor);
   if(hollow){
-    el.style.color="transparent";
     el.style.textShadow="";
   } else {
-    el.style.color=textColor;
-    el.style.textShadow=resolveTextShadow(g, def, size, textColor, id);
+    el.style.textShadow=resolveTextShadow(g, def, size, fillPaint.fillHex||textColor, id);
   }
-  applyTextStrokePaint(el, def, g, textColor);
+  applyTextStrokePaint(el, def, g, fillPaint.fillHex||textColor);
   const flow=textFlowEl(el);
-  if(flow) applyTextStrokePaint(flow, def, g, textColor);
+  if(flow) applyTextStrokePaint(flow, def, g, fillPaint.fillHex||textColor);
   el.style.textTransform=g.textTransform ?? def.textTransform ?? "none";
   el.style.letterSpacing=((g.ls ?? def.ls)||0)+"px";
+  // Keep template lh, but don't crush gradient ink room (applyTextGradientInkRoom sets flow lh)
+  if(!fillPaint.grad) el.style.lineHeight = (g.lh ?? def.lh ?? 1.0);
   applyTextChrome(el, def, g, id);
   applyTextBoxAlign(el, def, g);
   if(def.kind!=="stat") fitTextToFixedBox(el, g, def);
@@ -6697,7 +6735,8 @@ document.getElementById("libSlotFilter")?.querySelectorAll("[data-slot]").forEac
     buildAssetLibrary();
   };
 });
-async function captureStagePng(){
+async function captureStagePng(opts={}){
+  const outScale=opts.scale!=null?+opts.scale:2;
   const prevSel=state.selected; select(null);
   const guideWasOn=state.showFrameGuide;
   stage.classList.remove("frameGuide");
@@ -6720,11 +6759,11 @@ async function captureStagePng(){
   stage.style.transform="none";
   if(document.fonts?.ready) await document.fonts.ready;
   render();
-  await new Promise(r=>setTimeout(r,120));
+  await new Promise(r=>setTimeout(r, opts.settleMs!=null?opts.settleMs:120));
   let canvas;
   try{
     canvas=await html2canvas(stage,{
-      scale:2,
+      scale:outScale,
       backgroundColor:null,
       useCORS:true,
       logging:false,
@@ -6771,6 +6810,69 @@ async function captureStagePng(){
   }
   return canvas;
 }
+
+/* ---- Browser EyeDropper (Chrome/Edge) ---- */
+function applySampledHexToSelection(hex){
+  const lid=state.selected;
+  if(!lid || !layersOf()[lid]) return false;
+  const def=layersOf()[lid];
+  const isBlock=def.type==="block" || !!def.shape || /^shape_/.test(lid);
+  const clean=normalizeHex(hex) || hex;
+  if(!clean) return false;
+  pushUndo();
+  if(def.type==="text" && !isBlock){
+    window.__RENDER_API_V3__.patchLayerStyle(lid, { color:clean, gradient:null });
+  } else if(isBlock || def.type==="glass"){
+    window.__RENDER_API_V3__.patchLayerStyle(lid, { fill:clean, color:clean, gradient:null });
+  } else {
+    window.__RENDER_API_V3__.patchLayerStyle(lid, { color:clean, borderColor:clean });
+  }
+  return true;
+}
+async function startColorSample(opts={}){
+  const apply=opts.apply!==false;
+  if(typeof window.EyeDropper!=="function"){
+    return {
+      ok:false,
+      unsupported:true,
+      error:"EyeDropper API is not available in this browser. Use Chrome or Edge.",
+      snapshot:buildEditorSnapshot(),
+    };
+  }
+  if(!window.isSecureContext){
+    return {
+      ok:false,
+      unsupported:true,
+      error:"Eyedropper needs http://localhost or HTTPS (LAN IPs are blocked).",
+      snapshot:buildEditorSnapshot(),
+    };
+  }
+  try{
+    // Must be called directly from a user gesture (no awaits before open)
+    const result=await new window.EyeDropper().open();
+    const raw=result?.sRGBHex || "";
+    const hex=normalizeHex(raw) || (/^#[0-9a-fA-F]{6}$/.test(raw)?raw.toLowerCase():null);
+    if(!hex){
+      return { ok:false, error:"No colour returned", snapshot:buildEditorSnapshot() };
+    }
+    try{ opts.onPreview?.(hex); }catch(_){}
+    if(apply) applySampledHexToSelection(hex);
+    return { ok:true, hex, applied:!!apply, snapshot:buildEditorSnapshot() };
+  }catch(err){
+    if(err && (err.name==="AbortError" || /abort/i.test(String(err.message||"")))){
+      return { ok:false, cancelled:true, reason:"abort", snapshot:buildEditorSnapshot() };
+    }
+    return { ok:false, error:String(err?.message||err), snapshot:buildEditorSnapshot() };
+  }
+}
+function eyeDropperSupported(){
+  return typeof window.EyeDropper==="function" && !!window.isSecureContext;
+}
+function cancelColorSample(){
+  // EyeDropper is dismissed by the user (Esc); nothing to tear down here
+  return { ok:true };
+}
+function isColorSampleActive(){ return false; }
 const exportBtn=document.getElementById("exportBtn");
 exportBtn.onclick=async ()=>{
   exportBtn.textContent="Rendering…"; exportBtn.disabled=true;
@@ -7084,6 +7186,11 @@ window.__RENDER_API_V3__={
       canvas.toBlob(b=>{ if(!b) reject(new Error("PNG encode failed")); else b.arrayBuffer().then(resolve); }, "image/png");
     });
   },
+  /** Click the poster to sample a pixel colour (applies to selected text/shape by default). */
+  startColorSample(opts){ return startColorSample(opts||{}); },
+  cancelColorSample(){ return cancelColorSample(); },
+  isColorSampleActive(){ return isColorSampleActive(); },
+  eyeDropperSupported(){ return eyeDropperSupported(); },
   render(){ render(); },
   getState(){ return serializable(); },
   applyStory,

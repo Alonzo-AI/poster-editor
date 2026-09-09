@@ -122,6 +122,20 @@
       "slot": "effect",
       "src": "assets/effects/black-blurred-gradient-bottom-shadow.png",
       "tags": ["effect", "overlay", "shadow"]
+    },
+    {
+      "id": "effect-8650",
+      "name": "Effect 8650",
+      "slot": "effect",
+      "src": "assets/effects/8650.jpg",
+      "tags": ["effect", "overlay"]
+    },
+    {
+      "id": "effect-underscore-1",
+      "name": "Effect overlay",
+      "slot": "effect",
+      "src": "assets/effects/_ (1).jpeg",
+      "tags": ["effect", "overlay"]
     }
   ]
 }

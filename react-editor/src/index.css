@@ -234,10 +234,9 @@ input[type='range'] {
   box-shadow: 0 0 0 1px #0008;
 }
 
-/* Canvas well — soft sky field so the poster is the only dark object */
+/* Canvas well — Canva-like light desk behind the poster */
 .ui-canvas-well {
-  background:
-    radial-gradient(120% 80% at 50% 40%, #ffffff 0%, #e8f3fb 55%, #d9ebf7 100%);
+  background: #f4f7f8;
 }
 
 @media (prefers-reduced-motion: reduce) {

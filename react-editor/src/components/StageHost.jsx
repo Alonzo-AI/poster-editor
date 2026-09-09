@@ -6,7 +6,7 @@ export default function StageHost({ iframeRef, src, onLoad, className = '' }) {
         title="Poster stage"
         src={src}
         onLoad={onLoad}
-        className="absolute inset-0 h-full w-full border-0 bg-inset"
+        className="absolute inset-0 h-full w-full border-0 bg-[#f4f7f8]"
       />
     </div>
   )

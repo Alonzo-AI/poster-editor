@@ -63,6 +63,7 @@ export default function StudioSidePanel({
 }) {
   const [fonts, setFonts] = useState([])
   const [filter, setFilter] = useState('')
+  const [pickError, setPickError] = useState('')
 
   useEffect(() => {
     if (!api?.listFontOptions) return
@@ -127,6 +128,47 @@ export default function StudioSidePanel({
       : /^#[0-9a-fA-F]{6}$/i.test(g.fillHex || '')
         ? g.fillHex
         : '#111827'
+
+  const eyeDropperOk =
+    typeof window.EyeDropper === 'function' && !!window.isSecureContext
+
+  async function pickWithEyeDropper() {
+    setPickError('')
+    // EyeDropper MUST open in the same user-gesture turn — no setState before .open()
+    if (typeof window.EyeDropper !== 'function') {
+      setPickError('Eyedropper needs Chrome or Edge')
+      return
+    }
+    if (!window.isSecureContext) {
+      setPickError(
+        'Eyedropper needs http://localhost or HTTPS (not a LAN IP like http://192.168…)',
+      )
+      return
+    }
+    try {
+      const result = await new window.EyeDropper().open()
+      const hex = String(result?.sRGBHex || '').toLowerCase()
+      if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
+        setPickError('No colour returned')
+        return
+      }
+      patch(
+        selected.isText
+          ? { color: hex, gradient: null }
+          : { fill: hex, color: hex, gradient: null },
+      )
+    } catch (e) {
+      if (e?.name === 'AbortError') return
+      const msg = e?.message || 'Pick failed'
+      if (/secure|NotAllowed|gesture|activation/i.test(msg)) {
+        setPickError(
+          'Eyedropper blocked — open the app on http://localhost in Chrome/Edge, then try again',
+        )
+      } else {
+        setPickError(msg)
+      }
+    }
+  }
 
   const shadowOn = !!g.shadow
   const effect = shadowOn ? g.shadowEffect || 'drop' : null
@@ -383,8 +425,8 @@ export default function StudioSidePanel({
                   onChange={(e) =>
                     patch(
                       selected.isText
-                        ? { color: e.target.value }
-                        : { fill: e.target.value, color: e.target.value },
+                        ? { color: e.target.value, gradient: null }
+                        : { fill: e.target.value, color: e.target.value, gradient: null },
                     )
                   }
                 />
@@ -396,15 +438,30 @@ export default function StudioSidePanel({
                     if (!/^#[0-9a-fA-F]{6}$/.test(v)) return
                     patch(
                       selected.isText
-                        ? { color: v }
-                        : { fill: v, color: v },
+                        ? { color: v, gradient: null }
+                        : { fill: v, color: v, gradient: null },
                     )
                   }}
                 />
               </div>
             </label>
+
+            <button
+              type="button"
+              className="ui-btn mb-2 w-full py-2.5 text-[13px]"
+              onClick={pickWithEyeDropper}
+            >
+              Eyedropper
+            </button>
+            {pickError ? (
+              <p className="mb-2 text-[11px] text-red-600">{pickError}</p>
+            ) : null}
             <p className="text-[11px] text-muted">
-              Brand roles and gradients stay in the Styles panel on the right.
+              {eyeDropperOk
+                ? 'Opens the browser eyedropper — sample any pixel on screen. Esc cancels.'
+                : typeof window.EyeDropper !== 'function'
+                  ? 'This browser has no Eyedropper — use Chrome or Edge.'
+                  : 'Open via http://localhost (HTTPS also works). LAN IPs block Eyedropper.'}
             </p>
           </>
         )}

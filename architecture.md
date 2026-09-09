@@ -85,7 +85,7 @@ index.html engine (#stage + paint/drag/bake)
 templates / renderer / html2canvas
 ```
 
-- **UI only:** Abyssale-like layout (layers | canvas | properties) plus **Canva-style context bar** above the stage and **Font / Effects / Position / Color** flyout (`ContextToolbar` + `StudioSidePanel`). No groups / Auto Layout / multi-format. Flyouts call existing `patchLayerStyle` (z-order, align-to-page, shadows, hollow, fonts) — no second renderer.
+- **UI only:** Abyssale-like layout (layers | canvas | properties) plus **Canva-style context bar** above the stage and **Font / Effects / Position / Color** flyout (`ContextToolbar` + `StudioSidePanel`). Color panel **Eyedropper** uses the browser `EyeDropper` API (Chrome/Edge, secure context: `localhost` or HTTPS — LAN `http://192.168…` is blocked). Must call `.open()` in the same click turn (no React `setState` first). No groups / Auto Layout / multi-format. Flyouts call existing `patchLayerStyle` — no second renderer.
 - **Do not** reimplement `render()` or pointer handles in React.
 - Embed CSS: `body.embed` hides `#side` / banners; headless unchanged for Automate.
 - Bridge extras: `subscribe`, `listLayers`, `selectLayer`, `setLayerGeometry`, `bakeTemplate`, `createTemplate`, `addTextField`, etc. (see `react-editor/README.md`).
@@ -310,7 +310,7 @@ Optional auto palettes:
 **Text fill & stroke (Editor inspector)**
 
 - Fill: role (`primary`, `white`, …) **or** `#RRGGBB` via Hex / swatch → stored on layer as `color`.
-- Optional **gradient** (same `gradient: { type, from, to, angle }` as shapes) → CSS `background-clip: text` on `.txt-flow` (chip `bg` uses `backgroundColor` so it doesn’t wipe the fill). Baked on Save.
+- Optional **gradient** (same `gradient: { type, from, to, angle }` as shapes) → CSS `background-clip: text` on `.txt-flow` (chip `bg` uses `backgroundColor` so it doesn’t wipe the fill). Gradient paint adds slight padding/line-height on `.txt-flow` so glyph tops aren’t flattened (tight `lh:1` + clip). Baked on Save.
 - Stroke: optional outline (`stroke` + `strokeW`) with the same role-or-hex pattern → `webkitTextStroke` at paint time; baked into frozen JSON when enabled.
 - Effects (React Styles panel): **Drop** / **Glow** / **Echo** → CSS `text-shadow` via `shadowEffect`, `shadowDir`, `shadowOffset`, `shadowBlur`, `shadowOpacity`, `shadowColor`. Baked on Save; Automate keeps them frozen.
 
@@ -357,6 +357,10 @@ __RENDER_API_V3__ = {
   undo / redo / pushUndo / getHistoryState,  // layout history (React Undo/Redo)
   exportPng(),              // data URL
   exportPngBuffer(),
+  startColorSample({ apply }), // EyeDropper API (Chrome/Edge); pick any on-screen pixel
+  cancelColorSample(),
+  isColorSampleActive(),
+  eyeDropperSupported(),
   render(),
   applyStory,
   loadImageFromUrl,
