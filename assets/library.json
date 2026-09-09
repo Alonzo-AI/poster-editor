@@ -2,34 +2,6 @@
   "version": 4,
   "assets": [
     {
-      "id": "bg-ccbg",
-      "name": "Coastal Carolina BG",
-      "slot": "background",
-      "src": "assets/background/ccbg.png",
-      "tags": ["background"]
-    },
-    {
-      "id": "bg-coastal-ref",
-      "name": "Coastal Carolina ref",
-      "slot": "background",
-      "src": "assets/background/coastal-carolina-ref.jpg",
-      "tags": ["background", "reference"]
-    },
-    {
-      "id": "bg-arkansas-ref",
-      "name": "Arkansas ref",
-      "slot": "background",
-      "src": "assets/background/arkansas-ref.jpg",
-      "tags": ["background", "reference"]
-    },
-    {
-      "id": "conf-app-state",
-      "name": "Appalachian State",
-      "slot": "conference",
-      "src": "assets/conference/Appalachian-St (1).jpg",
-      "tags": ["conference"]
-    },
-    {
       "id": "shape-circle",
       "name": "Circle",
       "slot": "shape",
@@ -115,27 +87,6 @@
       "slot": "shape",
       "src": "assets/shape/outlook-shape.png",
       "tags": ["shape"]
-    },
-    {
-      "id": "effect-bottom-shadow",
-      "name": "Bottom shadow blur",
-      "slot": "effect",
-      "src": "assets/effects/black-blurred-gradient-bottom-shadow.png",
-      "tags": ["effect", "overlay", "shadow"]
-    },
-    {
-      "id": "effect-8650",
-      "name": "Effect 8650",
-      "slot": "effect",
-      "src": "assets/effects/8650.jpg",
-      "tags": ["effect", "overlay"]
-    },
-    {
-      "id": "effect-underscore-1",
-      "name": "Effect overlay",
-      "slot": "effect",
-      "src": "assets/effects/_ (1).jpeg",
-      "tags": ["effect", "overlay"]
     }
   ]
 }
