@@ -77,6 +77,8 @@ export default function AutomatePage({ Nav }) {
   const [imageSlots, setImageSlots] = useState([])
   const [apiOnline, setApiOnline] = useState(null)
   const layoutTemplateRef = useRef(null)
+  /** Per-template Automate fill values — never share one form across posters. */
+  const textByTemplateRef = useRef({})
   const [smartCrop, setSmartCrop] = useState(null)
   const [cutoutBusy, setCutoutBusy] = useState(false)
   const [cutoutDone, setCutoutDone] = useState(false)
@@ -153,13 +155,36 @@ export default function AutomatePage({ Nav }) {
           updatedAt: templates.find((t) => t.id === templateId)?.updatedAt,
         })
         setTemplates(mergeTemplateCatalog(dbCatalog, api.listTemplates?.() || []))
+
+        // Each template keeps its own fill values (JSON defaults / session cache).
+        // Do not reuse the previous poster’s form state on switch.
+        let textForPayload = { ...text }
+        if (switching) {
+          const cached = textByTemplateRef.current[templateId]
+          if (cached && typeof cached === 'object') {
+            textForPayload = { ...cached }
+          } else {
+            const listed = (api.listTemplates?.() || []).find((t) => t.id === templateId)
+            const fieldList = listed?.fields || templates.find((t) => t.id === templateId)?.fields || []
+            textForPayload = {}
+            for (const f of fieldList) {
+              if (!f?.key) continue
+              textForPayload[f.key] = f.placeholder != null ? String(f.placeholder) : ''
+            }
+            textByTemplateRef.current[templateId] = { ...textForPayload }
+          }
+          setText(textForPayload)
+        } else if (templateId) {
+          textByTemplateRef.current[templateId] = { ...textForPayload }
+        }
+
         const payload = {
           template: templateId,
           auto_palette: false,
           // First paint / Reset: lock to baked positions. Later fills keep drag nudges.
           freeze_layout: shouldReset,
           preserve_layout: !shouldReset,
-          text: { ...text },
+          text: textForPayload,
           colors: { ...colors },
         }
         if (includeImages) {
@@ -218,7 +243,23 @@ export default function AutomatePage({ Nav }) {
       }
       const snap = api.getEditorSnapshot?.()
       if (snap?.text && typeof snap.text === 'object') {
-        setText((prev) => ({ ...prev, ...snap.text }))
+        const fieldList = Array.isArray(nextFields) && nextFields.length ? nextFields : fields
+        const next = {}
+        if (fieldList.length) {
+          for (const f of fieldList) {
+            const key = f.key || f
+            if (snap.text[key] != null) next[key] = snap.text[key]
+            else if (textByTemplateRef.current[templateId]?.[key] != null) {
+              next[key] = textByTemplateRef.current[templateId][key]
+            } else {
+              next[key] = f.placeholder != null ? String(f.placeholder) : ''
+            }
+          }
+        } else {
+          Object.assign(next, snap.text)
+        }
+        if (templateId) textByTemplateRef.current[templateId] = { ...next }
+        setText(next)
       }
       if (snap?.colors?.primary || snap?.colors?.secondary) {
         setColors((c) => ({
@@ -308,14 +349,16 @@ export default function AutomatePage({ Nav }) {
     if (!t) return
     setFields(t.fields || [])
     setImageSlots(t.images || [])
-    setText((prev) => {
-      const next = { ...prev }
-      ;(t.fields || []).forEach((f) => {
-        if (next[f.key] == null) next[f.key] = f.placeholder || ''
-      })
-      return next
-    })
+    // Text values hydrate on switch inside apply() from per-template cache / JSON placeholders.
+    // Do not merge previous template’s form into this one here.
   }, [templateId, templates])
+
+  // Keep session cache in sync while typing on the active template
+  useEffect(() => {
+    if (!templateId) return
+    if (layoutTemplateRef.current !== templateId) return
+    textByTemplateRef.current[templateId] = { ...text }
+  }, [text, templateId])
 
   // Auto-apply fill values — paused while Edit automate is open so canvas tools don't fight the form
   useEffect(() => {

@@ -2363,7 +2363,13 @@ function collectFieldLabelsForBake(templateId, layers, swapFields){
   }
   return out;
 }
-function textFieldPlaceholderFor(bind, layers){
+function textFieldPlaceholderFor(bind, layers, templateId){
+  const tid=templateId||state.template;
+  // Prefer baked Save values for this template (Automate must not inherit another poster’s session text)
+  const baked=TEMPLATES[tid]?._json?.defaults?.text;
+  if(baked && typeof baked==="object" && baked[bind]!=null && String(baked[bind]).length){
+    return String(baked[bind]);
+  }
   for(const def of Object.values(layers||{})){
     if(!def) continue;
     if(def.bind===bind && def.placeholder) return def.placeholder;
@@ -7109,6 +7115,13 @@ async function bakeEditorIntoTemplate(download=true){
   }
 
   const json=buildFrozenTemplateJSON({ id, name });
+  // Lock college + category to the template being edited (src), never leave unset for UI filters to fill.
+  {
+    const srcTeam=templateTeamOf(state.template);
+    json.teamKey=srcTeam.teamKey;
+    json.teamLabel=srcTeam.teamLabel;
+    json.category=normalizeTemplateCategory(json.category ?? templateCategoryOf(state.template));
+  }
   const shapeCount=json._bakeMeta?.shapeCount||0;
   const imageSlots=json._bakeMeta?.imageSlots||[];
   const loader=window.PosterTemplateLoader;
@@ -7848,8 +7861,20 @@ window.__RENDER_API_V3__={
     if(payload.auto_palette===false) state.autoPalette=false;
     else if(payload.auto_palette===true) state.autoPalette=true;
     if(payload.story) applyStory(payload.story);
+    // On template switch: load THIS template’s JSON text first so prior Automate fills do not leak
+    const switchedTpl=state.template!==prevTpl;
+    if(switchedTpl){
+      applyTemplateTextFromPlaceholders(state.template, { overwrite:true });
+    }
     if(payload.text && typeof payload.text==="object"){
-      Object.assign(state.text, payload.text);
+      if(switchedTpl){
+        const allowed=new Set(templateInputFields(state.template).map((f)=>f.key));
+        for(const [k,v] of Object.entries(payload.text)){
+          if(allowed.has(k)) state.text[k]=v;
+        }
+      } else {
+        Object.assign(state.text, payload.text);
+      }
       buildTextFields();
       buildCaptionColorControls();
     }
@@ -8801,7 +8826,7 @@ function templateInputFields(templateId){
   return binds.map(key=>({
     key,
     label:textFieldLabelFor(key, layers, templateId),
-    placeholder:textFieldPlaceholderFor(key, layers),
+    placeholder:textFieldPlaceholderFor(key, layers, templateId),
   }));
 }
 

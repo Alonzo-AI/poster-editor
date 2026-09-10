@@ -640,27 +640,24 @@ export default function EditorPage({ Nav }) {
       if (json) {
         json.id = id
         json.name = name
-        json.category =
-          json.category ||
-          snapshot?.category ||
-          listed?.category ||
-          formatCategory ||
-          'player'
-        {
-          const teamKey = normalizeTeamKey(
-            json.teamKey ||
-              snapshot?.teamKey ||
-              listed?.teamKey ||
-              formatTeamKey ||
-              UNASSIGNED_TEAM_KEY,
-          )
-          const teamLabel = normalizeTeamLabel(
-            json.teamLabel || snapshot?.teamLabel || listed?.teamLabel,
-            teamKey,
-          )
-          json.teamKey = teamKey
-          json.teamLabel = teamLabel
-        }
+        // Ownership is locked to THIS template (engine bake + listTemplates).
+        // Never use sidebar formatTeamKey / formatCategory or a stale React snapshot —
+        // those are filters only and were causing Saves to land under the wrong college.
+        const liveMeta =
+          (api.listTemplates?.() || []).find((t) => t.id === id) || listed || null
+        const catRaw = String(json.category ?? liveMeta?.category ?? 'player').trim()
+        json.category = ['player', 'team', 'player_no_image', 'nostalgia'].includes(catRaw)
+          ? catRaw
+          : 'player'
+        const teamKey = normalizeTeamKey(
+          json.teamKey ?? liveMeta?.teamKey ?? UNASSIGNED_TEAM_KEY,
+        )
+        const teamLabel = normalizeTeamLabel(
+          json.teamLabel ?? liveMeta?.teamLabel,
+          teamKey,
+        )
+        json.teamKey = teamKey
+        json.teamLabel = teamLabel
       }
       if (json && !download) {
         try {
