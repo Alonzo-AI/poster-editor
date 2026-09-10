@@ -70,6 +70,7 @@ export default function EditorPage({ Nav }) {
     { id: 'player', label: 'Player' },
     { id: 'team', label: 'Team' },
     { id: 'player_no_image', label: 'No image' },
+    { id: 'nostalgia', label: 'Nostalgia' },
   ]
 
   const filteredTemplates = useMemo(

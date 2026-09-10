@@ -21,6 +21,7 @@ const CATEGORIES = [
   { id: 'player', label: 'Player' },
   { id: 'team', label: 'Team' },
   { id: 'player_no_image', label: 'No image' },
+  { id: 'nostalgia', label: 'Nostalgia' },
 ]
 
 function pickDefaultTemplate(list) {

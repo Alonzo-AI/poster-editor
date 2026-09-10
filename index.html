@@ -1418,11 +1418,13 @@ const TEMPLATE_CATEGORIES = [
   { id:"player", label:"Player poster" },
   { id:"team", label:"Team poster" },
   { id:"player_no_image", label:"Player (no image)" },
+  { id:"nostalgia", label:"Nostalgia" },
 ];
 function normalizeTemplateCategory(raw){
   const v=String(raw||"").trim().toLowerCase().replace(/[\s-]+/g,"_");
   if(v==="team"||v==="team_poster") return "team";
   if(v==="player_no_image"||v==="player_noimage"||v==="no_image"||v==="player_without_image") return "player_no_image";
+  if(v==="nostalgia"||v==="nostalgic") return "nostalgia";
   return "player";
 }
 function templateCategoryOf(templateId){
@@ -1460,6 +1462,7 @@ function blankLayersForCategory(category){
       seedText:{ playerName:"PLAYER NAME" },
     };
   }
+  // player + nostalgia: same starter slots (player photo + logos + name)
   return {
     layers:[
       bg,

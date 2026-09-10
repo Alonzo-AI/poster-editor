@@ -37,7 +37,7 @@ const templateSchema = new mongoose.Schema(
     name: { type: String, required: true },
     category: {
       type: String,
-      enum: ['player', 'team', 'player_no_image'],
+      enum: ['player', 'team', 'player_no_image', 'nostalgia'],
       default: 'player',
       index: true,
     },
@@ -65,6 +65,7 @@ function normalizeCategory(raw) {
   ) {
     return 'player_no_image'
   }
+  if (v === 'nostalgia' || v === 'nostalgic') return 'nostalgia'
   return 'player'
 }
 
