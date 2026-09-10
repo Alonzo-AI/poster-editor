@@ -7815,6 +7815,37 @@ window.__RENDER_API_V3__={
   listLayers(){ return buildEditorSnapshot().layers; },
   getSelection(){ return buildEditorSnapshot().selected; },
   selectLayer(id){ select(id||null); return buildEditorSnapshot(); },
+  /**
+   * Drag-reorder from React Layers panel.
+   * orderedIdsFrontFirst[0] = front-most (highest z). Only updates z; no geometry/text changes.
+   */
+  reorderLayers(orderedIdsFrontFirst){
+    const ids=(Array.isArray(orderedIdsFrontFirst)?orderedIdsFrontFirst:[]).map(String).filter(Boolean);
+    if(!ids.length) return buildEditorSnapshot();
+    pushUndo();
+    const L=ensureLayout();
+    const defs=layersOf()||{};
+    const n=ids.length;
+    const json=TEMPLATES[state.template]?._json;
+    ids.forEach((id, i)=>{
+      if(!defs[id]) return;
+      // Front of list → highest z. Keep gaps of 10 for [ / ] nudges.
+      const z=(n - i) * 10;
+      if(!L[id]) L[id]={};
+      L[id].z=z;
+      try{ defs[id].z=z; }catch(_){}
+      try{
+        if(json && Array.isArray(json.layers)){
+          const jl=json.layers.find(l=>l && l.id===id);
+          if(jl) jl.z=z;
+        }
+      }catch(_){}
+    });
+    render();
+    scheduleSave();
+    notifyEditorBridge("reorder-layers");
+    return buildEditorSnapshot();
+  },
   subscribe(cb){
     if(typeof cb!=="function") return ()=>{};
     _editorSubs.add(cb);

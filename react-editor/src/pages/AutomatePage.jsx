@@ -4,6 +4,7 @@ import SmartCropModal from '../components/SmartCropModal.jsx'
 import PropertiesPanel from '../components/PropertiesPanel.jsx'
 import ContextToolbar from '../components/ContextToolbar.jsx'
 import StudioSidePanel from '../components/StudioSidePanel.jsx'
+import LayerList from '../components/LayerList.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import {
   apiHealth,
@@ -704,29 +705,12 @@ export default function AutomatePage({ Nav }) {
           </div>
           <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
             <Panel title="Layers">
-              <ul className="space-y-0.5">
-                {[...layers].reverse().map((layer) => (
-                  <li key={layer.id}>
-                    <button
-                      type="button"
-                      onClick={() => api?.selectLayer?.(layer.id)}
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] ${
-                        snapshot?.selectedId === layer.id
-                          ? 'bg-panel2 text-paper'
-                          : 'text-dim hover:bg-inset hover:text-paper'
-                      }`}
-                    >
-                      <span className="w-10 shrink-0 text-[10px] uppercase text-muted">
-                        {layer.type}
-                      </span>
-                      <span className="truncate">{layer.label}</span>
-                    </button>
-                  </li>
-                ))}
-                {!layers.length ? (
-                  <li className="text-[11px] text-muted">No layers</li>
-                ) : null}
-              </ul>
+              <LayerList
+                layers={layers}
+                selectedId={snapshot?.selectedId}
+                api={api}
+                emptyText="No layers"
+              />
             </Panel>
 
             <Panel title="Add">

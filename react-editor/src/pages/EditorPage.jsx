@@ -4,6 +4,7 @@ import PropertiesPanel from '../components/PropertiesPanel.jsx'
 import ContextToolbar from '../components/ContextToolbar.jsx'
 import StudioSidePanel from '../components/StudioSidePanel.jsx'
 import SmartCropModal from '../components/SmartCropModal.jsx'
+import LayerList from '../components/LayerList.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
 import {
   apiHealth,
@@ -917,34 +918,12 @@ export default function EditorPage({ Nav }) {
             </Panel>
 
             <Panel title="Layers">
-              <ul className="space-y-0.5">
-                {layers.map((layer) => (
-                  <li key={layer.id}>
-                    <button
-                      type="button"
-                      onClick={() => api?.selectLayer?.(layer.id)}
-                      className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[12px] ${
-                        snapshot?.selectedId === layer.id
-                          ? 'bg-panel2 text-paper'
-                          : 'text-dim hover:bg-inset hover:text-paper'
-                      }`}
-                    >
-                      <span className="w-10 shrink-0 text-[10px] uppercase text-muted">
-                        {layer.type}
-                      </span>
-                      <span className="truncate">{layer.label}</span>
-                      {layer.locked ? (
-                        <span className="ml-auto shrink-0 text-[10px] uppercase tracking-wide text-muted">
-                          Locked
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                ))}
-                {!layers.length && (
-                  <li className="px-2 text-[11px] text-muted">{ready ? 'No layers' : 'Loading…'}</li>
-                )}
-              </ul>
+              <LayerList
+                layers={layers}
+                selectedId={snapshot?.selectedId}
+                api={api}
+                emptyText={ready ? 'No layers' : 'Loading…'}
+              />
             </Panel>
 
             <Panel title="Images">
