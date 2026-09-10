@@ -22,6 +22,31 @@ export async function listDbTemplates({ lite = true } = {}) {
 /** Alias used by Editor/Automate pages */
 export const fetchDbTemplates = listDbTemplates
 
+/** Persisted team folders (including empty). */
+export async function listTeamFolders() {
+  const res = await fetch(`${API}/teams`)
+  const data = await parse(res)
+  return data.teams || []
+}
+
+export async function upsertTeamFolder({ teamKey, teamLabel } = {}) {
+  const key = String(teamKey || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^\w]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+  if (!key || key === '__unassigned__') throw new Error('Invalid team folder')
+  const res = await fetch(`${API}/teams/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ teamKey: key, teamLabel: teamLabel || key }),
+  })
+  const data = await parse(res)
+  return data.team || { teamKey: key, teamLabel: teamLabel || key }
+}
+
 /**
  * Merge Mongo name catalog + engine list so DB names never flicker away
  * when the iframe temporarily only knows disk templates.
@@ -40,6 +65,8 @@ export function mergeTemplateCatalog(dbLite = [], engineList = []) {
       id: t.id,
       name: t.name || prev.name || t.id,
       category: t.category || prev.category || 'player',
+      teamKey: t.teamKey || prev.teamKey || '__unassigned__',
+      teamLabel: t.teamLabel || prev.teamLabel || 'Unassigned',
       frozen: t.frozen !== false,
       disk: !!prev.disk,
       fields: prev.fields || [],
@@ -70,11 +97,15 @@ export async function fetchDbTemplate(id) {
   json.id = row.id || json.id || tid
   json.name = row.name || json.name || json.id
   json.category = row.category || json.category || 'player'
+  json.teamKey = row.teamKey || json.teamKey || '__unassigned__'
+  json.teamLabel = row.teamLabel || json.teamLabel || 'Unassigned'
   delete json._remoteLite
   return {
     id: json.id,
     name: json.name,
     category: json.category,
+    teamKey: json.teamKey,
+    teamLabel: json.teamLabel,
     frozen: row.frozen !== false,
     updatedAt: row.updatedAt,
     json,
@@ -124,6 +155,24 @@ export async function saveTemplateToDb(json, { id } = {}) {
   return parse(res)
 }
 
+/** Metadata-only: rename template or update team folder label (no layout rewrite). */
+export async function patchTemplateMeta(id, patch = {}) {
+  const tid = String(id || '')
+    .trim()
+    .replace(/[^\w-]+/g, '_')
+  if (!tid) throw new Error('Template id required')
+  const body = {}
+  if (patch.name != null) body.name = String(patch.name).trim()
+  if (patch.teamKey != null) body.teamKey = patch.teamKey
+  if (patch.teamLabel != null) body.teamLabel = patch.teamLabel
+  const res = await fetch(`${API}/templates/${encodeURIComponent(tid)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  return parse(res)
+}
+
 /** Remove one template from Atlas. 404 = already gone (ok). */
 export async function deleteTemplateFromDb(id) {
   const tid = String(id || '')
@@ -169,12 +218,16 @@ export async function syncDbTemplatesIntoEngine(api, { remote: remoteIn } = {}) 
     id: t.id,
     name: t.name,
     category: t.category || 'player',
+    teamKey: t.teamKey || '__unassigned__',
+    teamLabel: t.teamLabel || 'Unassigned',
     frozen: t.frozen !== false,
     updatedAt: t.updatedAt,
     json: {
       id: t.id,
       name: t.name || t.id,
       category: t.category || 'player',
+      teamKey: t.teamKey || '__unassigned__',
+      teamLabel: t.teamLabel || 'Unassigned',
       layers: [],
       canvas: { background: '#000' },
       settings: { freezeLayout: true },

@@ -41,6 +41,9 @@ const templateSchema = new mongoose.Schema(
       default: 'player',
       index: true,
     },
+    /** Team folder (second dimension under Formats). Empty / missing → Unassigned. */
+    teamKey: { type: String, default: '__unassigned__', index: true },
+    teamLabel: { type: String, default: 'Unassigned' },
     json: { type: mongoose.Schema.Types.Mixed, required: true },
     frozen: { type: Boolean, default: true },
     updatedAt: { type: Date, default: Date.now },
@@ -50,6 +53,21 @@ const templateSchema = new mongoose.Schema(
 )
 
 const Template = mongoose.model('Template', templateSchema)
+
+/** Persistent team folders (can exist with zero templates). */
+const teamFolderSchema = new mongoose.Schema(
+  {
+    teamKey: { type: String, required: true, unique: true, index: true },
+    teamLabel: { type: String, required: true },
+    updatedAt: { type: Date, default: Date.now },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { versionKey: false, collection: 'team_folders' },
+)
+const TeamFolder = mongoose.model('TeamFolder', teamFolderSchema)
+
+const UNASSIGNED_TEAM_KEY = '__unassigned__'
+const UNASSIGNED_TEAM_LABEL = 'Unassigned'
 
 function normalizeCategory(raw) {
   const v = String(raw || '')
@@ -67,6 +85,56 @@ function normalizeCategory(raw) {
   }
   if (v === 'nostalgia' || v === 'nostalgic') return 'nostalgia'
   return 'player'
+}
+
+function normalizeTeamKey(raw) {
+  const v = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/[^\w]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+  if (!v || v === 'unassigned' || v === 'none' || v === 'null') return UNASSIGNED_TEAM_KEY
+  return v
+}
+
+function normalizeTeamLabel(raw, key = UNASSIGNED_TEAM_KEY) {
+  const k = normalizeTeamKey(key)
+  if (k === UNASSIGNED_TEAM_KEY) return UNASSIGNED_TEAM_LABEL
+  const label = String(raw ?? '').trim()
+  if (label) return label
+  return k
+    .split('_')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ')
+}
+
+function teamFieldsFromJson(json = {}) {
+  const teamKey = normalizeTeamKey(
+    json.teamKey ?? json.settings?.teamKey ?? json.team ?? json.teamName,
+  )
+  const teamLabel = normalizeTeamLabel(
+    json.teamLabel ?? json.settings?.teamLabel ?? json.teamName,
+    teamKey,
+  )
+  return { teamKey, teamLabel }
+}
+
+async function upsertTeamFolder(teamKeyIn, teamLabelIn) {
+  const teamKey = normalizeTeamKey(teamKeyIn)
+  if (teamKey === UNASSIGNED_TEAM_KEY) return null
+  const teamLabel = normalizeTeamLabel(teamLabelIn, teamKey)
+  const row = await TeamFolder.findOneAndUpdate(
+    { teamKey },
+    {
+      $set: { teamKey, teamLabel, updatedAt: new Date() },
+      $setOnInsert: { createdAt: new Date() },
+    },
+    { upsert: true, new: true },
+  ).lean()
+  return { teamKey: row.teamKey, teamLabel: row.teamLabel }
 }
 
 const AWS_REGION = process.env.AWS_REGION || 'us-east-1'
@@ -144,6 +212,51 @@ app.get('/api/health', (_req, res) => {
   })
 })
 
+/** List persisted team folders (including empty ones). */
+app.get('/api/teams', async (_req, res) => {
+  try {
+    const rows = await TeamFolder.find({}, { teamKey: 1, teamLabel: 1, updatedAt: 1 })
+      .sort({ teamLabel: 1 })
+      .lean()
+    res.json({
+      teams: rows.map((r) => ({
+        teamKey: normalizeTeamKey(r.teamKey),
+        teamLabel: normalizeTeamLabel(r.teamLabel, r.teamKey),
+        updatedAt: r.updatedAt,
+      })),
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
+/** Create / update a team folder (no templates required). */
+app.put('/api/teams/:teamKey', async (req, res) => {
+  try {
+    const key = normalizeTeamKey(req.params.teamKey || req.body?.teamKey)
+    if (key === UNASSIGNED_TEAM_KEY) {
+      return res.status(400).json({ error: 'Cannot save Unassigned as a team folder' })
+    }
+    const team = await upsertTeamFolder(key, req.body?.teamLabel ?? req.body?.name ?? key)
+    res.json({ ok: true, team })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
+app.post('/api/teams', async (req, res) => {
+  try {
+    const key = normalizeTeamKey(req.body?.teamKey || req.body?.name)
+    if (key === UNASSIGNED_TEAM_KEY) {
+      return res.status(400).json({ error: 'Cannot save Unassigned as a team folder' })
+    }
+    const team = await upsertTeamFolder(key, req.body?.teamLabel ?? req.body?.name ?? key)
+    res.json({ ok: true, team })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
 /**
  * Stream an S3 object through the API (private bucket friendly).
  * Stored image src in template JSON looks like /api/media/uploads/...
@@ -168,6 +281,10 @@ app.get(/^\/api\/media\/(.+)$/, async (req, res) => {
     if (out.ContentLength != null) res.setHeader('Content-Length', String(out.ContentLength))
     res.setHeader('Cache-Control', out.CacheControl || 'public, max-age=31536000, immutable')
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
+    // Fonts need CORS for @font-face / canvas export in some browsers
+    if (/\.(ttf|otf|woff2?)$/i.test(key) || String(out.ContentType || '').startsWith('font/')) {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+    }
     // Body is a web stream / Node stream depending on SDK runtime
     const body = out.Body
     if (body && typeof body.pipe === 'function') {
@@ -263,36 +380,60 @@ app.get('/api/templates', async (req, res) => {
           id: 1,
           name: 1,
           category: 1,
+          teamKey: 1,
+          teamLabel: 1,
           frozen: 1,
           updatedAt: 1,
           'json.category': 1,
+          'json.teamKey': 1,
+          'json.teamLabel': 1,
         },
       )
         .sort({ updatedAt: -1 })
         .lean()
       return res.json({
-        templates: rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          category: normalizeCategory(r.category ?? r.json?.category),
-          frozen: r.frozen !== false,
-          updatedAt: r.updatedAt,
-        })),
+        templates: rows.map((r) => {
+          const team = teamFieldsFromJson({
+            teamKey: r.teamKey ?? r.json?.teamKey,
+            teamLabel: r.teamLabel ?? r.json?.teamLabel,
+          })
+          return {
+            id: r.id,
+            name: r.name,
+            category: normalizeCategory(r.category ?? r.json?.category),
+            teamKey: team.teamKey,
+            teamLabel: team.teamLabel,
+            frozen: r.frozen !== false,
+            updatedAt: r.updatedAt,
+          }
+        }),
       })
     }
     const rows = await Template.find({}).sort({ updatedAt: -1 }).lean()
     res.json({
-      templates: rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        category: normalizeCategory(r.category ?? r.json?.category),
-        frozen: r.frozen !== false,
-        updatedAt: r.updatedAt,
-        json: {
+      templates: rows.map((r) => {
+        const category = normalizeCategory(r.category ?? r.json?.category)
+        const team = teamFieldsFromJson({
+          teamKey: r.teamKey ?? r.json?.teamKey,
+          teamLabel: r.teamLabel ?? r.json?.teamLabel,
           ...(r.json || {}),
-          category: normalizeCategory(r.category ?? r.json?.category),
-        },
-      })),
+        })
+        return {
+          id: r.id,
+          name: r.name,
+          category,
+          teamKey: team.teamKey,
+          teamLabel: team.teamLabel,
+          frozen: r.frozen !== false,
+          updatedAt: r.updatedAt,
+          json: {
+            ...(r.json || {}),
+            category,
+            teamKey: team.teamKey,
+            teamLabel: team.teamLabel,
+          },
+        }
+      }),
     })
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) })
@@ -323,7 +464,13 @@ async function upsertTemplateJson(rawJson, forcedId) {
   }
   const name = String(json.name || id).trim() || id
   const category = normalizeCategory(json.category ?? json.settings?.category)
+  const team = teamFieldsFromJson(json)
   json.category = category
+  json.teamKey = team.teamKey
+  json.teamLabel = team.teamLabel
+  try {
+    await upsertTeamFolder(team.teamKey, team.teamLabel)
+  } catch (_) {}
 
   if (!json.settings) json.settings = {}
   json.settings.freezeLayout = true
@@ -348,7 +495,7 @@ async function upsertTemplateJson(rawJson, forcedId) {
 
   const existed = !!(await Template.exists({ id }))
   console.log(
-    `[api] ${existed ? 'update' : 'create'} id=${id} category=${category} ~${Math.round(approx / 1024)}KB db=${mongoose.connection.name}`,
+    `[api] ${existed ? 'update' : 'create'} id=${id} category=${category} team=${team.teamKey} ~${Math.round(approx / 1024)}KB db=${mongoose.connection.name}`,
   )
 
   const row = await Template.findOneAndUpdate(
@@ -358,6 +505,8 @@ async function upsertTemplateJson(rawJson, forcedId) {
         id,
         name,
         category,
+        teamKey: team.teamKey,
+        teamLabel: team.teamLabel,
         json,
         frozen: true,
         updatedAt: new Date(),
@@ -372,10 +521,65 @@ async function upsertTemplateJson(rawJson, forcedId) {
     id: row.id,
     name: row.name,
     category: normalizeCategory(row.category),
+    teamKey: normalizeTeamKey(row.teamKey),
+    teamLabel: normalizeTeamLabel(row.teamLabel, row.teamKey),
     updatedAt: row.updatedAt,
     db: mongoose.connection.name,
     created: !existed,
     updated: existed,
+  }
+}
+
+/**
+ * Metadata-only update (name / team folder). Does not re-bake, freeze, or rewrite layers.
+ */
+async function patchTemplateMeta(rawId, patch = {}) {
+  const id = normalizeId(rawId)
+  if (!id) {
+    const err = new Error('Template id required')
+    err.status = 400
+    throw err
+  }
+  const row = await Template.findOne({ id }).lean()
+  if (!row) {
+    const err = new Error('Not found')
+    err.status = 404
+    throw err
+  }
+  const json = row.json && typeof row.json === 'object' ? { ...row.json } : { id, name: row.name }
+  const $set = { updatedAt: new Date() }
+
+  if (patch.name != null) {
+    const name = String(patch.name).trim() || id
+    json.name = name
+    $set.name = name
+  }
+  if (patch.teamKey != null || patch.teamLabel != null) {
+    const team = teamFieldsFromJson({
+      ...json,
+      teamKey: patch.teamKey != null ? patch.teamKey : json.teamKey,
+      teamLabel: patch.teamLabel != null ? patch.teamLabel : json.teamLabel,
+    })
+    json.teamKey = team.teamKey
+    json.teamLabel = team.teamLabel
+    $set.teamKey = team.teamKey
+    $set.teamLabel = team.teamLabel
+    try {
+      await upsertTeamFolder(team.teamKey, team.teamLabel)
+    } catch (_) {}
+  }
+  json.id = id
+  $set.json = json
+
+  const updated = await Template.findOneAndUpdate({ id }, { $set }, { new: true }).lean()
+  return {
+    ok: true,
+    id: updated.id,
+    name: updated.name,
+    category: normalizeCategory(updated.category),
+    teamKey: normalizeTeamKey(updated.teamKey),
+    teamLabel: normalizeTeamLabel(updated.teamLabel, updated.teamKey),
+    updatedAt: updated.updatedAt,
   }
 }
 
@@ -400,6 +604,22 @@ app.put('/api/templates/:id', async (req, res) => {
     res.json(result)
   } catch (err) {
     console.error('[api] put failed:', err.message || err)
+    res.status(err.status || 500).json({ error: err.message || String(err) })
+  }
+})
+
+/** Rename template or edit team folder fields without touching layout/images. */
+app.patch('/api/templates/:id', async (req, res) => {
+  try {
+    const body = req.body || {}
+    const result = await patchTemplateMeta(req.params.id, {
+      name: body.name,
+      teamKey: body.teamKey,
+      teamLabel: body.teamLabel,
+    })
+    res.json(result)
+  } catch (err) {
+    console.error('[api] patch meta failed:', err.message || err)
     res.status(err.status || 500).json({ error: err.message || String(err) })
   }
 })

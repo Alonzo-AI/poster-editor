@@ -67,10 +67,28 @@ export default function StudioSidePanel({
 
   useEffect(() => {
     if (!api?.listFontOptions) return
+    const refresh = () => {
+      try {
+        setFonts(api.listFontOptions() || [])
+      } catch (_) {}
+    }
+    refresh()
+    let unsub = null
     try {
-      setFonts(api.listFontOptions() || [])
+      unsub = api.subscribe?.((_snap, reason) => {
+        if (!reason || reason === 'remote-fonts' || reason === 'subscribe') refresh()
+      })
     } catch (_) {}
-  }, [api])
+    const iv = setInterval(refresh, 1500)
+    const stop = setTimeout(() => clearInterval(iv), 12000)
+    return () => {
+      clearInterval(iv)
+      clearTimeout(stop)
+      try {
+        unsub?.()
+      } catch (_) {}
+    }
+  }, [api, mode])
 
   if (!mode || !selected) return null
 

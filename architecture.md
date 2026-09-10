@@ -192,7 +192,7 @@ Disk files listed in `templates/manifest.json` seed the engine. Editor **Save** 
 
 A template is **frozen** when `settings.freezeLayout`, `automation.freezeLayout`, or `_bakeMeta` is set. Frozen templates keep Automate from running stock layout migrations (Salukis / Vapor / Magazine defaults).
 
-**Category** (`category` on JSON + Mongo): `player` | `team` | `player_no_image` | `nostalgia`. Missing / legacy docs default to **`player`** (Player poster). Editor Formats and Automate filter by category; **+ Add** creates a blank starter for the active tab; Save upserts `category` with the template.
+**Category** (`category` on JSON + Mongo): `player` | `team` | `player_no_image` | `nostalgia`. **Team folder** (`teamKey` + `teamLabel` on JSON + Mongo): second dimension — Editor/Automate pick team first, then category. Missing team → **`Unassigned`** (`__unassigned__`). Missing / legacy category → **`player`**. **+ Add** creates a blank starter for the active team + category; Save upserts both fields with the template.
 
 ### 5.2 Loader
 

@@ -12,8 +12,18 @@ import {
   ensureTemplateInEngine,
   listDbTemplates,
   mergeTemplateCatalog,
+  listTeamFolders,
+  upsertTeamFolder,
 } from '../api/templatesApi.js'
 import { uploadDataUrlToS3, uploadImageOrDataUrl, isRemoteImageUrl } from '../api/uploadsApi.js'
+import {
+  UNASSIGNED_TEAM_KEY,
+  collectTeamOptions,
+  normalizeTeamKey,
+  normalizeTeamLabel,
+  promptNewTeam,
+  teamOf,
+} from '../lib/templateTeam.js'
 
 const inputClass = 'ui-input'
 
@@ -57,6 +67,8 @@ export default function AutomatePage({ Nav }) {
   const [dbCatalog, setDbCatalog] = useState([])
   const [templateId, setTemplateId] = useState(null)
   const [formatCategory, setFormatCategory] = useState('player')
+  const [formatTeamKey, setFormatTeamKey] = useState(UNASSIGNED_TEAM_KEY)
+  const [extraTeams, setExtraTeams] = useState([])
   const [text, setText] = useState({})
   const [colors, setColors] = useState({ primary: '#006F73', secondary: '#C5B358' })
   const [images, setImages] = useState({})
@@ -73,9 +85,29 @@ export default function AutomatePage({ Nav }) {
   const [studioMode, setStudioMode] = useState(null)
   const [shapePresets, setShapePresets] = useState([])
 
+  const teamOptions = useMemo(() => {
+    const fromTpl = collectTeamOptions(templates)
+    const map = new Map(fromTpl.map((t) => [t.teamKey, t.teamLabel]))
+    for (const t of extraTeams) map.set(t.teamKey, t.teamLabel)
+    if (!map.has(formatTeamKey)) {
+      map.set(formatTeamKey, normalizeTeamLabel('', formatTeamKey))
+    }
+    return [...map.entries()]
+      .map(([teamKey, teamLabel]) => ({ teamKey, teamLabel }))
+      .sort((a, b) => {
+        if (a.teamKey === UNASSIGNED_TEAM_KEY) return -1
+        if (b.teamKey === UNASSIGNED_TEAM_KEY) return 1
+        return a.teamLabel.localeCompare(b.teamLabel)
+      })
+  }, [templates, extraTeams, formatTeamKey])
+
   const filteredTemplates = useMemo(
-    () => templates.filter((t) => (t.category || 'player') === formatCategory),
-    [templates, formatCategory],
+    () =>
+      templates.filter((t) => {
+        const cat = (t.category || 'player') === formatCategory
+        return cat && teamOf(t).teamKey === formatTeamKey
+      }),
+    [templates, formatCategory, formatTeamKey],
   )
 
   const current = templates.find((t) => t.id === templateId)
@@ -87,6 +119,17 @@ export default function AutomatePage({ Nav }) {
     try {
       const remote = await listDbTemplates({ lite: true })
       setDbCatalog(remote)
+      try {
+        const folders = await listTeamFolders()
+        setExtraTeams(
+          (folders || [])
+            .filter((t) => t?.teamKey && t.teamKey !== UNASSIGNED_TEAM_KEY)
+            .map((t) => ({
+              teamKey: normalizeTeamKey(t.teamKey),
+              teamLabel: normalizeTeamLabel(t.teamLabel, t.teamKey),
+            })),
+        )
+      } catch (_) {}
       setTemplates(mergeTemplateCatalog(remote, api.listTemplates?.() || []))
       await syncDbTemplatesIntoEngine(api)
       setApiOnline(true)
@@ -225,17 +268,25 @@ export default function AutomatePage({ Nav }) {
       setTemplates(list)
       if (!pickDefault) return
       setTemplateId((prev) => {
-        const inCat = (id) => {
+        const inScope = (id) => {
           const t = list.find((x) => x.id === id)
-          return t && (t.category || 'player') === formatCategory
+          return (
+            t &&
+            (t.category || 'player') === formatCategory &&
+            teamOf(t).teamKey === formatTeamKey
+          )
         }
-        if (prev && list.some((t) => t.id === prev) && inCat(prev)) {
+        if (prev && list.some((t) => t.id === prev) && inScope(prev)) {
           const cur = list.find((t) => t.id === prev)
           const hasContent =
             (cur?.fields?.length || 0) > 0 || (cur?.images?.length || 0) > 0
           if (hasContent) return prev
         }
-        const scoped = list.filter((t) => (t.category || 'player') === formatCategory)
+        const scoped = list.filter(
+          (t) =>
+            (t.category || 'player') === formatCategory &&
+            teamOf(t).teamKey === formatTeamKey,
+        )
         return pickDefaultTemplate(scoped)?.id || pickDefaultTemplate(list)?.id || null
       })
     }
@@ -249,7 +300,7 @@ export default function AutomatePage({ Nav }) {
       clearInterval(timer)
       window.removeEventListener('focus', onFocus)
     }
-  }, [ready, api, refreshFromDb, formatCategory])
+  }, [ready, api, refreshFromDb, formatCategory, formatTeamKey])
 
   useEffect(() => {
     if (!templateId || !templates.length) return
@@ -465,6 +516,45 @@ export default function AutomatePage({ Nav }) {
               Refresh
             </button>
           </div>
+          <div className="mb-2 flex items-center gap-1">
+            <select
+              className={`${inputClass} min-w-0 flex-1 py-1.5 text-[11px]`}
+              value={formatTeamKey}
+              onChange={(e) => setFormatTeamKey(normalizeTeamKey(e.target.value))}
+              aria-label="Team folder"
+            >
+              {teamOptions.map((t) => (
+                <option key={t.teamKey} value={t.teamKey}>
+                  {t.teamLabel}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              title="New team folder"
+              className="shrink-0 rounded border border-line px-2 py-1.5 text-[11px] font-semibold text-dim hover:border-blaze hover:text-paper"
+              onClick={async () => {
+                const created = promptNewTeam()
+                if (!created) return
+                setExtraTeams((prev) => {
+                  if (prev.some((x) => x.teamKey === created.teamKey)) return prev
+                  return [...prev, created]
+                })
+                setFormatTeamKey(created.teamKey)
+                try {
+                  await upsertTeamFolder(created)
+                  setApiOnline(true)
+                  setStatus(`Team folder “${created.teamLabel}” saved`)
+                } catch (e) {
+                  setStatus(
+                    `Team “${created.teamLabel}” added locally · DB save failed: ${e.message || e}`,
+                  )
+                }
+              }}
+            >
+              + Team
+            </button>
+          </div>
           <div className="mb-2 flex gap-0.5 rounded-full border border-line bg-inset p-0.5">
             {CATEGORIES.map((c) => (
               <button
@@ -500,7 +590,7 @@ export default function AutomatePage({ Nav }) {
             ))}
           </div>
           {!filteredTemplates.length && (
-            <p className="mt-2 text-[11px] text-muted">No templates in this category</p>
+            <p className="mt-2 text-[11px] text-muted">No templates in this team / category</p>
           )}
           <p className="mt-2 text-[11px] text-dim">
             {current

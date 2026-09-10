@@ -416,7 +416,18 @@ function EffectPreset({ id, label, active, previewStyle, onClick }) {
 function FontPicker({ fonts, value, onCommit, onPreview, onPreviewEnd }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef(null)
-  const current = fonts.find((f) => f.value === value) || fonts[0]
+  const current =
+    fonts.find((f) => f.value === value) ||
+    (value
+      ? {
+          label: String(value)
+            .replace(/^['"]|['"]$/g, '')
+            .split(',')[0]
+            .replace(/^['"]|['"]$/g, '')
+            .trim() || 'Font',
+          value,
+        }
+      : null)
 
   useEffect(() => {
     if (!open) return
@@ -488,11 +499,37 @@ export default function PropertiesPanel({ api, selected, snapshot }) {
 
   useEffect(() => {
     if (!api) return
+    const refresh = () => {
+      try {
+        if (api.listFontOptions) setFonts(api.listFontOptions() || [])
+        if (api.listColorRoles) setRoles(api.listColorRoles() || [])
+        if (api.listTextStylePresets) setStyles(api.listTextStylePresets() || [])
+      } catch (_) {}
+    }
+    refresh()
+    let unsub = null
     try {
-      if (api.listFontOptions) setFonts(api.listFontOptions() || [])
-      if (api.listColorRoles) setRoles(api.listColorRoles() || [])
-      if (api.listTextStylePresets) setStyles(api.listTextStylePresets() || [])
+      unsub = api.subscribe?.((_snap, reason) => {
+        if (!reason || reason === 'remote-fonts' || reason === 'subscribe') {
+          try {
+            if (api.listFontOptions) setFonts(api.listFontOptions() || [])
+          } catch (_) {}
+        }
+      })
     } catch (_) {}
+    const iv = setInterval(() => {
+      try {
+        if (api.listFontOptions) setFonts(api.listFontOptions() || [])
+      } catch (_) {}
+    }, 1500)
+    const stop = setTimeout(() => clearInterval(iv), 12000)
+    return () => {
+      clearInterval(iv)
+      clearTimeout(stop)
+      try {
+        unsub?.()
+      } catch (_) {}
+    }
   }, [api])
 
   useEffect(() => {

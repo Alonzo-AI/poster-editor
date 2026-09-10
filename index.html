@@ -1413,6 +1413,92 @@ const FONT_OPTS = [
   ["Norwester",F.norwester],
 ];
 
+/**
+ * Load Drive→S3 fonts from assets/remote-fonts.json (URLs via /api/media/...).
+ * Existing local @font-face + FONT_OPTS stay; only appends new families.
+ */
+function remoteFontDisplayLabel(f){
+  const raw=String(f.label||f.family||f.file||"").trim();
+  const s=raw.replace(/\.ttf$/i,"").replace(/\.otf$/i,"");
+  const map={
+    ARIAL:"Arial", ARIALBD:"Arial Bold", ARIALBI:"Arial Bold Italic", ARIALI:"Arial Italic",
+    ARIBLK:"Arial Black", ARIALBLACKITALIC:"Arial Black Italic",
+    ARIALLGT:"Arial Light", ARIALLGTITL:"Arial Light Italic",
+    ARIALN:"Arial Narrow", ARIALNB:"Arial Narrow Bold", ARIALNBI:"Arial Narrow Bold Italic", ARIALNI:"Arial Narrow Italic",
+    ArialCE:"Arial CE", arialceb:"Arial CE Bold", ArialCEBoldItalic:"Arial CE Bold Italic",
+    ArialCEItalic:"Arial CE Italic", ArialCEMTBlack:"Arial CE Black",
+    ArialMdm:"Arial Medium", ArialMdmItl:"Arial Medium Italic",
+  };
+  const key=s.replace(/\s+/g,"");
+  if(map[s]||map[key]) return map[s]||map[key];
+  // Antenna / Bodoni / Lato already mostly readable
+  return s.replace(/[_-]+/g," ").replace(/\s+/g," ").trim();
+}
+async function loadRemoteFonts(){
+  try{
+    const res=await fetch(new URL("assets/remote-fonts.json", document.baseURI||location.href).href, { cache:"no-cache" });
+    if(!res.ok) return { ok:false, count:0 };
+    const data=await res.json();
+    const fonts=Array.isArray(data?.fonts)?data.fonts:[];
+    if(!fonts.length) return { ok:true, count:0 };
+    let style=document.getElementById("remote-fonts-face");
+    if(!style){
+      style=document.createElement("style");
+      style.id="remote-fonts-face";
+      document.head.appendChild(style);
+    }
+    const existingStacks=new Set(FONT_OPTS.map(([,v])=>v));
+    const chunks=[];
+    let added=0;
+    for(const f of fonts){
+      if(!f?.url || !f?.family) continue;
+      const label=remoteFontDisplayLabel(f);
+      const fam=label;
+      if(!fam) continue;
+      // Prefer one optical size for Bodoni in the picker (files stay on S3).
+      if(/bodonimoda/i.test(String(f.file||f.family)) && !/_18pt/i.test(f.file||"")) continue;
+
+      // Variable Figtree: expose common weights in the picker (East Carolina).
+      const isFigtreeVar=/figtree/i.test(String(f.file||f.family||f.key||"")) && /variable/i.test(String(f.file||f.key||""));
+      const faces=isFigtreeVar
+        ? [
+            ["Light",300],["Regular",400],["Medium",500],["SemiBold",600],
+            ["Bold",700],["ExtraBold",800],["Black",900],
+          ].map(([n,w])=>{
+            const italic=/italic/i.test(String(f.file||f.family||f.style||""));
+            const faceLabel=italic?`Figtree ${n} Italic`:`Figtree ${n}`;
+            return { ...f, label:faceLabel, family:faceLabel, weight:w, style:italic?"italic":"normal" };
+          })
+        : [{ ...f, label, family:fam }];
+
+      for(const face of faces){
+        const faceFam=String(face.family||face.label).trim();
+        if(!faceFam) continue;
+        const stack=`'${faceFam.replace(/'/g,"\\'")}',sans-serif`;
+        const weight=face.weight!=null?+face.weight:400;
+        const fontStyle=face.style==="italic"?"italic":"normal";
+        const fmt=face.format||"truetype";
+        chunks.push(
+          `@font-face{font-family:"${faceFam.replace(/"/g,'\\"')}";src:url("${face.url}") format("${fmt}");font-weight:${weight};font-style:${fontStyle};font-display:swap;}`
+        );
+        if(!existingStacks.has(stack)){
+          existingStacks.add(stack);
+          const id=("remote_"+String(face.id||faceFam).replace(/[^a-z0-9]+/gi,"_")+"_"+weight+"_"+fontStyle).replace(/_+/g,"_");
+          if(!F[id]) F[id]=stack;
+          FONT_OPTS.push([faceFam, stack]);
+          added++;
+        }
+      }
+    }
+    style.textContent=chunks.join("\n");
+    try{ notifyEditorBridge("remote-fonts"); }catch(_){}
+    return { ok:true, count:added };
+  }catch(e){
+    console.warn("[fonts] remote load failed:", e.message||e);
+    return { ok:false, count:0 };
+  }
+}
+
 /** Poster format categories (Editor Formats + Mongo). Legacy / missing → player. */
 const TEMPLATE_CATEGORIES = [
   { id:"player", label:"Player poster" },
@@ -1426,6 +1512,30 @@ function normalizeTemplateCategory(raw){
   if(v==="player_no_image"||v==="player_noimage"||v==="no_image"||v==="player_without_image") return "player_no_image";
   if(v==="nostalgia"||v==="nostalgic") return "nostalgia";
   return "player";
+}
+const UNASSIGNED_TEAM_KEY="__unassigned__";
+const UNASSIGNED_TEAM_LABEL="Unassigned";
+function normalizeTemplateTeamKey(raw){
+  const v=String(raw??"").trim().toLowerCase()
+    .replace(/[\s-]+/g,"_")
+    .replace(/[^\w]+/g,"_")
+    .replace(/_+/g,"_")
+    .replace(/^_|_$/g,"");
+  if(!v||v==="unassigned"||v==="none"||v==="null") return UNASSIGNED_TEAM_KEY;
+  return v;
+}
+function normalizeTemplateTeamLabel(raw, key){
+  const k=normalizeTemplateTeamKey(key);
+  if(k===UNASSIGNED_TEAM_KEY) return UNASSIGNED_TEAM_LABEL;
+  const label=String(raw??"").trim();
+  if(label) return label;
+  return k.split("_").filter(Boolean).map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(" ");
+}
+function templateTeamOf(templateId){
+  const json=TEMPLATES[templateId]?._json||{};
+  const teamKey=normalizeTemplateTeamKey(json.teamKey??json.settings?.teamKey??json.team??json.teamName);
+  const teamLabel=normalizeTemplateTeamLabel(json.teamLabel??json.settings?.teamLabel??json.teamName, teamKey);
+  return { teamKey, teamLabel };
 }
 function templateCategoryOf(templateId){
   const json=TEMPLATES[templateId]?._json;
@@ -1909,7 +2019,7 @@ function resetLayoutFromTemplate(templateId, opts={}){
     if(def.zoom!=null) L[id].zoom=def.zoom;
     if(def.cropX!=null) L[id].cropX=def.cropX;
     if(def.cropY!=null) L[id].cropY=def.cropY;
-    if(def.font!=null) L[id].font=def.font;
+    if(def.font!=null) L[id].font=resolveFontValue(def.font);
     if(def.textTransform!=null) L[id].textTransform=def.textTransform;
     L[id].italic=!!def.italic;
     L[id].underline=!!def.underline;
@@ -2575,7 +2685,7 @@ function applyLayoutOverrides(templateId, overrides){
     const g=L[id];
     if(patch.size!=null) g.size=patch.size;
     if(patch.color!=null) g.color=patch.color;
-    if(patch.font!=null) g.font=FONT_KEY_MAP[patch.font]||patch.font;
+    if(patch.font!=null) g.font=resolveFontValue(FONT_KEY_MAP[patch.font]||patch.font);
     if(patch.weight!=null) g.weight=patch.weight;
     if(patch.align!=null) g.align=patch.align;
     if(patch.ls!=null) g.ls=patch.ls;
@@ -2676,7 +2786,7 @@ function applyVaporMotionLayerFromDef(L, def, id){
   if(d.h!=null) g.h=d.h;
   if(d.size!=null) g.size=d.size;
   g.manualSize=false;
-  if(d.font) g.font=d.font;
+  if(d.font) g.font=resolveFontValue(d.font);
   if(d.align) g.align=d.align;
   if(d.ls!=null) g.ls=d.ls;
   if(d.color) g.color=d.color;
@@ -2717,7 +2827,7 @@ function applySalukisLayerFromDef(L, def, id){
   g.x=d.x; g.y=d.y; g.w=d.w;
   if(d.h!=null) g.h=d.h;
   if(d.size!=null) g.size=d.size;
-  if(d.font) g.font=d.font;
+  if(d.font) g.font=resolveFontValue(d.font);
   if(d.align) g.align=d.align;
   if(d.ls!=null) g.ls=d.ls;
   if(d.color) g.color=d.color;
@@ -3228,6 +3338,8 @@ function addTextFieldLayer(opts={}){
 function createBlankTemplate(opts={}){
   const rawName=String(opts.name||"New template").trim()||"New template";
   const category=normalizeTemplateCategory(opts.category);
+  const teamKey=normalizeTemplateTeamKey(opts.teamKey ?? opts.team);
+  const teamLabel=normalizeTemplateTeamLabel(opts.teamLabel ?? opts.teamName, teamKey);
   let id=String(opts.id||rawName).trim().replace(/[^\w-]+/g,"_")||("custom_"+Date.now().toString(36));
   if(/^\d/.test(id)) id="_"+id;
   let base=id, n=2;
@@ -3237,6 +3349,8 @@ function createBlankTemplate(opts={}){
   const json={
     id, name, version:1,
     category,
+    teamKey,
+    teamLabel,
     canvas:{ width:SW, height:SH, background:"#12141a" },
     deco:{ html:"" },
     textRules:{ autoFit:[], stats:{ autoFit:false } },
@@ -3282,7 +3396,7 @@ function createBlankTemplate(opts={}){
   buildTextFields();
   buildCaptionColorControls();
   notifyEditorBridge("create-template");
-  return { id, name, category, json };
+  return { id, name, category, teamKey, teamLabel, json };
 }
 /** Drop a library shape onto the canvas (not into conference/logo slots). */
 async function placeLibraryShapeAsset(asset){
@@ -3927,7 +4041,7 @@ function render(){
       const markup=bindContent(def);
       el.innerHTML = def.kind==="stat" ? markup : `<div class="txt-clip"><span class="txt-flow">${markup}</span></div>`;
       const size = g.size ?? def.size ?? 30;
-      el.style.fontFamily = state.lockTemplateFonts ? (def.font||F.sans) : (g.font||def.font||F.sans);
+      el.style.fontFamily = state.lockTemplateFonts ? resolveFontValue(def.font||F.sans) : resolveFontValue(g.font||def.font||F.sans);
       el.style.fontSize = size+"px";
       el.style.fontWeight = g.weight ?? def.weight ?? 700;
       el.style.fontStyle = (g.italic ?? def.italic) ? "italic":"normal";
@@ -4511,7 +4625,7 @@ function applyTextLayerVisuals(el, def, g, layerId){
   if(!el || def.type!=="text") return;
   const id=layerId || el.dataset.id;
   const size=g.size ?? def.size ?? 30;
-  el.style.fontFamily=state.lockTemplateFonts ? (def.font||F.sans) : (g.font||def.font||F.sans);
+  el.style.fontFamily=state.lockTemplateFonts ? resolveFontValue(def.font||F.sans) : resolveFontValue(g.font||def.font||F.sans);
   el.style.fontSize=size+"px";
   el.style.fontWeight=g.weight ?? def.weight ?? 700;
   el.style.fontStyle=(g.italic ?? def.italic) ? "italic" : "normal";
@@ -4754,7 +4868,7 @@ function syncInspector(){
     h+=`</div>`;
     if(!state.lockTemplateFonts){
       h+=`<label class="fld">Font</label>
-          <select id="iFont">${FONT_OPTS.map(([nm,stk])=>`<option value="${stk.replace(/"/g,'&quot;')}" ${(g.font||def.font||F.sans)===stk?'selected':''}>${nm}</option>`).join('')}</select>`;
+          <select id="iFont">${FONT_OPTS.map(([nm,stk])=>`<option value="${stk.replace(/"/g,'&quot;')}" ${(resolveFontValue(g.font||def.font||F.sans))===stk?'selected':''}>${nm}</option>`).join('')}</select>`;
     }
     const fontPx=g.baseSize ?? g.size ?? def.size ?? 30;
     const fitPx=g.fitSize!=null?g.fitSize:fontPx;
@@ -5918,12 +6032,13 @@ function applySessionLayoutsToTemplateDefs(){
         if(runtime) runtime[key]=g[key];
         if(jl) jl[key]=g[key];
       }
-      // Font: layout may store CSS stack; prefer font key on JSON when possible
+      // Font: keep CSS stack on runtime; persist short key OR full stack on JSON
       if(g.font!=null){
-        if(runtime) runtime.font=g.font;
+        const resolved=resolveFontValue(g.font);
+        if(runtime) runtime.font=resolved;
         if(jl){
-          const fk=fontKeyFromValue(g.font);
-          if(fk) jl.font=fk;
+          const persisted=fontToPersisted(g.font);
+          if(persisted!=null) jl.font=persisted;
         }
       }
       if(g.hidden){
@@ -6410,42 +6525,69 @@ function exportLayoutJSON(){
   setBakeStatus(`Downloaded layout overrides for “${t}”.`);
 }
 
+/** Resolve short font keys (disp, montserrat, …) to CSS stacks; leave stacks as-is. */
+function resolveFontValue(font){
+  if(font==null || font==="") return font;
+  if(typeof font==="string" && F[font]) return F[font];
+  return font;
+}
+/**
+ * Persist font for template JSON.
+ * Exact built-in F map match → short key; otherwise keep the CSS stack / family string
+ * so remote S3 fonts survive save/reload (do not fuzzy-map them to Anton/disp).
+ */
+function fontToPersisted(font){
+  if(font==null || font==="") return undefined;
+  const resolved=resolveFontValue(font);
+  for(const [k,v] of Object.entries(F)){
+    if(v===font || v===resolved) return k;
+  }
+  if(typeof font==="string" && F[font]) return font;
+  return resolved;
+}
+function primaryFontFamily(font){
+  const s=String(font||"");
+  const m=s.match(/'([^']+)'|"([^"]+)"|^\s*([^,]+)/);
+  return String(m?.[1]||m?.[2]||m?.[3]||"").trim().toLowerCase();
+}
 function fontKeyFromValue(font){
   if(!font) return undefined;
   for(const [k,v] of Object.entries(F)){
     if(v===font) return k;
   }
-  const s=String(font).toLowerCase();
-  if(s.includes("anton")) return "disp";
-  if(s.includes("oswald")) return "cond";
-  if(s.includes("archivo")) return "sans";
-  if(s.includes("bebas")) return "bebas";
-  if(s.includes("playfair")) return "serif";
-  if(s.includes("permanent")) return "chalk";
-  if(s.includes("special elite")) return "type";
-  if(s.includes("bangers")) return "comic";
-  if(s.includes("avenir book")) return "avenirBook";
-  if(s.includes("avenir light")) return "avenirLight";
-  if(s.includes("avenir medium")) return "avenirMedium";
-  if(s.includes("avenir heavy")) return "avenirHeavy";
-  if(s.includes("avenir")) return "avenir";
-  if(s.includes("montserrat light")) return "montserratLight";
-  if(s.includes("montserrat medium")) return "montserratMedium";
-  if(s.includes("montserrat semibold")||s.includes("montserrat semi bold")) return "montserratSemiBold";
-  if(s.includes("montserrat extrabold")||s.includes("montserrat extra bold")) return "montserratExtraBold";
-  if(s.includes("montserrat black")) return "montserratBlack";
-  if(s.includes("montserrat bold")) return "montserratBold";
-  if(s.includes("montserrat")) return "montserrat";
-  if(s.includes("lato thin")) return "latoThin";
-  if(s.includes("lato light")) return "latoLight";
-  if(s.includes("lato bold")) return "latoBold";
-  if(s.includes("lato black")) return "latoBlack";
-  if(s.includes("lato")) return "lato";
-  if(s.includes("antenna") && s.includes("extra")) return "antennaExtraCond";
-  if(s.includes("antenna") && s.includes("cond")) return "antennaCond";
-  if(s.includes("antenna") && s.includes("black")) return "antennaBlack";
-  if(s.includes("antenna")||s.includes("ford antenna")) return "antenna";
-  if(s.includes("norwester")||s.includes("norwestor")) return "norwester";
+  if(typeof font==="string" && F[font]) return font;
+  // Fuzzy match only on the primary family name (not substrings of "Anton Regular", etc.)
+  const p=primaryFontFamily(font);
+  if(p==="anton") return "disp";
+  if(p==="oswald") return "cond";
+  if(p==="archivo") return "sans";
+  if(p==="bebas neue"||p==="bebas") return "bebas";
+  if(p==="playfair display"||p==="playfair") return "serif";
+  if(p==="permanent marker") return "chalk";
+  if(p==="special elite") return "type";
+  if(p==="bangers") return "comic";
+  if(p==="avenir book") return "avenirBook";
+  if(p==="avenir light") return "avenirLight";
+  if(p==="avenir medium") return "avenirMedium";
+  if(p==="avenir heavy") return "avenirHeavy";
+  if(p==="avenir"||p==="avenir regular") return "avenir";
+  if(p==="montserrat light") return "montserratLight";
+  if(p==="montserrat medium") return "montserratMedium";
+  if(p==="montserrat semibold"||p==="montserrat semi bold") return "montserratSemiBold";
+  if(p==="montserrat extrabold"||p==="montserrat extra bold") return "montserratExtraBold";
+  if(p==="montserrat black") return "montserratBlack";
+  if(p==="montserrat bold") return "montserratBold";
+  if(p==="montserrat"||p==="montserrat regular") return "montserrat";
+  if(p==="lato thin") return "latoThin";
+  if(p==="lato light") return "latoLight";
+  if(p==="lato bold") return "latoBold";
+  if(p==="lato black") return "latoBlack";
+  if(p==="lato"||p==="lato regular") return "lato";
+  if(p.includes("antenna") && p.includes("extra")) return "antennaExtraCond";
+  if(p.includes("antenna") && p.includes("cond")) return "antennaCond";
+  if(p.includes("antenna") && p.includes("black")) return "antennaBlack";
+  if(p.includes("antenna")||p.includes("ford antenna")) return "antenna";
+  if(p==="norwester"||p==="norwestor") return "norwester";
   return undefined;
 }
 
@@ -6499,9 +6641,8 @@ function layerDefToJson(id, def, g){
     if(grad){
       out.gradient={ type:grad.type, from:grad.from, to:grad.to, angle:grad.angle };
     }
-    const fontKey=fontKeyFromValue(g.font||def.font)||undefined;
-    if(fontKey) out.font=fontKey;
-    else if(def.font && typeof def.font==="string" && !def.font.includes(",")) out.font=def.font;
+    const persistedFont=fontToPersisted(g.font||def.font);
+    if(persistedFont!=null) out.font=persistedFont;
     const weight=g.weight??def.weight;
     if(weight!=null) out.weight=weight;
     const align=g.align??def.align;
@@ -6711,6 +6852,11 @@ function buildFrozenTemplateJSON(opts={}){
     id,
     name,
     category:normalizeTemplateCategory(base.category ?? base.settings?.category ?? templateCategoryOf(srcId)),
+    teamKey:normalizeTemplateTeamKey(base.teamKey ?? base.settings?.teamKey ?? templateTeamOf(srcId).teamKey),
+    teamLabel:normalizeTemplateTeamLabel(
+      base.teamLabel ?? base.settings?.teamLabel ?? templateTeamOf(srcId).teamLabel,
+      base.teamKey ?? base.settings?.teamKey ?? templateTeamOf(srcId).teamKey,
+    ),
     version:(base.version||1)+1,
     canvas:base.canvas||{ width:SW, height:SH, background:"#E8E0D4" },
     deco:base.deco||{ html:"" },
@@ -7642,6 +7788,8 @@ function buildEditorSnapshot(){
     template:state.template,
     templateName:TEMPLATES[state.template]?.name||state.template,
     category:templateCategoryOf(state.template),
+    teamKey:templateTeamOf(state.template).teamKey,
+    teamLabel:templateTeamOf(state.template).teamLabel,
     selectedId:sel,
     selected,
     layers,
@@ -7793,6 +7941,8 @@ window.__RENDER_API_V3__={
       id,
       name:TEMPLATES[id]?.name||id,
       category:templateCategoryOf(id),
+      teamKey:templateTeamOf(id).teamKey,
+      teamLabel:templateTeamOf(id).teamLabel,
       frozen:isFrozenTemplate(id),
       disk:DISK_TEMPLATE_IDS.has(id),
       fields:templateInputFields(id),
@@ -8008,7 +8158,7 @@ window.__RENDER_API_V3__={
     if(patch.weight!=null){ g.weight=+patch.weight; mark(); }
     if(patch.italic!=null){ g.italic=!!patch.italic; mark(); }
     if(patch.underline!=null){ g.underline=!!patch.underline; mark(); }
-    if(patch.font!=null){ g.font=patch.font; mark(); }
+    if(patch.font!=null){ g.font=resolveFontValue(patch.font); mark(); }
     if(patch.textTransform!==undefined){ g.textTransform=patch.textTransform; mark(); }
     if(patch.color!=null){
       g.color=patch.color; mark();
@@ -8111,7 +8261,7 @@ window.__RENDER_API_V3__={
     if(!_textStylePreview || _textStylePreview.lid!==lid){
       _textStylePreview={ lid, font:g.font, size:g.size, baseSize:g.baseSize, manualSize:g.manualSize };
     }
-    if(patch.font!=null) g.font=patch.font;
+    if(patch.font!=null) g.font=resolveFontValue(patch.font);
     if(patch.size!=null || patch.baseSize!=null){
       const px=Math.max(8, Math.min(400, Math.round(+(patch.size??patch.baseSize)||30)));
       g.size=px; g.baseSize=px; g.manualSize=true;
@@ -8187,6 +8337,27 @@ window.__RENDER_API_V3__={
     const created=createBlankTemplate(opts);
     return { snapshot:buildEditorSnapshot(), template:created };
   },
+  /** Rename / team-folder metadata only — does not touch layers, images, or geometry. */
+  patchTemplateMeta(id, patch={}){
+    const tid=String(id||state.template||"").trim();
+    const t=TEMPLATES[tid];
+    if(!t) throw new Error("Template not found");
+    if(!t._json) t._json={ id:tid, name:t.name||tid, layers:[] };
+    if(patch.name!=null){
+      const name=String(patch.name).trim()||tid;
+      t.name=name;
+      t._json.name=name;
+    }
+    if(patch.teamKey!=null || patch.teamLabel!=null){
+      const teamKey=normalizeTemplateTeamKey(patch.teamKey ?? t._json.teamKey);
+      const teamLabel=normalizeTemplateTeamLabel(patch.teamLabel ?? t._json.teamLabel, teamKey);
+      t._json.teamKey=teamKey;
+      t._json.teamLabel=teamLabel;
+    }
+    try{ buildTplChips(); }catch(_){}
+    notifyEditorBridge("template-meta");
+    return { snapshot:buildEditorSnapshot(), id:tid, name:t.name, teamKey:t._json.teamKey, teamLabel:t._json.teamLabel };
+  },
   /** Deep-copy a poster (layers/images/layout) under a new id; caller Saves to Mongo. */
   async duplicateTemplate(opts={}){
     const srcId=String(opts.id||state.template||"").trim();
@@ -8206,6 +8377,16 @@ window.__RENDER_API_V3__={
     json.category=normalizeTemplateCategory(
       opts.category ?? json.category ?? TEMPLATES[srcId]?._json?.category ?? "player",
     );
+    {
+      const srcTeam=templateTeamOf(srcId);
+      const teamKey=normalizeTemplateTeamKey(opts.teamKey ?? json.teamKey ?? srcTeam.teamKey);
+      const teamLabel=normalizeTemplateTeamLabel(
+        opts.teamLabel ?? json.teamLabel ?? srcTeam.teamLabel,
+        teamKey,
+      );
+      json.teamKey=teamKey;
+      json.teamLabel=teamLabel;
+    }
     if(!json._bakeMeta) json._bakeMeta={};
     json._bakeMeta.duplicatedFrom=srcId;
     json._bakeMeta.bakedAt=new Date().toISOString();
@@ -8292,6 +8473,17 @@ window.__RENDER_API_V3__={
       if(!json || typeof json!=="object" || !json.id) continue;
       // Legacy Atlas docs without category → Player poster
       json.category=normalizeTemplateCategory(json.category ?? item?.category ?? json.settings?.category);
+      {
+        const teamKey=normalizeTemplateTeamKey(
+          json.teamKey ?? item?.teamKey ?? json.settings?.teamKey ?? json.team ?? json.teamName,
+        );
+        const teamLabel=normalizeTemplateTeamLabel(
+          json.teamLabel ?? item?.teamLabel ?? json.settings?.teamLabel ?? json.teamName,
+          teamKey,
+        );
+        json.teamKey=teamKey;
+        json.teamLabel=teamLabel;
+      }
       const isLite=!!json._remoteLite;
       const existing=TEMPLATES[json.id]?._json;
       // Lite metadata sync must not clobber disk seeds or already-hydrated DB templates
@@ -8622,6 +8814,8 @@ async function init(){
   const embed=qs.get("embed")==="1";
   if(headless) document.body.classList.add("headless");
   if(embed) document.body.classList.add("embed");
+  // S3 remote fonts (Drive upload) — non-blocking for canvas if API offline
+  try{ await loadRemoteFonts(); }catch(_){}
   // Never persist / restore canvas zoom — always start from fit (stops growth across navigations)
   state.zoom=null;
   // Headless / automate preview should start clean (no editor localStorage)

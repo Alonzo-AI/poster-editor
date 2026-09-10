@@ -15,8 +15,20 @@ import {
   syncDbTemplatesIntoEngine,
   ensureTemplateInEngine,
   markTemplateHydrated,
+  fetchDbTemplate,
+  patchTemplateMeta,
+  listTeamFolders,
+  upsertTeamFolder,
 } from '../api/templatesApi.js'
 import { uploadDataUrlToS3, uploadImageOrDataUrl, isRemoteImageUrl } from '../api/uploadsApi.js'
+import {
+  UNASSIGNED_TEAM_KEY,
+  collectTeamOptions,
+  normalizeTeamKey,
+  normalizeTeamLabel,
+  promptNewTeam,
+  teamOf,
+} from '../lib/templateTeam.js'
 
 const inputClass = 'ui-input'
 
@@ -59,7 +71,10 @@ export default function EditorPage({ Nav }) {
   const [renamingBind, setRenamingBind] = useState(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [formatCategory, setFormatCategory] = useState('player')
+  const [formatTeamKey, setFormatTeamKey] = useState(UNASSIGNED_TEAM_KEY)
+  const [extraTeams, setExtraTeams] = useState([]) // DB team folders (+ optimistic local)
   const [tplMenuId, setTplMenuId] = useState(null)
+  const [tplMoveTeamOpen, setTplMoveTeamOpen] = useState(false)
   const tplMenuRef = useRef(null)
   const [smartCrop, setSmartCrop] = useState(null) // { key, src, label, frameW, frameH }
   const [cutoutBusy, setCutoutBusy] = useState(false)
@@ -73,21 +88,48 @@ export default function EditorPage({ Nav }) {
     { id: 'nostalgia', label: 'Nostalgia' },
   ]
 
+  const teamOptions = useMemo(() => {
+    const fromTpl = collectTeamOptions(templates)
+    const map = new Map(fromTpl.map((t) => [t.teamKey, t.teamLabel]))
+    for (const t of extraTeams) map.set(t.teamKey, t.teamLabel)
+    if (!map.has(formatTeamKey)) {
+      map.set(formatTeamKey, normalizeTeamLabel('', formatTeamKey))
+    }
+    return [...map.entries()]
+      .map(([teamKey, teamLabel]) => ({ teamKey, teamLabel }))
+      .sort((a, b) => {
+        if (a.teamKey === UNASSIGNED_TEAM_KEY) return -1
+        if (b.teamKey === UNASSIGNED_TEAM_KEY) return 1
+        return a.teamLabel.localeCompare(b.teamLabel)
+      })
+  }, [templates, extraTeams, formatTeamKey])
+
   const filteredTemplates = useMemo(
     () =>
-      templates.filter((t) => (t.category || 'player') === formatCategory),
-    [templates, formatCategory],
+      templates.filter((t) => {
+        const cat = (t.category || 'player') === formatCategory
+        const { teamKey } = teamOf(t)
+        return cat && teamKey === formatTeamKey
+      }),
+    [templates, formatCategory, formatTeamKey],
   )
 
   useEffect(() => {
-    if (!tplMenuId) return
+    if (!tplMenuId) {
+      setTplMoveTeamOpen(false)
+      return
+    }
     const onDoc = (e) => {
       if (tplMenuRef.current && !tplMenuRef.current.contains(e.target)) {
         setTplMenuId(null)
+        setTplMoveTeamOpen(false)
       }
     }
     const onKey = (e) => {
-      if (e.key === 'Escape') setTplMenuId(null)
+      if (e.key === 'Escape') {
+        setTplMenuId(null)
+        setTplMoveTeamOpen(false)
+      }
     }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
@@ -129,6 +171,19 @@ export default function EditorPage({ Nav }) {
     const remote = await listDbTemplates({ lite: true })
     setDbCatalog(remote)
     setApiOnline(true)
+    try {
+      const folders = await listTeamFolders()
+      setExtraTeams(
+        (folders || [])
+          .filter((t) => t?.teamKey && t.teamKey !== UNASSIGNED_TEAM_KEY)
+          .map((t) => ({
+            teamKey: normalizeTeamKey(t.teamKey),
+            teamLabel: normalizeTeamLabel(t.teamLabel, t.teamKey),
+          })),
+      )
+    } catch (_) {
+      // Teams API optional — template-derived teams still work
+    }
     await syncDbTemplatesIntoEngine(api, { remote })
     setTemplates(mergeTemplateCatalog(remote, api.listTemplates?.() || []))
 
@@ -203,7 +258,8 @@ export default function EditorPage({ Nav }) {
     setBakeId(snapshot.template || '')
     setBakeName(snapshot.templateName || snapshot.template || '')
     if (snapshot.category) setFormatCategory(snapshot.category)
-  }, [snapshot?.template, snapshot?.templateName, snapshot?.category])
+    if (snapshot.teamKey) setFormatTeamKey(normalizeTeamKey(snapshot.teamKey))
+  }, [snapshot?.template, snapshot?.templateName, snapshot?.category, snapshot?.teamKey])
 
   const selected = snapshot?.selected
   const layers = snapshot?.layers || []
@@ -319,6 +375,8 @@ export default function EditorPage({ Nav }) {
         id: t.id,
         name: String(name).trim(),
         category: t.category || formatCategory,
+        teamKey: teamOf(t).teamKey,
+        teamLabel: teamOf(t).teamLabel,
         existingIds,
       })
       const json = res?.json
@@ -329,6 +387,9 @@ export default function EditorPage({ Nav }) {
       }
       json.id = newId
       json.name = res?.name || json.name || String(name).trim()
+      const srcTeam = teamOf(t)
+      json.teamKey = json.teamKey || srcTeam.teamKey
+      json.teamLabel = json.teamLabel || srcTeam.teamLabel
       // Always PUT under the NEW id (never the source)
       const saved = await saveTemplateToDb(json, { id: newId })
       if (saved.id === t.id) {
@@ -343,6 +404,8 @@ export default function EditorPage({ Nav }) {
               id: saved.id,
               name: json.name,
               category: json.category || 'player',
+              teamKey: json.teamKey,
+              teamLabel: json.teamLabel,
               frozen: true,
               json: { ...json, id: saved.id },
             },
@@ -356,34 +419,203 @@ export default function EditorPage({ Nav }) {
       try {
         api.switchTemplate?.(saved.id)
       } catch (_) {}
-      setDbCatalog((prev) => [
-        ...prev.filter((x) => x.id !== saved.id),
-        {
-          id: saved.id,
-          name: json.name,
-          category: json.category || 'player',
-          frozen: true,
-          updatedAt: saved.updatedAt,
-        },
-      ])
+      const catalogEntry = {
+        id: saved.id,
+        name: json.name,
+        category: json.category || 'player',
+        teamKey: json.teamKey || UNASSIGNED_TEAM_KEY,
+        teamLabel: json.teamLabel || 'Unassigned',
+        frozen: true,
+        updatedAt: saved.updatedAt,
+      }
+      setDbCatalog((prev) => [...prev.filter((x) => x.id !== saved.id), catalogEntry])
       setTemplates(
         mergeTemplateCatalog(
-          [
-            ...dbCatalog.filter((x) => x.id !== saved.id),
-            {
-              id: saved.id,
-              name: json.name,
-              category: json.category || 'player',
-              frozen: true,
-              updatedAt: saved.updatedAt,
-            },
-          ],
+          [...dbCatalog.filter((x) => x.id !== saved.id), catalogEntry],
           api.listTemplates?.() || [],
         ),
       )
+      setFormatTeamKey(normalizeTeamKey(json.teamKey))
       setStatus(`Copied “${json.name}” as new id “${saved.id}” (from ${t.id}) · saved to DB`)
     } catch (e) {
       setStatus(e.message || 'Copy failed')
+    }
+  }
+
+  async function onRenameTemplate(t) {
+    setTplMenuId(null)
+    setTplMoveTeamOpen(false)
+    if (!t?.id) return
+    const next = window.prompt('Edit template name', t.name || t.id)
+    if (next == null) return
+    const name = String(next).trim()
+    if (!name) {
+      setStatus('Name cannot be empty')
+      return
+    }
+    if (name === (t.name || '')) {
+      setStatus('Name unchanged')
+      return
+    }
+    setStatus(`Renaming “${t.name || t.id}”…`)
+    try {
+      let saved = null
+      try {
+        saved = await patchTemplateMeta(t.id, { name })
+        setApiOnline(true)
+      } catch (e) {
+        // Not in DB yet (session-only) — still rename in the engine
+        if (!/not found/i.test(String(e.message || e))) throw e
+      }
+      try {
+        api?.patchTemplateMeta?.(t.id, { name })
+      } catch (_) {}
+      const entry = {
+        id: t.id,
+        name,
+        category: t.category || 'player',
+        teamKey: teamOf(t).teamKey,
+        teamLabel: teamOf(t).teamLabel,
+        frozen: t.frozen !== false,
+        updatedAt: saved?.updatedAt || t.updatedAt || Date.now(),
+      }
+      const nextCatalog = dbCatalog.some((x) => x.id === t.id) || saved
+        ? [...dbCatalog.filter((x) => x.id !== t.id), entry]
+        : dbCatalog
+      setDbCatalog(nextCatalog)
+      setTemplates(mergeTemplateCatalog(nextCatalog, api.listTemplates?.() || []))
+      if (snapshot?.template === t.id || bakeId === t.id) {
+        setBakeName(name)
+      }
+      markTemplateHydrated(t.id, entry.updatedAt)
+      setStatus(`Renamed template → “${name}” (id unchanged: ${t.id})`)
+    } catch (e) {
+      setStatus(e.message || 'Rename failed')
+    }
+  }
+
+  async function onRenameTeamFolder() {
+    if (formatTeamKey === UNASSIGNED_TEAM_KEY) {
+      setStatus('Cannot rename Unassigned')
+      return
+    }
+    const currentLabel =
+      teamOptions.find((x) => x.teamKey === formatTeamKey)?.teamLabel ||
+      normalizeTeamLabel('', formatTeamKey)
+    const next = window.prompt('Edit team name', currentLabel)
+    if (next == null) return
+    const teamLabel = String(next).trim()
+    if (!teamLabel) {
+      setStatus('Team name cannot be empty')
+      return
+    }
+    if (teamLabel === currentLabel) {
+      setStatus('Team name unchanged')
+      return
+    }
+    // Keep teamKey stable so filters/links stay valid — only display label changes.
+    const teamKey = formatTeamKey
+    const members = [
+      ...new Map(
+        [...templates, ...dbCatalog]
+          .filter((x) => x?.id && teamOf(x).teamKey === teamKey)
+          .map((x) => [x.id, x]),
+      ).values(),
+    ]
+    setStatus(
+      members.length
+        ? `Updating team “${currentLabel}” → “${teamLabel}” (${members.length})…`
+        : `Renaming team folder → “${teamLabel}”…`,
+    )
+    try {
+      let ok = 0
+      let fail = 0
+      for (const t of members) {
+        try {
+          await patchTemplateMeta(t.id, { teamKey, teamLabel })
+          try {
+            api?.patchTemplateMeta?.(t.id, { teamKey, teamLabel })
+          } catch (_) {}
+          ok++
+        } catch (_) {
+          try {
+            api?.patchTemplateMeta?.(t.id, { teamKey, teamLabel })
+            ok++
+          } catch (__) {
+            fail++
+          }
+        }
+      }
+      setExtraTeams((prev) => {
+        const others = prev.filter((x) => x.teamKey !== teamKey)
+        return [...others, { teamKey, teamLabel }]
+      })
+      try {
+        await upsertTeamFolder({ teamKey, teamLabel })
+      } catch (_) {}
+      const nextCatalog = dbCatalog.map((x) =>
+        teamOf(x).teamKey === teamKey ? { ...x, teamKey, teamLabel } : x,
+      )
+      setDbCatalog(nextCatalog)
+      setTemplates(mergeTemplateCatalog(nextCatalog, api.listTemplates?.() || []))
+      setApiOnline(true)
+      setStatus(
+        fail
+          ? `Team renamed to “${teamLabel}” · ${ok} ok · ${fail} failed`
+          : `Team renamed to “${teamLabel}”`,
+      )
+    } catch (e) {
+      setStatus(e.message || 'Team rename failed')
+    }
+  }
+
+  async function onSetTemplateTeam(t, dest) {
+    setTplMenuId(null)
+    setTplMoveTeamOpen(false)
+    if (!t?.id || !dest) return
+    const teamKey = normalizeTeamKey(dest.teamKey)
+    const teamLabel = normalizeTeamLabel(dest.teamLabel, teamKey)
+    if (teamOf(t).teamKey === teamKey) {
+      setStatus(`Already in “${teamLabel}”`)
+      return
+    }
+    setStatus(`Moving “${t.name || t.id}” to ${teamLabel}…`)
+    try {
+      await ensureTemplateInEngine(api, t.id, { updatedAt: t.updatedAt, force: true })
+      let json = null
+      try {
+        const row = await fetchDbTemplate(t.id)
+        json = row?.json
+      } catch (_) {}
+      if (!json) {
+        const baked = await api.bakeTemplate?.({ id: t.id, name: t.name || t.id, download: false })
+        json = baked?.json
+      }
+      if (!json) throw new Error('Could not load template JSON')
+      json = { ...json, id: t.id, name: json.name || t.name || t.id, teamKey, teamLabel }
+      const saved = await saveTemplateToDb(json, { id: t.id })
+      markTemplateHydrated(saved.id, saved.updatedAt || Date.now())
+      const entry = {
+        id: saved.id,
+        name: json.name,
+        category: json.category || t.category || 'player',
+        teamKey,
+        teamLabel,
+        frozen: true,
+        updatedAt: saved.updatedAt,
+      }
+      setDbCatalog((prev) => [...prev.filter((x) => x.id !== saved.id), entry])
+      try {
+        api.injectRemoteTemplates?.(
+          [{ ...entry, json: { ...json, teamKey, teamLabel } }],
+          { sync: false },
+        )
+      } catch (_) {}
+      if (api.listTemplates) refreshTemplates()
+      setFormatTeamKey(teamKey)
+      setStatus(`Moved “${json.name}” → ${teamLabel}`)
+    } catch (e) {
+      setStatus(e.message || 'Move failed')
     }
   }
 
@@ -414,6 +646,21 @@ export default function EditorPage({ Nav }) {
           listed?.category ||
           formatCategory ||
           'player'
+        {
+          const teamKey = normalizeTeamKey(
+            json.teamKey ||
+              snapshot?.teamKey ||
+              listed?.teamKey ||
+              formatTeamKey ||
+              UNASSIGNED_TEAM_KEY,
+          )
+          const teamLabel = normalizeTeamLabel(
+            json.teamLabel || snapshot?.teamLabel || listed?.teamLabel,
+            teamKey,
+          )
+          json.teamKey = teamKey
+          json.teamLabel = teamLabel
+        }
       }
       if (json && !download) {
         try {
@@ -425,6 +672,8 @@ export default function EditorPage({ Nav }) {
               id: saved.id,
               name,
               category: json.category || 'player',
+              teamKey: json.teamKey || UNASSIGNED_TEAM_KEY,
+              teamLabel: json.teamLabel || 'Unassigned',
               frozen: true,
               updatedAt: saved.updatedAt,
             }
@@ -442,8 +691,17 @@ export default function EditorPage({ Nav }) {
                   id: saved.id,
                   name,
                   category: json.category || 'player',
+                  teamKey: json.teamKey,
+                  teamLabel: json.teamLabel,
                   frozen: true,
-                  json: { ...json, id: saved.id, name, category: json.category || 'player' },
+                  json: {
+                    ...json,
+                    id: saved.id,
+                    name,
+                    category: json.category || 'player',
+                    teamKey: json.teamKey,
+                    teamLabel: json.teamLabel,
+                  },
                 },
               ],
               { sync: false },
@@ -655,13 +913,20 @@ export default function EditorPage({ Nav }) {
                       const res = api?.createTemplate?.({
                         name: String(name).trim(),
                         category: formatCategory,
+                        teamKey: formatTeamKey,
+                        teamLabel:
+                          teamOptions.find((x) => x.teamKey === formatTeamKey)?.teamLabel ||
+                          normalizeTeamLabel('', formatTeamKey),
                       })
                       const id = res?.template?.id
                       if (api.listTemplates) refreshTemplates()
+                      const teamLabel =
+                        teamOptions.find((x) => x.teamKey === formatTeamKey)?.teamLabel ||
+                        normalizeTeamLabel('', formatTeamKey)
+                      const catLabel =
+                        CATEGORIES.find((c) => c.id === formatCategory)?.label || formatCategory
                       setStatus(
-                        id
-                          ? `Created “${name}” · ${CATEGORIES.find((c) => c.id === formatCategory)?.label || formatCategory}`
-                          : 'Create failed',
+                        id ? `Created “${name}” · ${teamLabel} / ${catLabel}` : 'Create failed',
                       )
                     } catch (e) {
                       setStatus(e.message || 'Create failed')
@@ -672,6 +937,56 @@ export default function EditorPage({ Nav }) {
                 </button>
               }
             >
+              <div className="mb-2 flex items-center gap-1">
+                <select
+                  className={`${inputClass} min-w-0 flex-1 py-1.5 text-[11px]`}
+                  value={formatTeamKey}
+                  onChange={(e) => setFormatTeamKey(normalizeTeamKey(e.target.value))}
+                  aria-label="Team folder"
+                >
+                  {teamOptions.map((t) => (
+                    <option key={t.teamKey} value={t.teamKey}>
+                      {t.teamLabel}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  title="Edit team name"
+                  disabled={formatTeamKey === UNASSIGNED_TEAM_KEY}
+                  className="shrink-0 rounded border border-line px-2 py-1.5 text-[11px] font-semibold text-dim hover:border-blaze hover:text-paper disabled:cursor-not-allowed disabled:opacity-40"
+                  onClick={() => onRenameTeamFolder()}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  title="New team folder"
+                  className="shrink-0 rounded border border-line px-2 py-1.5 text-[11px] font-semibold text-dim hover:border-blaze hover:text-paper"
+                  onClick={async () => {
+                    const created = promptNewTeam()
+                    if (!created) return
+                    setExtraTeams((prev) => {
+                      if (prev.some((x) => x.teamKey === created.teamKey)) return prev
+                      return [...prev, created]
+                    })
+                    setFormatTeamKey(created.teamKey)
+                    try {
+                      await upsertTeamFolder(created)
+                      setApiOnline(true)
+                      setStatus(
+                        `Team folder “${created.teamLabel}” saved — use + Add to create templates here`,
+                      )
+                    } catch (e) {
+                      setStatus(
+                        `Team “${created.teamLabel}” added locally · DB save failed: ${e.message || e}`,
+                      )
+                    }
+                  }}
+                >
+                  + Team
+                </button>
+              </div>
               <div className="mb-2 flex gap-0.5 rounded-full border border-line bg-inset p-0.5">
                 {CATEGORIES.map((c) => (
                   <button
@@ -740,6 +1055,7 @@ export default function EditorPage({ Nav }) {
                         }`}
                         onClick={(e) => {
                           e.stopPropagation()
+                          setTplMoveTeamOpen(false)
                           setTplMenuId((cur) => (cur === t.id ? null : t.id))
                         }}
                       >
@@ -748,8 +1064,19 @@ export default function EditorPage({ Nav }) {
                       {tplMenuId === t.id ? (
                         <div
                           role="menu"
-                          className="absolute right-0 top-full z-30 mt-0.5 min-w-[148px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-md"
+                          className="absolute right-0 top-full z-30 mt-0.5 min-w-[168px] overflow-hidden rounded-md border border-line bg-panel py-1 shadow-md"
                         >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-paper hover:bg-inset"
+                            onClick={() => onRenameTemplate(t)}
+                          >
+                            <span className="w-4 text-center text-[11px] text-dim" aria-hidden>
+                              ✎
+                            </span>
+                            Rename template
+                          </button>
                           <button
                             type="button"
                             role="menuitem"
@@ -761,6 +1088,70 @@ export default function EditorPage({ Nav }) {
                             </span>
                             Copy template
                           </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            aria-expanded={tplMoveTeamOpen}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-paper hover:bg-inset"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setTplMoveTeamOpen((open) => !open)
+                            }}
+                          >
+                            <span className="w-4 text-center text-[11px] text-dim" aria-hidden>
+                              ⧉
+                            </span>
+                            <span className="flex-1">Move to team</span>
+                            <span className="text-[10px] text-muted">{tplMoveTeamOpen ? '▾' : '▸'}</span>
+                          </button>
+                          {tplMoveTeamOpen ? (
+                            <div className="max-h-48 overflow-y-auto border-y border-line/80 bg-inset/40 py-0.5">
+                              {teamOptions.map((team) => {
+                                const current = teamOf(t).teamKey === team.teamKey
+                                return (
+                                  <button
+                                    key={team.teamKey}
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={current}
+                                    className={`flex w-full items-center gap-2 px-3 py-1.5 pl-8 text-left text-[12px] ${
+                                      current
+                                        ? 'cursor-default text-muted'
+                                        : 'text-paper hover:bg-inset'
+                                    }`}
+                                    onClick={() => onSetTemplateTeam(t, team)}
+                                  >
+                                    <span className="min-w-0 flex-1 truncate">{team.teamLabel}</span>
+                                    {current ? (
+                                      <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted">
+                                        current
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                )
+                              })}
+                              <button
+                                type="button"
+                                role="menuitem"
+                                className="flex w-full items-center gap-2 px-3 py-1.5 pl-8 text-left text-[12px] text-dim hover:bg-inset hover:text-paper"
+                                onClick={async (e) => {
+                                  e.stopPropagation()
+                                  const created = promptNewTeam()
+                                  if (!created) return
+                                  setExtraTeams((prev) => {
+                                    if (prev.some((x) => x.teamKey === created.teamKey)) return prev
+                                    return [...prev, created]
+                                  })
+                                  try {
+                                    await upsertTeamFolder(created)
+                                  } catch (_) {}
+                                  onSetTemplateTeam(t, created)
+                                }}
+                              >
+                                + New team…
+                              </button>
+                            </div>
+                          ) : null}
                           <button
                             type="button"
                             role="menuitem"
@@ -793,7 +1184,7 @@ export default function EditorPage({ Nav }) {
                 {!filteredTemplates.length && (
                   <li className="px-1 text-[11px] text-muted">
                     {ready
-                      ? `No ${CATEGORIES.find((c) => c.id === formatCategory)?.label || ''} templates — + Add`
+                      ? `No ${CATEGORIES.find((c) => c.id === formatCategory)?.label || ''} templates in this team — + Add`
                       : 'Loading…'}
                   </li>
                 )}
