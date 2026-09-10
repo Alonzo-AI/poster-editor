@@ -725,6 +725,21 @@ export default function EditorPage({ Nav }) {
     }
   }
 
+  const onBakeRef = useRef(onBake)
+  onBakeRef.current = onBake
+  useEffect(() => {
+    function onKey(e) {
+      if (!(e.ctrlKey || e.metaKey)) return
+      if (String(e.key).toLowerCase() !== 's') return
+      // Same as Save button — never Download
+      e.preventDefault()
+      if (!ready) return
+      onBakeRef.current?.(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [ready])
+
   async function openSmartCropForSlot(key, src, label) {
     if (key !== 'player' || !src) return
     const frame = api?.getImageFrame?.(key) || {}
@@ -888,6 +903,7 @@ export default function EditorPage({ Nav }) {
             className="ui-btn ui-btn-primary"
             onClick={() => onBake(false)}
             disabled={!ready}
+            title="Save (Ctrl+S)"
           >
             Save
           </button>

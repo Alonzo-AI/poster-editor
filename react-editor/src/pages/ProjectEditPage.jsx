@@ -558,8 +558,15 @@ export default function ProjectEditPage({ Nav }) {
                 →
               </button>
             </div>
-            <Link to="/projects" className="ui-btn text-[12px]">
-              All projects
+            <Link
+              to={
+                project?.teamKey
+                  ? `/projects/team/${encodeURIComponent(project.teamKey)}`
+                  : '/projects'
+              }
+              className="ui-btn text-[12px]"
+            >
+              {project?.teamKey ? 'Folder' : 'All projects'}
             </Link>
             <button
               type="button"

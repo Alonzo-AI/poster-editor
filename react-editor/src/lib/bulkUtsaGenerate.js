@@ -1,19 +1,25 @@
 /**
- * Isolated UTSA bulk-poster helpers (Automate test feature).
- * Does not change Editor Save / normal Automate fill paths.
+ * Projects-only bulk CSV → projects collection.
+ * Clones Editor templates for a selected college; never writes templates.
  */
 
-export const BULK_TEAM_KEY = 'utsa'
-export const BULK_TEAM_LABEL = 'UTSA'
+import { normalizeTeamKey, normalizeTeamLabel } from './templateTeam.js'
+
 export const BULK_CATEGORIES = ['player', 'team', 'player_no_image', 'nostalgia']
 
-/** Prefer real Editor bases — never clone prior utsa_bulk_* projects that leaked into templates. */
+/** Known preferred base template ids for UTSA (legacy). Other teams use first non-bulk template per category. */
 export const BULK_PREFERRED_BASE_IDS = {
-  player: 'UTSA',
-  team: 'UTSA_2',
-  nostalgia: 'UTSA_3',
-  player_no_image: null,
+  utsa: {
+    player: 'UTSA',
+    team: 'UTSA_2',
+    nostalgia: 'UTSA_3',
+    player_no_image: null,
+  },
 }
+
+/** @deprecated use selected team — kept for callers that still import the constant */
+export const BULK_TEAM_KEY = 'utsa'
+export const BULK_TEAM_LABEL = 'UTSA'
 
 /** CSV header -> template bind / meta */
 const HEADER_ALIASES = {
@@ -74,12 +80,27 @@ function normalizeCategory(raw) {
   return CATEGORY_ALIASES[k] || CATEGORY_ALIASES[String(raw || '').trim().toLowerCase()] || null
 }
 
-function isUtsaCollege(raw) {
-  const v = String(raw || '')
+function collegeMatchesSelected(rawCollege, teamKey, teamLabel) {
+  const v = String(rawCollege || '').trim()
+  if (!v) return true // empty college column → use UI selection
+  const key = normalizeTeamKey(v)
+  if (key === normalizeTeamKey(teamKey)) return true
+  const label = String(teamLabel || '')
     .trim()
     .toLowerCase()
-    .replace(/[\s-]+/g, '_')
-  return !v || v === 'utsa' || v === 'ut_sa'
+  if (label && v.toLowerCase() === label) return true
+  // Also accept spaced labels vs keys (e.g. "East Carolina" vs east_carolina)
+  if (normalizeTeamKey(v) === normalizeTeamKey(teamKey)) return true
+  return false
+}
+
+function isBulkCloneId(id, teamKey) {
+  const s = String(id || '')
+  if (s.includes('_bulk_')) return true
+  const tk = normalizeTeamKey(teamKey)
+  if (tk && s.startsWith(`${tk}_bulk_`)) return true
+  if (s.startsWith('utsa_bulk_')) return true
+  return false
 }
 
 /** Minimal CSV parser (quoted fields supported). */
@@ -129,7 +150,14 @@ export function parseCsv(text) {
   return rows.filter((r) => r.some((c) => String(c || '').trim()))
 }
 
-export function csvRowsToBulkRecords(csvText) {
+/**
+ * Parse CSV into bulk records for the selected college.
+ * @param {string} csvText
+ * @param {{ teamKey: string, teamLabel?: string }} team
+ */
+export function csvRowsToBulkRecords(csvText, team = {}) {
+  const teamKey = normalizeTeamKey(team.teamKey || BULK_TEAM_KEY)
+  const teamLabel = normalizeTeamLabel(team.teamLabel, teamKey)
   const table = parseCsv(csvText)
   if (!table.length) return { records: [], errors: ['CSV is empty'] }
   const headers = table[0].map(normHeader)
@@ -144,8 +172,10 @@ export function csvRowsToBulkRecords(csvText) {
       if (!k) return
       raw[k] = cells[idx] != null ? String(cells[idx]) : ''
     })
-    if (!isUtsaCollege(raw.college)) {
-      errors.push(`Row ${i + 1}: skipped (college "${raw.college || ''}" is not UTSA)`)
+    if (!collegeMatchesSelected(raw.college, teamKey, teamLabel)) {
+      errors.push(
+        `Row ${i + 1}: skipped (college "${raw.college || ''}" ≠ selected “${teamLabel}”)`,
+      )
       continue
     }
     const fields = {}
@@ -161,12 +191,14 @@ export function csvRowsToBulkRecords(csvText) {
     }
     records.push({
       row: i + 1,
-      posterName: String(raw.posterName || fields.playerName || fields.teamName || `UTSA row ${i}`).trim(),
+      posterName: String(
+        raw.posterName || fields.playerName || fields.teamName || `${teamLabel} row ${i}`,
+      ).trim(),
       category, // null = generate all available categories
       fields,
     })
   }
-  return { records, errors }
+  return { records, errors, teamKey, teamLabel }
 }
 
 function slugPart(s) {
@@ -206,11 +238,39 @@ function applyTextToTemplateJson(json, fields) {
 }
 
 /**
- * Build new posters from CSV records using existing UTSA base templates.
+ * Pick one base template per category for a college (never prior bulk clones).
  */
-export async function generateUtsaBulkPosters({
+export function pickTeamBaseTemplates(templates, teamKey) {
+  const tk = normalizeTeamKey(teamKey)
+  const preferred = BULK_PREFERRED_BASE_IDS[tk] || {}
+  const candidates = (templates || []).filter((t) => {
+    const team = normalizeTeamKey(t.teamKey || t.json?.teamKey)
+    return team === tk
+  })
+  const byCategory = new Map()
+  for (const cat of BULK_CATEGORIES) {
+    const preferredId = preferred[cat]
+    const pick =
+      (preferredId && candidates.find((t) => t.id === preferredId)) ||
+      candidates.find(
+        (t) =>
+          (t.category || t.json?.category || 'player') === cat &&
+          !isBulkCloneId(t.id, tk),
+      ) ||
+      candidates.find((t) => (t.category || t.json?.category || 'player') === cat)
+    if (pick) byCategory.set(cat, pick)
+  }
+  return byCategory
+}
+
+/**
+ * Build new Projects from CSV records using the selected team's templates.
+ */
+export async function generateBulkPosters({
   records,
   templates,
+  teamKey,
+  teamLabel,
   fetchTemplate,
   saveProject,
   onProgress,
@@ -221,28 +281,18 @@ export async function generateUtsaBulkPosters({
   if (typeof fetchTemplate !== 'function') {
     throw new Error('fetchTemplate is required')
   }
-  const byCategory = new Map()
-  const candidates = (templates || []).filter((t) => {
-    const team = String(t.teamKey || t.json?.teamKey || '').toLowerCase()
-    return team === BULK_TEAM_KEY
-  })
-  for (const cat of BULK_CATEGORIES) {
-    const preferredId = BULK_PREFERRED_BASE_IDS[cat]
-    let pick =
-      (preferredId && candidates.find((t) => t.id === preferredId)) ||
-      candidates.find(
-        (t) =>
-          (t.category || t.json?.category || 'player') === cat &&
-          !String(t.id || '').startsWith('utsa_bulk_'),
-      ) ||
-      candidates.find((t) => (t.category || t.json?.category || 'player') === cat)
-    if (pick) byCategory.set(cat, pick)
+  const tk = normalizeTeamKey(teamKey)
+  if (!tk || tk === '__unassigned__') {
+    throw new Error('Select a college/team that has templates in the database')
   }
+  const label = normalizeTeamLabel(teamLabel, tk)
+  const byCategory = pickTeamBaseTemplates(templates, tk)
 
   const created = []
   const skipped = []
   const failed = []
   let n = 0
+  const teamSlug = slugPart(tk)
 
   for (const rec of records || []) {
     const cats = rec.category ? [rec.category] : BULK_CATEGORIES
@@ -252,13 +302,13 @@ export async function generateUtsaBulkPosters({
         skipped.push({
           row: rec.row,
           category: cat,
-          reason: `No UTSA template for category "${cat}"`,
+          reason: `No “${label}” template for category "${cat}"`,
         })
         onProgress?.({ type: 'skip', row: rec.row, category: cat })
         continue
       }
       n += 1
-      const id = `utsa_bulk_${cat}_${slugPart(rec.posterName)}_${Date.now().toString(36)}_${n}`
+      const id = `${teamSlug}_bulk_${cat}_${slugPart(rec.posterName)}_${Date.now().toString(36)}_${n}`
       const name = `${rec.posterName} · ${cat}`
       try {
         onProgress?.({ type: 'start', row: rec.row, category: cat, id, name })
@@ -269,8 +319,8 @@ export async function generateUtsaBulkPosters({
         json.id = id
         json.name = name
         json.category = cat
-        json.teamKey = BULK_TEAM_KEY
-        json.teamLabel = BULK_TEAM_LABEL
+        json.teamKey = tk
+        json.teamLabel = label
         if (!json.settings) json.settings = {}
         json.settings.freezeLayout = true
         if (!json.automation) json.automation = {}
@@ -278,18 +328,17 @@ export async function generateUtsaBulkPosters({
         json._bakeMeta = {
           ...(json._bakeMeta || {}),
           bakedAt: new Date().toISOString(),
-          source: 'bulk-utsa-csv',
+          source: 'bulk-csv',
           sourceTemplate: base.id,
           csvRow: rec.row,
+          teamKey: tk,
         }
-        // Keep default images from source template — do not clear or replace
-        // Persist as a Project (not an Editor/Automate template).
         const saved = await saveProject(json, {
           id,
           name,
           category: cat,
-          teamKey: BULK_TEAM_KEY,
-          teamLabel: BULK_TEAM_LABEL,
+          teamKey: tk,
+          teamLabel: label,
           sourceTemplateId: base.id,
         })
         created.push({
@@ -307,5 +356,21 @@ export async function generateUtsaBulkPosters({
     }
   }
 
-  return { created, skipped, failed, baseCategories: [...byCategory.keys()] }
+  return {
+    created,
+    skipped,
+    failed,
+    baseCategories: [...byCategory.keys()],
+    teamKey: tk,
+    teamLabel: label,
+  }
+}
+
+/** @deprecated prefer generateBulkPosters — UTSA wrapper for older call sites */
+export async function generateUtsaBulkPosters(opts = {}) {
+  return generateBulkPosters({
+    ...opts,
+    teamKey: opts.teamKey || BULK_TEAM_KEY,
+    teamLabel: opts.teamLabel || BULK_TEAM_LABEL,
+  })
 }

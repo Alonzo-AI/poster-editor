@@ -43,6 +43,7 @@ function ShellNav() {
       </NavLink>
       <NavLink
         to="/projects"
+        end={false}
         className={({ isActive }) =>
           `rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
             isActive ? 'bg-panel text-paper shadow-sm' : 'text-dim hover:text-paper'
@@ -68,6 +69,7 @@ export default function App() {
           <Route path="/" element={<EditorPage Nav={ShellNav} />} />
           <Route path="/automate" element={<AutomatePage Nav={ShellNav} />} />
           <Route path="/projects" element={<ProjectsPage Nav={ShellNav} />} />
+          <Route path="/projects/team/:teamKey" element={<ProjectsPage Nav={ShellNav} />} />
           <Route path="/projects/:id" element={<ProjectEditPage Nav={ShellNav} />} />
         </Routes>
       </Suspense>
