@@ -1,12 +1,25 @@
 import { lazy, Suspense } from 'react'
 import { NavLink, Route, Routes } from 'react-router-dom'
 
+const HomePage = lazy(() => import('./pages/HomePage.jsx'))
 const EditorPage = lazy(() => import('./pages/EditorPage.jsx'))
 const AutomatePage = lazy(() => import('./pages/AutomatePage.jsx'))
+const ProjectsPage = lazy(() => import('./pages/ProjectsPage.jsx'))
+const ProjectEditPage = lazy(() => import('./pages/ProjectEditPage.jsx'))
 
 function ShellNav() {
   return (
     <nav className="flex items-center gap-0.5 rounded-full border border-line bg-inset p-0.5">
+      <NavLink
+        to="/home"
+        className={({ isActive }) =>
+          `rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+            isActive ? 'bg-panel text-paper shadow-sm' : 'text-dim hover:text-paper'
+          }`
+        }
+      >
+        Home
+      </NavLink>
       <NavLink
         to="/"
         end
@@ -28,6 +41,16 @@ function ShellNav() {
       >
         Automate
       </NavLink>
+      <NavLink
+        to="/projects"
+        className={({ isActive }) =>
+          `rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+            isActive ? 'bg-panel text-paper shadow-sm' : 'text-dim hover:text-paper'
+          }`
+        }
+      >
+        Projects
+      </NavLink>
     </nav>
   )
 }
@@ -41,8 +64,11 @@ export default function App() {
         }
       >
         <Routes>
+          <Route path="/home" element={<HomePage Nav={ShellNav} />} />
           <Route path="/" element={<EditorPage Nav={ShellNav} />} />
           <Route path="/automate" element={<AutomatePage Nav={ShellNav} />} />
+          <Route path="/projects" element={<ProjectsPage Nav={ShellNav} />} />
+          <Route path="/projects/:id" element={<ProjectEditPage Nav={ShellNav} />} />
         </Routes>
       </Suspense>
     </div>

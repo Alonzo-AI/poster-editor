@@ -66,6 +66,31 @@ const teamFolderSchema = new mongoose.Schema(
 )
 const TeamFolder = mongoose.model('TeamFolder', teamFolderSchema)
 
+/**
+ * Bulk / CSV generated posters — separate from Editor templates.
+ * Editable via Projects UI (Automate-like tools); never listed as Formats templates.
+ */
+const projectSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true, index: true },
+    name: { type: String, required: true },
+    category: {
+      type: String,
+      enum: ['player', 'team', 'player_no_image', 'nostalgia'],
+      default: 'player',
+      index: true,
+    },
+    teamKey: { type: String, default: '__unassigned__', index: true },
+    teamLabel: { type: String, default: 'Unassigned' },
+    sourceTemplateId: { type: String, default: null },
+    json: { type: mongoose.Schema.Types.Mixed, required: true },
+    updatedAt: { type: Date, default: Date.now },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { versionKey: false, collection: 'projects' },
+)
+const Project = mongoose.model('Project', projectSchema)
+
 const UNASSIGNED_TEAM_KEY = '__unassigned__'
 const UNASSIGNED_TEAM_LABEL = 'Unassigned'
 
@@ -627,6 +652,184 @@ app.patch('/api/templates/:id', async (req, res) => {
 app.delete('/api/templates/:id', async (req, res) => {
   try {
     const r = await Template.deleteOne({ id: normalizeId(req.params.id) })
+    if (!r.deletedCount) return res.status(404).json({ error: 'Not found' })
+    res.json({ ok: true })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
+async function upsertProjectJson(rawJson, forcedId, meta = {}) {
+  const json = rawJson && typeof rawJson === 'object' ? { ...rawJson } : {}
+  const id = normalizeId(forcedId || json.id || meta.id)
+  if (!id) {
+    const err = new Error('Project id required')
+    err.status = 400
+    throw err
+  }
+  const name = String(meta.name || json.name || id).trim() || id
+  const category = normalizeCategory(meta.category ?? json.category ?? json.settings?.category)
+  const team = teamFieldsFromJson({
+    teamKey: meta.teamKey ?? json.teamKey,
+    teamLabel: meta.teamLabel ?? json.teamLabel,
+    ...json,
+  })
+  json.id = id
+  json.name = name
+  json.category = category
+  json.teamKey = team.teamKey
+  json.teamLabel = team.teamLabel
+  if (!json.settings) json.settings = {}
+  json.settings.freezeLayout = true
+  if (!json.automation) json.automation = {}
+  json.automation.freezeLayout = true
+
+  const approx = Buffer.byteLength(JSON.stringify(json), 'utf8')
+  if (approx > 15 * 1024 * 1024) {
+    const err = new Error(
+      `Project JSON is ~${Math.round(approx / 1e6)}MB (Mongo max 16MB). Remove large images and Save again.`,
+    )
+    err.status = 413
+    throw err
+  }
+
+  const existed = !!(await Project.exists({ id }))
+  const row = await Project.findOneAndUpdate(
+    { id },
+    {
+      $set: {
+        id,
+        name,
+        category,
+        teamKey: team.teamKey,
+        teamLabel: team.teamLabel,
+        sourceTemplateId: meta.sourceTemplateId ?? json._bakeMeta?.sourceTemplate ?? null,
+        json,
+        updatedAt: new Date(),
+      },
+      $setOnInsert: { createdAt: new Date() },
+    },
+    { upsert: true, new: true },
+  ).lean()
+
+  console.log(
+    `[api] project ${existed ? 'update' : 'create'} id=${id} team=${team.teamKey} category=${category}`,
+  )
+
+  return {
+    ok: true,
+    id: row.id,
+    name: row.name,
+    category: normalizeCategory(row.category),
+    teamKey: normalizeTeamKey(row.teamKey),
+    teamLabel: normalizeTeamLabel(row.teamLabel, row.teamKey),
+    sourceTemplateId: row.sourceTemplateId || null,
+    updatedAt: row.updatedAt,
+    created: !existed,
+    updated: existed,
+  }
+}
+
+app.get('/api/projects', async (_req, res) => {
+  try {
+    const rows = await Project.find(
+      {},
+      {
+        id: 1,
+        name: 1,
+        category: 1,
+        teamKey: 1,
+        teamLabel: 1,
+        sourceTemplateId: 1,
+        updatedAt: 1,
+        createdAt: 1,
+      },
+    )
+      .sort({ updatedAt: -1 })
+      .lean()
+    res.json({
+      projects: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: normalizeCategory(r.category),
+        teamKey: normalizeTeamKey(r.teamKey),
+        teamLabel: normalizeTeamLabel(r.teamLabel, r.teamKey),
+        sourceTemplateId: r.sourceTemplateId || null,
+        updatedAt: r.updatedAt,
+        createdAt: r.createdAt,
+      })),
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
+app.get('/api/projects/:id', async (req, res) => {
+  try {
+    const row = await Project.findOne({ id: normalizeId(req.params.id) }).lean()
+    if (!row) return res.status(404).json({ error: 'Not found' })
+    const json =
+      row.json && typeof row.json === 'object' ? { ...row.json } : { id: row.id, name: row.name }
+    json.id = row.id
+    json.name = row.name
+    json.category = normalizeCategory(row.category)
+    json.teamKey = normalizeTeamKey(row.teamKey)
+    json.teamLabel = normalizeTeamLabel(row.teamLabel, row.teamKey)
+    res.json({
+      id: row.id,
+      name: row.name,
+      category: json.category,
+      teamKey: json.teamKey,
+      teamLabel: json.teamLabel,
+      sourceTemplateId: row.sourceTemplateId || null,
+      updatedAt: row.updatedAt,
+      createdAt: row.createdAt,
+      json,
+    })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
+app.put('/api/projects/:id', async (req, res) => {
+  try {
+    const body = req.body || {}
+    const json = body.json || body
+    const result = await upsertProjectJson(json, req.params.id, {
+      name: body.name,
+      category: body.category,
+      teamKey: body.teamKey,
+      teamLabel: body.teamLabel,
+      sourceTemplateId: body.sourceTemplateId,
+    })
+    res.json(result)
+  } catch (err) {
+    console.error('[api] project put failed:', err.message || err)
+    res.status(err.status || 500).json({ error: err.message || String(err) })
+  }
+})
+
+app.post('/api/projects', async (req, res) => {
+  try {
+    const body = req.body || {}
+    const json = body.json || body
+    const result = await upsertProjectJson(json, body.id || json.id, {
+      name: body.name,
+      category: body.category,
+      teamKey: body.teamKey,
+      teamLabel: body.teamLabel,
+      sourceTemplateId: body.sourceTemplateId,
+    })
+    res.json(result)
+  } catch (err) {
+    console.error('[api] project post failed:', err.message || err)
+    res.status(err.status || 500).json({ error: err.message || String(err) })
+  }
+})
+
+app.delete('/api/projects/:id', async (req, res) => {
+  try {
+    const r = await Project.deleteOne({ id: normalizeId(req.params.id) })
     if (!r.deletedCount) return res.status(404).json({ error: 'Not found' })
     res.json({ ok: true })
   } catch (err) {

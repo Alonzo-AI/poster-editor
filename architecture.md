@@ -44,6 +44,7 @@ Vanilla `index.html` / `automate.html` remain rollback. Prefer React for UI work
 | **Automate freeze** | First paint / Reset → `freeze_layout`. Later fills → `preserve_layout: true`. Headless must not wipe Editor session storage. |
 | **Export path** | PNG via html2canvas on `#stage`. Prefer real `<img>` and inline SVG for shapes. |
 | **Private S3** | Bucket objects are served through `/api/media/...`, not public ACL assumptions. |
+| **Projects ≠ templates** | Bulk / CSV posters live in Mongo `projects` (`/api/projects`). They must never be written to `templates` or appear in Editor Formats / Automate catalogs. `/` and `/automate` stay unchanged; landing is `/home`. |
 
 ### 0.3 Safe change map
 
@@ -64,6 +65,8 @@ Vanilla `index.html` / `automate.html` remain rollback. Prefer React for UI work
 4. **God file** `index.html` — many concerns share one file; touch the smallest region and re-test nearby behaviors.
 5. **Automate shared `text` form** — never merge previous template fills into the next. Each template hydrates from its JSON (`defaults.text` / placeholders) or its own session cache; `setPayload` on switch must `applyTemplateTextFromPlaceholders` before overlaying payload keys.
 6. **Automate catalog vs Editor** — Automate list is **Mongo-authoritative** (`mergeTemplateCatalog(..., { dbAuthority:true })`). Lite sync must still patch `teamKey`/`category` on hydrated templates. Headless sync may prune non-disk orphans; Editor embed must not (protects unsaved + Add).
+7. **Project inject race** — `__RENDER_API_V3__` exists before `init()` finishes; `PosterTemplateLoader.loadAll()` clears `TEMPLATES`. Always `await ensureTemplatesLoaded()` (or `setPayload`) **before** `injectRemoteTemplates` for a project, then `setPayload({ template: id, freeze_layout:true })`.
+8. **Bulk bases** — UTSA CSV bulk must clone `UTSA` / `UTSA_2` / `UTSA_3`, never prior `utsa_bulk_*` rows that may exist in `templates` from older tests.
 
 ---
 
@@ -71,8 +74,10 @@ Vanilla `index.html` / `automate.html` remain rollback. Prefer React for UI work
 
 | Surface | Entry | Job |
 |---|---|---|
+| **Home** | `react-editor/` `/home` | Landing links to Editor, Automate, Projects |
 | **Editor** | `react-editor/` `/` (iframe `index.html?embed=1`) | Layers, geometry, colors, shapes, fonts, Save frozen template |
 | **Automate** | `react-editor/` `/automate` (iframe `?headless=1`) | Pick frozen template, swap copy/images, export PNG |
+| **Projects** | `react-editor/` `/projects` · `/projects/:id` | CSV bulk posters in Mongo `projects` (not templates); Automate-like edit + Save |
 
 ```
 react-editor (UI)
@@ -81,7 +86,7 @@ react-editor (UI)
 index.html engine (#stage + __RENDER_API_V3__)
     │
     ├── templates/*.json (seeds)
-    ├── Mongo via server/ (durable templates + team_folders)
+    ├── Mongo via server/ (durable templates + team_folders + projects)
     ├── S3 via /api/uploads + /api/media (images + remote fonts)
     └── html2canvas PNG
 ```
@@ -107,9 +112,10 @@ poster-editor/
 │   ├── .env                   Mongo + AWS (do not commit secrets)
 │   └── scripts/upload-drive-fonts-to-s3.mjs
 └── react-editor/
-    ├── src/pages/EditorPage.jsx, AutomatePage.jsx
-    ├── src/lib/templateTeam.js
-    ├── src/api/templatesApi.js, uploadsApi.js
+    ├── src/pages/HomePage.jsx, EditorPage.jsx, AutomatePage.jsx,
+    │         ProjectsPage.jsx, ProjectEditPage.jsx
+    ├── src/lib/templateTeam.js, bulkUtsaGenerate.js
+    ├── src/api/templatesApi.js, projectsApi.js, uploadsApi.js
     └── src/components/…       Properties, fonts, layers, studio panels
 ```
 
@@ -300,6 +306,7 @@ render()
 | GET | `/api/health` | Health |
 | GET/POST/PUT | `/api/teams` | Team folders |
 | GET/POST/PUT/PATCH/DELETE | `/api/templates` | Template CRUD / meta |
+| GET/POST/PUT/DELETE | `/api/projects` | Bulk posters (separate collection; never Formats) |
 | POST | `/api/uploads` | Multipart → S3 |
 | GET | `/api/media/*` | Private S3 proxy (images + fonts) |
 
@@ -310,7 +317,7 @@ Env: `MONGODB_URI`, `MONGODB_DB`, `AWS_*`, `S3_BUCKET`, `PORT`.
 ## 10. `__RENDER_API_V3__` (selected)
 
 ```js
-setPayload / freezeCurrentLayout / resetAutomateLayout
+setPayload / freezeCurrentLayout / resetAutomateLayout / ensureTemplatesLoaded
 listTemplates          // includes category, teamKey, teamLabel
 createTemplate({ name, category, teamKey, teamLabel })
 bakeTemplate / duplicateTemplate / removeRemoteTemplate
@@ -332,6 +339,7 @@ Automate image aliases: `player_image`, `logo_url`, `conference_logo`, `sponsor_
 - **Save (`onBake`):** ownership from baked JSON + live `listTemplates` entry for **that id** only.
 - **Font picker:** `listFontOptions`; refresh on `remote-fonts`; do not default-display Anton when value is a custom stack.
 - **Eyedropper:** `EyeDropper` API; call `.open()` in the same click turn.
+- **Projects:** `/home` landing; `/projects` gallery + CSV bulk; `/projects/:id` Automate-like fill/Edit; Save → `/api/projects` only. Do not change `/` or `/automate`.
 - Do not add a second renderer in React.
 
 ---
@@ -405,5 +413,6 @@ Existing bridge helpers (`addTextField`, `SHAPE_PRESETS`). Save to persist.
 - [x] Remote fonts (S3 + remote-fonts.json)
 - [x] Save ownership lock (college ≠ sidebar filter)
 - [x] Font persistence for remote stacks
+- [x] Automate catalog Mongo-authoritative + UTSA CSV bulk test (Automate-only; clones bases, text-only)
 - [ ] Keep architecture.md updated when invariants change
 ```

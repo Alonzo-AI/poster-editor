@@ -7854,6 +7854,9 @@ function allocUniqueTemplateId(rawName, { forbid=null, existing=[] }={}){
 }
 
 window.__RENDER_API_V3__={
+  async ensureTemplatesLoaded(){
+    return ensurePosterTemplatesLoaded();
+  },
   async setPayload(payload){
     const styleId=payload.style||payload.template;
     await ensurePosterTemplatesLoaded();

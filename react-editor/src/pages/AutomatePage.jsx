@@ -24,7 +24,6 @@ import {
   promptNewTeam,
   teamOf,
 } from '../lib/templateTeam.js'
-
 const inputClass = 'ui-input'
 
 const CATEGORIES = [
