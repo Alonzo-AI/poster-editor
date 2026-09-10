@@ -711,21 +711,16 @@
       </div>
     </details>
 
-    <details class="group" open>
-      <summary>Brand colors</summary>
-      <div class="body">
-        <div class="row">
-          <div><label class="fld">Primary</label><input type="color" id="cPrimary" value="#9D2235"></div>
-          <div><label class="fld">Secondary</label><input type="color" id="cSecondary" value="#FFFFFF"></div>
-        </div>
-        <div class="swatches" id="presetSwatches"></div>
-        <label class="fld" style="margin-top:10px;display:flex;align-items:center;gap:7px;cursor:pointer">
-          <input type="checkbox" id="autoPal" checked style="width:auto"> <span id="autoPalLabel">Auto-detect palette from team logo</span>
-        </label>
-        <button class="btn sec" id="detectPal" style="margin-top:6px">Detect colors from logo now</button>
-        <div class="mini" id="palStatus"></div>
-      </div>
-    </details>
+    <!-- Brand UI removed from product chrome; keep inputs for engine roleColor / setBrandColors. -->
+    <div id="brandColorsEngine" hidden aria-hidden="true">
+      <input type="color" id="cPrimary" value="#9D2235">
+      <input type="color" id="cSecondary" value="#FFFFFF">
+      <div class="swatches" id="presetSwatches"></div>
+      <input type="checkbox" id="autoPal">
+      <span id="autoPalLabel"></span>
+      <button type="button" id="detectPal"></button>
+      <div id="palStatus"></div>
+    </div>
 
     <details class="group" open>
       <summary>Images</summary>
@@ -896,7 +891,7 @@ const state = {
   cropMode: null,  // layer id currently being cropped, or null
   selected: null,
   zoom: null,      // null = auto-fit
-  autoPalette: true,
+  autoPalette: false,
   canvasOverride: null,
   detectedPalette: null,
   stories: [],
@@ -5419,7 +5414,8 @@ document.getElementById("tplNext").onclick=()=>gotoTemplate(1);
 
 // colors
 const cP=document.getElementById("cPrimary"), cS=document.getElementById("cSecondary");
-cP.value=state.colors.primary; cS.value=state.colors.secondary;
+if(cP) cP.value=state.colors.primary;
+if(cS) cS.value=state.colors.secondary;
 let _brandPreviewTimer=0;
 function queueBrandPreview(save=false){
   clearTimeout(_brandPreviewTimer);
@@ -5434,16 +5430,20 @@ function applyManualBrandColors(primary, secondary, save=false){
   state.colors.primary=primary;
   state.colors.secondary=secondary;
   state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
-  cP.value=state.colors.primary;
-  cS.value=state.colors.secondary;
+  if(cP) cP.value=state.colors.primary;
+  if(cS) cS.value=state.colors.secondary;
   queueBrandPreview(save);
 }
-cP.oninput=e=>applyManualBrandColors(e.target.value, state.colors.secondary);
-cS.oninput=e=>applyManualBrandColors(state.colors.primary, e.target.value);
-cP.onchange=e=>applyManualBrandColors(e.target.value, state.colors.secondary, true);
-cS.onchange=e=>applyManualBrandColors(state.colors.primary, e.target.value, true);
+if(cP){
+  cP.oninput=e=>applyManualBrandColors(e.target.value, state.colors.secondary);
+  cP.onchange=e=>applyManualBrandColors(e.target.value, state.colors.secondary, true);
+}
+if(cS){
+  cS.oninput=e=>applyManualBrandColors(state.colors.primary, e.target.value);
+  cS.onchange=e=>applyManualBrandColors(state.colors.primary, e.target.value, true);
+}
 const swWrap=document.getElementById("presetSwatches");
-COLOR_PRESETS.forEach(([p,s])=>{
+if(swWrap) COLOR_PRESETS.forEach(([p,s])=>{
   const b=document.createElement("div"); b.className="sw";
   b.style.background=`linear-gradient(135deg,${p} 50%,${s} 50%)`;
   b.title=`${p} / ${s}`;
@@ -5686,7 +5686,7 @@ function applyPaletteFromLogo(){
   const contrast=window.PosterTemplateLoader?.getTemplateSettings?.(state.template)?.brandColors?.contrast;
   if(contrast) state.colors.contrast=contrast;
   state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
-  cP.value=pal.primary; cS.value=pal.secondary;
+  if(cP) cP.value=pal.primary; if(cS) cS.value=pal.secondary;
   setPalStatus(`Detected from logo: ${pal.primary} / ${pal.secondary}`);
   render();
   scheduleSave();
@@ -5701,7 +5701,7 @@ async function applyPaletteFromPlayer(){
     state.detectedPalette=pal;
     Object.assign(state.colors, pal);
     state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
-    cP.value=state.colors.primary; cS.value=state.colors.secondary;
+    if(cP) cP.value=state.colors.primary; if(cS) cS.value=state.colors.secondary;
     setPalStatus(`Detected from player photo: ${state.colors.primary} / ${state.colors.secondary}`);
   } else {
     setPalStatus("Couldn't read colors from player photo — keeping current palette.");
@@ -6363,8 +6363,8 @@ function applyStory(s, opts={}){
   // Copy only by default — story primary/secondary used to overwrite brand colors and
   // make role-colored text (primary, secondary, …) jump on every Stories change.
   if(opts.applyColors){
-    if(mapped.colors.primary){ state.colors.primary=mapped.colors.primary; cP.value=mapped.colors.primary; }
-    if(mapped.colors.secondary){ state.colors.secondary=mapped.colors.secondary; cS.value=mapped.colors.secondary; }
+    if(mapped.colors.primary){ state.colors.primary=mapped.colors.primary; if(cP) cP.value=mapped.colors.primary; }
+    if(mapped.colors.secondary){ state.colors.secondary=mapped.colors.secondary; if(cS) cS.value=mapped.colors.secondary; }
     state.colors=PosterRenderEngine.enrichThemeColors(state.colors);
   }
   buildTextFields();
@@ -7045,6 +7045,7 @@ function restoreBakedTemplates(){
       };
     }
     if(!ENABLED_TEMPLATES.includes(id)) ENABLED_TEMPLATES.push(id);
+    REMOTE_TEMPLATE_IDS.add(id);
     if(!state.logoSettings[id]) state.logoSettings[id]={ opacity:1, scale:1 };
     seedFieldLabelsFromTemplate(id);
     // Seed durable default images into per-template image map
@@ -7275,16 +7276,16 @@ document.addEventListener("keydown",(e)=>{
   }
   if(act){ e.preventDefault(); render(); scheduleSave(); }
 });
-document.getElementById("autoPal").onchange=e=>{
-  state.autoPalette=e.target.checked;
+document.getElementById("autoPal")?.addEventListener("change", (e)=>{
+  state.autoPalette=!!e.target.checked;
   if(!e.target.checked) return;
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
   else if(shouldUseLogoPaletteForTemplate(state.template) && imagesOf().logo) applyPaletteFromLogo();
-};
-document.getElementById("detectPal").onclick=()=>{
+});
+document.getElementById("detectPal")?.addEventListener("click", ()=>{
   if(shouldUsePlayerPalette(state.template)) applyPaletteFromPlayer();
   else if(shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
-};
+});
 
 /* ============================================================
    ZOOM / FIT
@@ -8511,17 +8512,28 @@ window.__RENDER_API_V3__={
       }
       const isLite=!!json._remoteLite;
       const existing=TEMPLATES[json.id]?._json;
-      // Lite metadata sync must not clobber disk seeds or already-hydrated DB templates
+      // Lite metadata sync must not clobber disk seeds or already-hydrated DB templates'
+      // layers — but MUST refresh college/category/name so Automate matches Editor/Mongo.
+      const patchLiteMeta=(target)=>{
+        if(!target||typeof target!=="object") return;
+        target.category=json.category;
+        target.teamKey=json.teamKey;
+        target.teamLabel=json.teamLabel;
+        if(json.name) target.name=json.name;
+        if(TEMPLATES[json.id]) TEMPLATES[json.id].name=json.name||TEMPLATES[json.id].name||json.id;
+      };
       if(isLite && DISK_TEMPLATE_IDS.has(json.id)){
         REMOTE_TEMPLATE_IDS.add(json.id);
         incoming.add(json.id);
         ids.push(json.id);
+        if(existing) patchLiteMeta(existing);
         continue;
       }
       if(isLite && existing && !existing._remoteLite && (existing.layers||[]).length>0){
         REMOTE_TEMPLATE_IDS.add(json.id);
         incoming.add(json.id);
         ids.push(json.id);
+        patchLiteMeta(existing);
         continue;
       }
       if(loader?.rebuildFromJson) loader.rebuildFromJson(json);
@@ -8547,6 +8559,16 @@ window.__RENDER_API_V3__={
       // Remove templates that exist only from old Atlas/localStorage bakes
       for(const id of [...REMOTE_TEMPLATE_IDS]){
         if(!incoming.has(id)) uninstallTemplateId(id);
+      }
+      // Automate (headless) only: drop non-disk engine orphans not in Mongo.
+      // Never do this in Editor embed — unsaved + Add drafts are not in Mongo yet.
+      if(document.body.classList.contains("headless")){
+        try{
+          for(const id of Object.keys(TEMPLATES||{})){
+            if(incoming.has(id) || DISK_TEMPLATE_IDS.has(id)) continue;
+            uninstallTemplateId(id);
+          }
+        }catch(_){}
       }
     }
     try{ buildTplChips(); }catch(_){}
@@ -8858,7 +8880,7 @@ async function init(){
   if(surl){
     loadStoriesFromUrl(surl, storyParam, { apply:applyStoryParam });
   }
-  cP.value=state.colors.primary; cS.value=state.colors.secondary;
+  if(cP) cP.value=state.colors.primary; if(cS) cS.value=state.colors.secondary;
   const ap=document.getElementById("autoPal"); if(ap) ap.checked=state.autoPalette;
   const lf=document.getElementById("lockFonts"); if(lf) lf.checked=state.lockTemplateFonts;
   await ensurePosterTemplatesLoaded();

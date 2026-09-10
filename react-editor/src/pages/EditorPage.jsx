@@ -76,6 +76,8 @@ export default function EditorPage({ Nav }) {
   const [tplMenuId, setTplMenuId] = useState(null)
   const [tplMoveTeamOpen, setTplMoveTeamOpen] = useState(false)
   const tplMenuRef = useRef(null)
+  /** Formats list spinner while a template is loading into the engine. */
+  const [loadingTemplateId, setLoadingTemplateId] = useState(null)
   const [smartCrop, setSmartCrop] = useState(null) // { key, src, label, frameW, frameH }
   const [cutoutBusy, setCutoutBusy] = useState(false)
   const [cutoutDone, setCutoutDone] = useState(false)
@@ -1001,12 +1003,19 @@ export default function EditorPage({ Nav }) {
                 ))}
               </div>
               <ul className="space-y-0.5">
-                {filteredTemplates.map((t) => (
+                {filteredTemplates.map((t) => {
+                  const isActive = snapshot?.template === t.id
+                  const isLoading = loadingTemplateId === t.id
+                  return (
                   <li key={t.id} className="group relative flex items-center gap-0.5">
                     <button
                       type="button"
+                      disabled={!!loadingTemplateId && !isLoading}
+                      aria-busy={isLoading}
                       onClick={async () => {
+                        if (isActive || loadingTemplateId) return
                         setTplMenuId(null)
+                        setLoadingTemplateId(t.id)
                         setStatus(`Loading “${t.name || t.id}”…`)
                         try {
                           await ensureTemplateInEngine(api, t.id, {
@@ -1017,16 +1026,25 @@ export default function EditorPage({ Nav }) {
                           setStatus('')
                         } catch (e) {
                           setStatus(e.message || 'Failed to load template')
+                        } finally {
+                          setLoadingTemplateId((cur) => (cur === t.id ? null : cur))
                         }
                       }}
                       className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left ${
-                        snapshot?.template === t.id
+                        isActive
                           ? 'bg-panel2 text-paper'
                           : 'text-dim hover:bg-inset hover:text-paper'
-                      }`}
+                      } ${loadingTemplateId && !isLoading ? 'opacity-50' : ''}`}
                     >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-inset text-[12px] font-semibold uppercase text-dim">
-                        {(t.name || t.id || '?').trim().charAt(0) || '?'}
+                      <span className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded border border-line bg-inset text-[12px] font-semibold uppercase text-dim">
+                        {isLoading ? (
+                          <span
+                            className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-blaze/25 border-t-blaze"
+                            aria-hidden
+                          />
+                        ) : (
+                          (t.name || t.id || '?').trim().charAt(0) || '?'
+                        )}
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[12px] font-medium">{t.name}</span>
@@ -1045,6 +1063,7 @@ export default function EditorPage({ Nav }) {
                         title="Template options"
                         aria-label="Template options"
                         aria-expanded={tplMenuId === t.id}
+                        disabled={!!loadingTemplateId}
                         className={`mr-0.5 flex h-7 w-7 items-center justify-center rounded text-[15px] leading-none text-muted hover:bg-inset hover:text-paper ${
                           tplMenuId === t.id
                             ? 'bg-inset text-paper opacity-100'
@@ -1177,7 +1196,8 @@ export default function EditorPage({ Nav }) {
                       ) : null}
                     </div>
                   </li>
-                ))}
+                  )
+                })}
                 {!filteredTemplates.length && (
                   <li className="px-1 text-[11px] text-muted">
                     {ready
@@ -1416,27 +1436,6 @@ export default function EditorPage({ Nav }) {
                     <span className="truncate text-[10px] text-dim">{p.label || p.id}</span>
                   </button>
                 ))}
-              </div>
-            </Panel>
-
-            <Panel title="Brand">
-              <div className="flex gap-2">
-                <Field label="Primary">
-                  <input
-                    type="color"
-                    className="h-8 w-full cursor-pointer rounded border border-line bg-inset"
-                    value={snapshot?.colors?.primary || '#006F73'}
-                    onChange={(e) => api?.setBrandColors?.({ primary: e.target.value })}
-                  />
-                </Field>
-                <Field label="Secondary">
-                  <input
-                    type="color"
-                    className="h-8 w-full cursor-pointer rounded border border-line bg-inset"
-                    value={snapshot?.colors?.secondary || '#C5B358'}
-                    onChange={(e) => api?.setBrandColors?.({ secondary: e.target.value })}
-                  />
-                </Field>
               </div>
             </Panel>
           </div>

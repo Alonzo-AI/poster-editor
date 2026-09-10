@@ -50,23 +50,40 @@ export async function upsertTeamFolder({ teamKey, teamLabel } = {}) {
 /**
  * Merge Mongo name catalog + engine list so DB names never flicker away
  * when the iframe temporarily only knows disk templates.
+ *
+ * opts.dbAuthority — Automate mode: list = Mongo ids only (no engine ghosts /
+ * deleted remotes / stale Unassigned leftovers). Engine still supplies fields/images.
  */
-export function mergeTemplateCatalog(dbLite = [], engineList = []) {
-  const map = new Map()
+export function mergeTemplateCatalog(dbLite = [], engineList = [], opts = {}) {
+  const dbAuthority = !!opts.dbAuthority
+  const engineById = new Map()
   for (const t of engineList || []) {
     if (!t?.id) continue
-    map.set(t.id, { ...t, fromDb: false })
+    engineById.set(t.id, t)
   }
+
+  const map = new Map()
+
+  if (!dbAuthority) {
+    for (const t of engineList || []) {
+      if (!t?.id) continue
+      map.set(t.id, { ...t, fromDb: false })
+    }
+  }
+
   for (const t of dbLite || []) {
     if (!t?.id) continue
-    const prev = map.get(t.id) || {}
+    const prev = map.get(t.id) || engineById.get(t.id) || {}
+    // Prefer Mongo college/category when the row exists in DB (never keep stale engine teamKey)
+    const teamKey = t.teamKey || '__unassigned__'
+    const teamLabel = t.teamLabel || (teamKey === '__unassigned__' ? 'Unassigned' : t.teamLabel) || 'Unassigned'
     map.set(t.id, {
       ...prev,
       id: t.id,
       name: t.name || prev.name || t.id,
       category: t.category || prev.category || 'player',
-      teamKey: t.teamKey || prev.teamKey || '__unassigned__',
-      teamLabel: t.teamLabel || prev.teamLabel || 'Unassigned',
+      teamKey,
+      teamLabel: t.teamLabel || prev.teamLabel || teamLabel,
       frozen: t.frozen !== false,
       disk: !!prev.disk,
       fields: prev.fields || [],
@@ -76,6 +93,7 @@ export function mergeTemplateCatalog(dbLite = [], engineList = []) {
       updatedAt: t.updatedAt || prev.updatedAt,
     })
   }
+
   return [...map.values()].sort((a, b) => {
     const af = a.frozen ? 0 : 1
     const bf = b.frozen ? 0 : 1

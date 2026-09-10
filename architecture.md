@@ -63,6 +63,7 @@ Vanilla `index.html` / `automate.html` remain rollback. Prefer React for UI work
 3. **Remote fonts loaded after React mount** → picker empty until `notifyEditorBridge("remote-fonts")` / refresh `listFontOptions`.
 4. **God file** `index.html` — many concerns share one file; touch the smallest region and re-test nearby behaviors.
 5. **Automate shared `text` form** — never merge previous template fills into the next. Each template hydrates from its JSON (`defaults.text` / placeholders) or its own session cache; `setPayload` on switch must `applyTemplateTextFromPlaceholders` before overlaying payload keys.
+6. **Automate catalog vs Editor** — Automate list is **Mongo-authoritative** (`mergeTemplateCatalog(..., { dbAuthority:true })`). Lite sync must still patch `teamKey`/`category` on hydrated templates. Headless sync may prune non-disk orphans; Editor embed must not (protects unsaved + Add).
 
 ---
 

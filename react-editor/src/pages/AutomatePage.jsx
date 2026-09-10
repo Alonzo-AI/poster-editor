@@ -79,6 +79,8 @@ export default function AutomatePage({ Nav }) {
   const layoutTemplateRef = useRef(null)
   /** Per-template Automate fill values — never share one form across posters. */
   const textByTemplateRef = useRef({})
+  /** Left-rail chip spinner while a poster is loading into the stage. */
+  const [loadingTemplateId, setLoadingTemplateId] = useState(null)
   const [smartCrop, setSmartCrop] = useState(null)
   const [cutoutBusy, setCutoutBusy] = useState(false)
   const [cutoutDone, setCutoutDone] = useState(false)
@@ -132,10 +134,12 @@ export default function AutomatePage({ Nav }) {
             })),
         )
       } catch (_) {}
-      setTemplates(mergeTemplateCatalog(remote, api.listTemplates?.() || []))
-      await syncDbTemplatesIntoEngine(api)
+      // Mongo is catalog authority in Automate — prune engine ghosts via sync:true
+      await syncDbTemplatesIntoEngine(api, { remote })
       setApiOnline(true)
-      const merged = mergeTemplateCatalog(remote, api.listTemplates?.() || [])
+      const merged = mergeTemplateCatalog(remote, api.listTemplates?.() || [], {
+        dbAuthority: true,
+      })
       setTemplates(merged)
       return merged
     } catch (e) {
@@ -149,12 +153,17 @@ export default function AutomatePage({ Nav }) {
       if (!api?.setPayload || !templateId) return
       const switching = layoutTemplateRef.current !== templateId
       const shouldReset = resetLayout || switching
+      if (switching) setLoadingTemplateId(templateId)
       setStatus('Updating…')
       try {
         await ensureTemplateInEngine(api, templateId, {
           updatedAt: templates.find((t) => t.id === templateId)?.updatedAt,
         })
-        setTemplates(mergeTemplateCatalog(dbCatalog, api.listTemplates?.() || []))
+        setTemplates(
+          mergeTemplateCatalog(dbCatalog, api.listTemplates?.() || [], {
+            dbAuthority: true,
+          }),
+        )
 
         // Each template keeps its own fill values (JSON defaults / session cache).
         // Do not reuse the previous poster’s form state on switch.
@@ -211,6 +220,10 @@ export default function AutomatePage({ Nav }) {
         )
       } catch (e) {
         setStatus('Update failed: ' + (e.message || e))
+      } finally {
+        if (switching) {
+          setLoadingTemplateId((cur) => (cur === templateId ? null : cur))
+        }
       }
     },
     [api, templateId, text, colors, images, dbCatalog, templates],
@@ -360,15 +373,20 @@ export default function AutomatePage({ Nav }) {
     textByTemplateRef.current[templateId] = { ...text }
   }, [text, templateId])
 
-  // Auto-apply fill values — paused while Edit automate is open so canvas tools don't fight the form
+  // Auto-apply fill values — paused while Edit automate is open so canvas tools don't fight the form.
+  // Template switches still load (and clear the left-rail spinner) even in edit mode.
   useEffect(() => {
-    if (!ready || !templateId || editMode) return
+    if (!ready || !templateId) return
+    const switching = layoutTemplateRef.current !== templateId
+    if (editMode && !switching) return
     const t = setTimeout(() => apply(false), 120)
     return () => clearTimeout(t)
   }, [text, colors, templateId, ready, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!ready || !templateId || editMode) return
+    if (!ready || !templateId) return
+    const switching = layoutTemplateRef.current !== templateId
+    if (editMode && !switching) return
     apply(true)
   }, [images, templateId, ready, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -615,22 +633,48 @@ export default function AutomatePage({ Nav }) {
             ))}
           </div>
           <div className="grid grid-cols-2 gap-1.5">
-            {filteredTemplates.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTemplateId(t.id)}
-                className={`rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${
-                  templateId === t.id
-                    ? 'border-blaze/40 bg-panel2 text-paper'
-                    : 'border-line bg-inset text-dim hover:text-paper'
-                }`}
-              >
-                <span className="block truncate">{t.name}</span>
-                <span className="block truncate text-[9px] font-medium opacity-60">{t.id}</span>
-                {t.frozen ? <span className="text-[9px] text-blaze">frozen</span> : null}
-              </button>
-            ))}
+            {filteredTemplates.map((t) => {
+              const isActive = templateId === t.id
+              const isLoading = loadingTemplateId === t.id
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  disabled={!!loadingTemplateId && !isLoading}
+                  onClick={() => {
+                    if (t.id === templateId || loadingTemplateId) return
+                    setLoadingTemplateId(t.id)
+                    setTemplateId(t.id)
+                  }}
+                  className={`relative rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${
+                    isActive
+                      ? 'border-blaze/40 bg-panel2 text-paper'
+                      : 'border-line bg-inset text-dim hover:text-paper'
+                  } ${isLoading ? 'opacity-90' : ''} ${
+                    loadingTemplateId && !isLoading ? 'opacity-50' : ''
+                  }`}
+                  aria-busy={isLoading}
+                >
+                  <span className="flex items-start justify-between gap-1">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate">{t.name}</span>
+                      <span className="block truncate text-[9px] font-medium opacity-60">
+                        {t.id}
+                      </span>
+                      {t.frozen ? (
+                        <span className="text-[9px] text-blaze">frozen</span>
+                      ) : null}
+                    </span>
+                    {isLoading ? (
+                      <span
+                        className="mt-0.5 inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-blaze/25 border-t-blaze"
+                        aria-hidden
+                      />
+                    ) : null}
+                  </span>
+                </button>
+              )
+            })}
           </div>
           {!filteredTemplates.length && (
             <p className="mt-2 text-[11px] text-muted">No templates in this team / category</p>
@@ -644,29 +688,6 @@ export default function AutomatePage({ Nav }) {
             Templates refresh from the database every few seconds after Editor Save. Layout stays
             frozen.
           </p>
-        </section>
-        <section className="mb-3 rounded-xl border border-line bg-panel p-3.5 shadow-sm">
-          <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">Brand colors</h2>
-          <div className="flex gap-2">
-            <label className="flex-1 text-[11px] text-dim">
-              Primary
-              <input
-                type="color"
-                className="mt-1 h-9 w-full cursor-pointer rounded border border-line bg-inset"
-                value={colors.primary}
-                onChange={(e) => setColors((c) => ({ ...c, primary: e.target.value }))}
-              />
-            </label>
-            <label className="flex-1 text-[11px] text-dim">
-              Secondary
-              <input
-                type="color"
-                className="mt-1 h-9 w-full cursor-pointer rounded border border-line bg-inset"
-                value={colors.secondary}
-                onChange={(e) => setColors((c) => ({ ...c, secondary: e.target.value }))}
-              />
-            </label>
-          </div>
         </section>
 
         <section className="mb-3 rounded-xl border border-line bg-panel p-3.5 shadow-sm">
