@@ -505,26 +505,33 @@
   .layer.sel .rot{display:flex;}
   .layer.cropping .rot{display:none;}
   .layer .rot:active{cursor:grabbing;}
-  /* Floating selection toolbar — compact white capsule */
+  /* Floating selection toolbar — larger delete / duplicate / lock hit targets */
   .layer .selbar{
-    position:absolute;left:50%;top:-52px;
-    display:none;align-items:center;gap:2px;
-    padding:4px 6px;border-radius:999px;
+    position:absolute;left:50%;top:-60px;
+    display:none;align-items:center;gap:4px;
+    padding:6px 8px;border-radius:999px;
     background:#fff;border:1px solid #eceef2;
     box-shadow:0 4px 16px rgba(15,23,42,.14);
-    z-index:10;pointer-events:auto;transform-origin:center bottom;
+    z-index:30;pointer-events:auto;transform-origin:center bottom;
   }
   .layer.sel .selbar{display:flex;}
   .layer.cropping .selbar{display:none;}
   .layer .selbar button{
-    width:32px;height:32px;border:none;background:transparent;border-radius:999px;
+    width:42px;height:42px;border:none;background:transparent;border-radius:999px;
     cursor:pointer;display:flex;align-items:center;justify-content:center;
     color:#4b5563;padding:0;font:inherit;
   }
   .layer .selbar button:hover{background:#f3f4f6;color:#111827;}
   .layer .selbar button[data-on="1"]{background:#f3e8ff;color:var(--sel);}
   .layer .selbar button[data-handle="del"]:hover{background:#fef2f2;color:#dc2626;}
-  .layer .selbar svg{width:18px;height:18px;display:block;pointer-events:none;}
+  .layer .selbar svg{width:22px;height:22px;display:block;pointer-events:none;}
+  /* Shape fill lives in .shapebody so clip-path never clips resize/delete chrome */
+  .layer.block > .shapebody{
+    position:absolute;inset:0;z-index:0;pointer-events:none;
+  }
+  .layer.block > .h,
+  .layer.block > .rot,
+  .layer.block > .selbar{z-index:30;}
   .layer.locked{cursor:default;}
   .layer.locked.sel{outline-style:dashed;}
   .layer.locked .h,.layer.locked .rot{display:none!important;}
@@ -1626,24 +1633,38 @@ function applyGlassStyle(el, def, g){
 }
 function applyBlockStyle(el, def, g){
   const paint=shapeFillCss(g, def);
-  el.style.background=paint.css;
+  // Drop legacy shapefill img if any
+  el.querySelectorAll("img.shapefill").forEach(n=>n.remove());
+  // Fill + clip live on an inner body so triangle/parallelogram/diamond
+  // clip-path never clips resize handles or delete/duplicate toolbar.
+  let body=el.querySelector(":scope > .shapebody");
+  if(!body){
+    body=document.createElement("div");
+    body.className="shapebody";
+    el.insertBefore(body, el.firstChild);
+  }
+  el.style.background="transparent";
+  el.style.clipPath="";
+  el.style.webkitClipPath="";
+  el.style.borderRadius="0px";
+
   let clip=g.clip ?? def.clip ?? null;
   const shapeName=g.shape || def.shape;
   if(!clip && shapeName && SHAPE_PRESETS[shapeName]?.clip) clip=SHAPE_PRESETS[shapeName].clip;
-  // Drop old shapefill img if any
-  el.querySelectorAll("img.shapefill").forEach(n=>n.remove());
+
+  body.style.background=paint.css;
   if(clip){
-    el.style.clipPath=clip;
-    el.style.webkitClipPath=clip;
-    el.style.borderRadius="0px";
+    body.style.clipPath=clip;
+    body.style.webkitClipPath=clip;
+    body.style.borderRadius="0px";
     el.dataset.clip=clip;
     el.dataset.shapeFill=paint.grad ? JSON.stringify({
       type:paint.grad.type, from:paint.grad.fromHex, to:paint.grad.toHex, angle:paint.grad.angle,
     }) : paint.solid;
   } else {
-    el.style.clipPath="";
-    el.style.webkitClipPath="";
-    el.style.borderRadius=(g.radius??def.radius??0)+"px";
+    body.style.clipPath="";
+    body.style.webkitClipPath="";
+    body.style.borderRadius=(g.radius??def.radius??0)+"px";
     delete el.dataset.clip;
     delete el.dataset.shapeFill;
   }
@@ -7322,11 +7343,12 @@ async function captureStagePng(opts={}){
         clone.style.height=SH+"px";
         clone.style.transform="none";
         clone.querySelectorAll(".layer.block").forEach(el=>{
-          const clip=el.dataset.clip || el.style.clipPath || el.style.webkitClipPath;
+          const body=el.querySelector(".shapebody") || el;
+          const clip=el.dataset.clip || body.style.clipPath || body.style.webkitClipPath || el.style.clipPath || el.style.webkitClipPath;
           if(!clip || clip==="none") return;
           const w=parseFloat(el.style.width)||el.offsetWidth||0;
           const h=parseFloat(el.style.height)||el.offsetHeight||0;
-          const fill=el.dataset.shapeFill || el.style.backgroundColor || el.style.background || "#ffffff";
+          const fill=el.dataset.shapeFill || body.style.backgroundColor || body.style.background || el.style.backgroundColor || el.style.background || "#ffffff";
           let fillSpec=fill;
           if(typeof fill==="string" && fill.trim().startsWith("{")){
             try{ fillSpec=JSON.parse(fill); }catch(_){ fillSpec="#ffffff"; }
@@ -7335,13 +7357,15 @@ async function captureStagePng(opts={}){
           }
           const bg=clipPathToSvgBackground(clip, fillSpec, w, h);
           if(!bg) return;
+          body.style.clipPath="none";
+          body.style.webkitClipPath="none";
+          body.style.background=bg;
+          body.style.backgroundSize="100% 100%";
+          body.style.backgroundRepeat="no-repeat";
+          body.style.backgroundPosition="center";
+          body.style.borderRadius="0";
           el.style.clipPath="none";
           el.style.webkitClipPath="none";
-          el.style.background=bg;
-          el.style.backgroundSize="100% 100%";
-          el.style.backgroundRepeat="no-repeat";
-          el.style.backgroundPosition="center";
-          el.style.borderRadius="0";
         });
       },
     });
