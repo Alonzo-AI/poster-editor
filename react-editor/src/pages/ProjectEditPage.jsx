@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import StageHost from '../components/StageHost.jsx'
 import PropertiesPanel from '../components/PropertiesPanel.jsx'
 import ContextToolbar from '../components/ContextToolbar.jsx'
@@ -7,7 +7,7 @@ import StudioSidePanel from '../components/StudioSidePanel.jsx'
 import LayerList from '../components/LayerList.jsx'
 import SmartCropModal from '../components/SmartCropModal.jsx'
 import { usePosterEngine } from '../engine/usePosterEngine.js'
-import { fetchProject, saveProject } from '../api/projectsApi.js'
+import { fetchProject, listProjects, saveProject } from '../api/projectsApi.js'
 import { uploadDataUrlToS3, uploadImageOrDataUrl, isRemoteImageUrl } from '../api/uploadsApi.js'
 
 const inputClass = 'ui-input'
@@ -31,6 +31,7 @@ function Panel({ title, children, className = '' }) {
  */
 export default function ProjectEditPage({ Nav }) {
   const { id: routeId } = useParams()
+  const navigate = useNavigate()
   const projectId = String(routeId || '')
     .trim()
     .replace(/[^\w-]+/g, '_')
@@ -40,6 +41,7 @@ export default function ProjectEditPage({ Nav }) {
   })
 
   const [project, setProject] = useState(null)
+  const [siblings, setSiblings] = useState([])
   const [status, setStatus] = useState('Loading project…')
   const [text, setText] = useState({})
   const [colors, setColors] = useState({ primary: '#006F73', secondary: '#C5B358' })
@@ -58,6 +60,84 @@ export default function ProjectEditPage({ Nav }) {
 
   const layers = snapshot?.layers || []
   const selected = snapshot?.selected || null
+
+  const siblingIndex = useMemo(() => {
+    if (!siblings.length || !projectId) return -1
+    return siblings.findIndex((p) => p.id === projectId)
+  }, [siblings, projectId])
+
+  const prevSibling = siblingIndex > 0 ? siblings[siblingIndex - 1] : null
+  const nextSibling =
+    siblingIndex >= 0 && siblingIndex < siblings.length - 1 ? siblings[siblingIndex + 1] : null
+
+  const goSibling = useCallback(
+    (dir) => {
+      if (saving || smartCrop) return
+      const target = dir < 0 ? prevSibling : nextSibling
+      if (!target?.id) return
+      setEditMode(false)
+      setStudioMode(null)
+      setImages({})
+      setSmartCrop(null)
+      navigate(`/projects/${encodeURIComponent(target.id)}`)
+    },
+    [saving, smartCrop, prevSibling, nextSibling, navigate],
+  )
+
+  // College-scoped poster list for ← → (Projects only; never touches templates)
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const list = await listProjects()
+        if (cancelled) return
+        const teamKey = project?.teamKey
+        const scoped = teamKey
+          ? list.filter((p) => p.teamKey === teamKey)
+          : list
+        const sorted = [...scoped].sort((a, b) => {
+          const at = a.createdAt || a.updatedAt || ''
+          const bt = b.createdAt || b.updatedAt || ''
+          if (at !== bt) return String(at).localeCompare(String(bt))
+          return String(a.name || a.id).localeCompare(String(b.name || b.id))
+        })
+        // Keep current id in the strip even if team filter momentarily empty
+        if (projectId && !sorted.some((p) => p.id === projectId) && project) {
+          sorted.push({
+            id: project.id,
+            name: project.name,
+            teamKey: project.teamKey,
+            category: project.category,
+          })
+        }
+        setSiblings(sorted)
+      } catch (_) {
+        if (!cancelled) setSiblings([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [project?.teamKey, project?.id, project?.name, project?.category, projectId])
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return
+      const tag = String(e.target?.tagName || '').toLowerCase()
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target?.isContentEditable) {
+        return
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goSibling(-1)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        goSibling(1)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [goSibling])
 
   const syncFieldsFromEngine = useCallback(() => {
     if (!api) return
@@ -436,6 +516,10 @@ export default function ProjectEditPage({ Nav }) {
   }
 
   const title = project?.name || projectId || 'Project'
+  const posLabel =
+    siblingIndex >= 0 && siblings.length
+      ? `${siblingIndex + 1} / ${siblings.length}`
+      : null
 
   return (
     <>
@@ -444,12 +528,36 @@ export default function ProjectEditPage({ Nav }) {
           <div className="min-w-0">
             <div className="truncate text-sm font-medium text-paper">{title}</div>
             <div className="truncate text-[11px] text-muted">
+              {posLabel ? `${posLabel} · ` : ''}
               {editMode
                 ? 'Edit mode · styles & layers · Save project to keep'
                 : 'Fill copy · drag on canvas · Save project to persist'}
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-full border border-line bg-inset p-0.5">
+              <button
+                type="button"
+                className="ui-btn px-2.5 py-1 text-[12px] disabled:opacity-40"
+                disabled={!prevSibling || saving}
+                title="Previous poster (←)"
+                onClick={() => goSibling(-1)}
+              >
+                ←
+              </button>
+              <span className="min-w-[3.5rem] px-1 text-center text-[11px] tabular-nums text-dim">
+                {posLabel || '—'}
+              </span>
+              <button
+                type="button"
+                className="ui-btn px-2.5 py-1 text-[12px] disabled:opacity-40"
+                disabled={!nextSibling || saving}
+                title="Next poster (→)"
+                onClick={() => goSibling(1)}
+              >
+                →
+              </button>
+            </div>
             <Link to="/projects" className="ui-btn text-[12px]">
               All projects
             </Link>
@@ -608,7 +716,17 @@ export default function ProjectEditPage({ Nav }) {
                   onStudioMode={setStudioMode}
                 />
               ) : null}
-              <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-3">
+              <div className="relative flex min-h-0 flex-1 items-center justify-center gap-2 overflow-hidden p-3">
+                <button
+                  type="button"
+                  className="ui-btn z-10 shrink-0 px-3 py-6 text-lg disabled:opacity-30"
+                  disabled={!prevSibling || saving}
+                  title="Previous poster (←)"
+                  aria-label="Previous poster"
+                  onClick={() => goSibling(-1)}
+                >
+                  ←
+                </button>
                 <div className="relative aspect-[1080/1350] w-[min(100%,520px)] max-h-[min(92vh,920px)] overflow-hidden rounded-sm bg-[#f4f7f8] shadow-[0_16px_48px_rgba(14,99,155,0.14)] ring-1 ring-line">
                   {!ready && (
                     <div className="absolute inset-0 z-20 flex items-center justify-center bg-panel/90 text-xs text-dim">
@@ -622,6 +740,16 @@ export default function ProjectEditPage({ Nav }) {
                     className="!absolute inset-0 !h-full !w-full !flex-none rounded-sm"
                   />
                 </div>
+                <button
+                  type="button"
+                  className="ui-btn z-10 shrink-0 px-3 py-6 text-lg disabled:opacity-30"
+                  disabled={!nextSibling || saving}
+                  title="Next poster (→)"
+                  aria-label="Next poster"
+                  onClick={() => goSibling(1)}
+                >
+                  →
+                </button>
                 {editMode ? (
                   <div className="absolute bottom-3 right-3 z-10 flex gap-1 rounded-md border border-line bg-panel/95 p-1 shadow-sm backdrop-blur">
                     <button
