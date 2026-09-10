@@ -219,18 +219,28 @@ function applyTextToTemplateJson(json, fields) {
       : JSON.parse(JSON.stringify(json))
   if (!next.defaults || typeof next.defaults !== 'object') next.defaults = {}
   if (!next.defaults.text || typeof next.defaults.text !== 'object') next.defaults.text = {}
-  for (const [k, v] of Object.entries(fields || {})) {
+
+  // CSV uses playerName; many templates bind player_name — keep both in sync (bulk only).
+  const textFields = { ...(fields || {}) }
+  if (textFields.playerName != null && textFields.player_name == null) {
+    textFields.player_name = textFields.playerName
+  }
+  if (textFields.player_name != null && textFields.playerName == null) {
+    textFields.playerName = textFields.player_name
+  }
+
+  for (const [k, v] of Object.entries(textFields)) {
     next.defaults.text[k] = v
   }
   if (Array.isArray(next.layers)) {
     for (const layer of next.layers) {
       if (!layer || layer.type !== 'text' || !layer.bind) continue
-      if (fields[layer.bind] != null) layer.placeholder = String(fields[layer.bind])
+      if (textFields[layer.bind] != null) layer.placeholder = String(textFields[layer.bind])
       if (layer.kind === 'stat') {
         const numKey = layer.bind + 'num'
         const labelKey = layer.bind + 'label'
-        if (fields[numKey] != null) layer.placeholderNum = String(fields[numKey])
-        if (fields[labelKey] != null) layer.placeholderLabel = String(fields[labelKey])
+        if (textFields[numKey] != null) layer.placeholderNum = String(textFields[numKey])
+        if (textFields[labelKey] != null) layer.placeholderLabel = String(textFields[labelKey])
       }
     }
   }
@@ -274,6 +284,7 @@ export async function generateBulkPosters({
   fetchTemplate,
   saveProject,
   onProgress,
+  bulkBatchDate = null,
 } = {}) {
   if (typeof saveProject !== 'function') {
     throw new Error('saveProject is required (projects collection — not templates)')
@@ -287,6 +298,7 @@ export async function generateBulkPosters({
   }
   const label = normalizeTeamLabel(teamLabel, tk)
   const byCategory = pickTeamBaseTemplates(templates, tk)
+  const batchDate = bulkBatchDate || todayBatchDate()
 
   const created = []
   const skipped = []
@@ -304,14 +316,14 @@ export async function generateBulkPosters({
           category: cat,
           reason: `No “${label}” template for category "${cat}"`,
         })
-        onProgress?.({ type: 'skip', row: rec.row, category: cat })
+        onProgress?.({ type: 'skip', row: rec.row, category: cat, teamKey: tk })
         continue
       }
       n += 1
       const id = `${teamSlug}_bulk_${cat}_${slugPart(rec.posterName)}_${Date.now().toString(36)}_${n}`
       const name = `${rec.posterName} · ${cat}`
       try {
-        onProgress?.({ type: 'start', row: rec.row, category: cat, id, name })
+        onProgress?.({ type: 'start', row: rec.row, category: cat, id, name, teamKey: tk })
         const full = await fetchTemplate(base.id)
         const srcJson = full?.json || full
         if (!srcJson || typeof srcJson !== 'object') throw new Error(`Missing JSON for ${base.id}`)
@@ -332,6 +344,7 @@ export async function generateBulkPosters({
           sourceTemplate: base.id,
           csvRow: rec.row,
           teamKey: tk,
+          bulkBatchDate: batchDate,
         }
         const saved = await saveProject(json, {
           id,
@@ -340,6 +353,7 @@ export async function generateBulkPosters({
           teamKey: tk,
           teamLabel: label,
           sourceTemplateId: base.id,
+          bulkBatchDate: batchDate,
         })
         created.push({
           id: saved.id || id,
@@ -347,11 +361,32 @@ export async function generateBulkPosters({
           category: cat,
           row: rec.row,
           sourceId: base.id,
+          teamKey: tk,
+          teamLabel: label,
+          bulkBatchDate: batchDate,
         })
-        onProgress?.({ type: 'ok', row: rec.row, category: cat, id: saved.id || id, name })
+        onProgress?.({
+          type: 'ok',
+          row: rec.row,
+          category: cat,
+          id: saved.id || id,
+          name,
+          teamKey: tk,
+        })
       } catch (e) {
-        failed.push({ row: rec.row, category: cat, error: e.message || String(e) })
-        onProgress?.({ type: 'fail', row: rec.row, category: cat, error: e.message || String(e) })
+        failed.push({
+          row: rec.row,
+          category: cat,
+          teamKey: tk,
+          error: e.message || String(e),
+        })
+        onProgress?.({
+          type: 'fail',
+          row: rec.row,
+          category: cat,
+          teamKey: tk,
+          error: e.message || String(e),
+        })
       }
     }
   }
@@ -363,7 +398,174 @@ export async function generateBulkPosters({
     baseCategories: [...byCategory.keys()],
     teamKey: tk,
     teamLabel: label,
+    bulkBatchDate: batchDate,
   }
+}
+
+/**
+ * Resolve a CSV college cell to a DB team that has templates.
+ * @param {string} rawCollege
+ * @param {Array} templates lite template list
+ * @param {Array} [{teamKey, teamLabel}] folders
+ */
+export function resolveCollegeToTeam(rawCollege, templates = [], folders = []) {
+  const raw = String(rawCollege || '').trim()
+  if (!raw) return null
+  const key = normalizeTeamKey(raw)
+  const fromTpl = collectTeamsWithTemplates(templates)
+  if (fromTpl.has(key)) {
+    return { teamKey: key, teamLabel: fromTpl.get(key) }
+  }
+  const rawLower = raw.toLowerCase()
+  for (const [tk, label] of fromTpl.entries()) {
+    if (String(label).toLowerCase() === rawLower) return { teamKey: tk, teamLabel: label }
+    if (normalizeTeamKey(label) === key) return { teamKey: tk, teamLabel: label }
+  }
+  for (const f of folders || []) {
+    const tk = normalizeTeamKey(f.teamKey)
+    const label = normalizeTeamLabel(f.teamLabel, tk)
+    if (tk === key || String(label).toLowerCase() === rawLower) {
+      if (fromTpl.has(tk)) return { teamKey: tk, teamLabel: fromTpl.get(tk) || label }
+    }
+  }
+  return null
+}
+
+function collectTeamsWithTemplates(templates) {
+  const map = new Map()
+  for (const t of templates || []) {
+    const tk = normalizeTeamKey(t.teamKey || t.json?.teamKey)
+    if (!tk || tk === '__unassigned__') continue
+    const label = normalizeTeamLabel(t.teamLabel || t.json?.teamLabel, tk)
+    if (!map.has(tk)) map.set(tk, label)
+  }
+  return map
+}
+
+/**
+ * Parse a multi-college CSV into groups { teamKey, teamLabel, records }[].
+ */
+export function csvRowsToMultiCollegeRecords(csvText, { templates = [], folders = [] } = {}) {
+  const table = parseCsv(csvText)
+  if (!table.length) return { groups: [], errors: ['CSV is empty'], bulkBatchDate: todayBatchDate() }
+  const headers = table[0].map(normHeader)
+  const keys = headers.map((h) => HEADER_ALIASES[h] || HEADER_ALIASES[h.replace(/_/g, '')] || h)
+  const errors = []
+  const byTeam = new Map()
+  const batchDate = todayBatchDate()
+
+  for (let i = 1; i < table.length; i++) {
+    const cells = table[i]
+    const raw = {}
+    keys.forEach((k, idx) => {
+      if (!k) return
+      raw[k] = cells[idx] != null ? String(cells[idx]) : ''
+    })
+    if (!String(raw.college || '').trim()) {
+      errors.push(`Row ${i + 1}: skipped (college required for multi-college CSV)`)
+      continue
+    }
+    const resolved = resolveCollegeToTeam(raw.college, templates, folders)
+    if (!resolved) {
+      errors.push(
+        `Row ${i + 1}: skipped (no DB templates for college "${raw.college}")`,
+      )
+      continue
+    }
+    const fields = {}
+    for (const [k, v] of Object.entries(raw)) {
+      if (k === 'college' || k === 'category' || k === 'posterName') continue
+      if (v == null || !String(v).trim()) continue
+      fields[k] = String(v)
+    }
+    const category = raw.category ? normalizeCategory(raw.category) : null
+    if (raw.category && !category) {
+      errors.push(`Row ${i + 1}: unknown category "${raw.category}"`)
+      continue
+    }
+    const rec = {
+      row: i + 1,
+      posterName: String(
+        raw.posterName ||
+          fields.playerName ||
+          fields.teamName ||
+          `${resolved.teamLabel} row ${i}`,
+      ).trim(),
+      category,
+      fields,
+    }
+    if (!byTeam.has(resolved.teamKey)) {
+      byTeam.set(resolved.teamKey, {
+        teamKey: resolved.teamKey,
+        teamLabel: resolved.teamLabel,
+        records: [],
+      })
+    }
+    byTeam.get(resolved.teamKey).records.push(rec)
+  }
+
+  return {
+    groups: [...byTeam.values()],
+    errors,
+    bulkBatchDate: batchDate,
+  }
+}
+
+function todayBatchDate() {
+  // Local calendar day (not UTC) so "today" matches the user's timezone
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/**
+ * Generate projects for every college group in a multi-college CSV.
+ */
+export async function generateMultiCollegeBulkPosters({
+  groups,
+  templates,
+  fetchTemplate,
+  saveProject,
+  onProgress,
+  bulkBatchDate = null,
+} = {}) {
+  const batchDate = bulkBatchDate || todayBatchDate()
+  const created = []
+  const skipped = []
+  const failed = []
+  const colleges = []
+
+  for (const group of groups || []) {
+    onProgress?.({
+      type: 'college',
+      teamKey: group.teamKey,
+      teamLabel: group.teamLabel,
+      rows: group.records?.length || 0,
+    })
+    const result = await generateBulkPosters({
+      records: group.records,
+      templates,
+      teamKey: group.teamKey,
+      teamLabel: group.teamLabel,
+      fetchTemplate,
+      saveProject,
+      bulkBatchDate: batchDate,
+      onProgress,
+    })
+    created.push(...result.created)
+    skipped.push(...result.skipped)
+    failed.push(...result.failed)
+    colleges.push({
+      teamKey: group.teamKey,
+      teamLabel: group.teamLabel,
+      created: result.created.length,
+      baseCategories: result.baseCategories,
+    })
+  }
+
+  return { created, skipped, failed, colleges, bulkBatchDate: batchDate }
 }
 
 /** @deprecated prefer generateBulkPosters — UTSA wrapper for older call sites */

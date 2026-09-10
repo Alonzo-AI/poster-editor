@@ -69,6 +69,11 @@ export default function App() {
           <Route path="/" element={<EditorPage Nav={ShellNav} />} />
           <Route path="/automate" element={<AutomatePage Nav={ShellNav} />} />
           <Route path="/projects" element={<ProjectsPage Nav={ShellNav} />} />
+          <Route path="/projects/batch/:batchDate" element={<ProjectsPage Nav={ShellNav} />} />
+          <Route
+            path="/projects/batch/:batchDate/team/:teamKey"
+            element={<ProjectsPage Nav={ShellNav} />}
+          />
           <Route path="/projects/team/:teamKey" element={<ProjectsPage Nav={ShellNav} />} />
           <Route path="/projects/:id" element={<ProjectEditPage Nav={ShellNav} />} />
         </Routes>

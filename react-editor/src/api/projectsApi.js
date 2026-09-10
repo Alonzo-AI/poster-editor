@@ -21,7 +21,10 @@ export async function fetchProject(id) {
   return parse(res)
 }
 
-export async function saveProject(json, { id, name, category, teamKey, teamLabel, sourceTemplateId } = {}) {
+export async function saveProject(
+  json,
+  { id, name, category, teamKey, teamLabel, sourceTemplateId, bulkBatchDate } = {},
+) {
   const payload = json && typeof json === 'object' ? { ...json } : {}
   const tid = String(id || payload.id || '')
     .trim()
@@ -40,6 +43,7 @@ export async function saveProject(json, { id, name, category, teamKey, teamLabel
     teamKey: teamKey || payload.teamKey,
     teamLabel: teamLabel || payload.teamLabel,
     sourceTemplateId: sourceTemplateId || payload._bakeMeta?.sourceTemplate || null,
+    bulkBatchDate: bulkBatchDate || payload._bakeMeta?.bulkBatchDate || null,
   })
 
   const res = await fetch(`${API}/projects/${encodeURIComponent(tid)}`, {

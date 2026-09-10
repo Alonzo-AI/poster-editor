@@ -339,7 +339,7 @@ Automate image aliases: `player_image`, `logo_url`, `conference_logo`, `sponsor_
 - **Save (`onBake`):** ownership from baked JSON + live `listTemplates` entry for **that id** only.
 - **Font picker:** `listFontOptions`; refresh on `remote-fonts`; do not default-display Anton when value is a custom stack.
 - **Eyedropper:** `EyeDropper` API; call `.open()` in the same click turn.
-- **Projects:** `/home` landing; `/projects` college folders + CSV bulk for **any DB team**; `/projects/team/:teamKey` poster list; `/projects/:id` Automate-like fill/Edit; Save → `/api/projects` only. Do not change `/` or `/automate`.
+- **Projects:** `/projects` date folders → college folders → posters; single-college CSV + multi-college CSV; Save → `/api/projects` only. Do not change `/` or `/automate`.
 - Do not add a second renderer in React.
 
 ---

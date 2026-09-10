@@ -83,6 +83,8 @@ const projectSchema = new mongoose.Schema(
     teamKey: { type: String, default: '__unassigned__', index: true },
     teamLabel: { type: String, default: 'Unassigned' },
     sourceTemplateId: { type: String, default: null },
+    /** YYYY-MM-DD batch stamp for multi/single CSV bulk runs (Projects folders). */
+    bulkBatchDate: { type: String, default: null, index: true },
     json: { type: mongoose.Schema.Types.Mixed, required: true },
     updatedAt: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now },
@@ -684,6 +686,15 @@ async function upsertProjectJson(rawJson, forcedId, meta = {}) {
   if (!json.automation) json.automation = {}
   json.automation.freezeLayout = true
 
+  const bulkBatchDateRaw =
+    meta.bulkBatchDate ?? json._bakeMeta?.bulkBatchDate ?? json.bulkBatchDate ?? null
+  const bulkBatchDate = bulkBatchDateRaw
+    ? String(bulkBatchDateRaw).trim().slice(0, 10)
+    : null
+  if (bulkBatchDate && json._bakeMeta && typeof json._bakeMeta === 'object') {
+    json._bakeMeta.bulkBatchDate = bulkBatchDate
+  }
+
   const approx = Buffer.byteLength(JSON.stringify(json), 'utf8')
   if (approx > 15 * 1024 * 1024) {
     const err = new Error(
@@ -694,19 +705,22 @@ async function upsertProjectJson(rawJson, forcedId, meta = {}) {
   }
 
   const existed = !!(await Project.exists({ id }))
+  const $set = {
+    id,
+    name,
+    category,
+    teamKey: team.teamKey,
+    teamLabel: team.teamLabel,
+    sourceTemplateId: meta.sourceTemplateId ?? json._bakeMeta?.sourceTemplate ?? null,
+    json,
+    updatedAt: new Date(),
+  }
+  if (bulkBatchDate) $set.bulkBatchDate = bulkBatchDate
+
   const row = await Project.findOneAndUpdate(
     { id },
     {
-      $set: {
-        id,
-        name,
-        category,
-        teamKey: team.teamKey,
-        teamLabel: team.teamLabel,
-        sourceTemplateId: meta.sourceTemplateId ?? json._bakeMeta?.sourceTemplate ?? null,
-        json,
-        updatedAt: new Date(),
-      },
+      $set,
       $setOnInsert: { createdAt: new Date() },
     },
     { upsert: true, new: true },
@@ -724,6 +738,7 @@ async function upsertProjectJson(rawJson, forcedId, meta = {}) {
     teamKey: normalizeTeamKey(row.teamKey),
     teamLabel: normalizeTeamLabel(row.teamLabel, row.teamKey),
     sourceTemplateId: row.sourceTemplateId || null,
+    bulkBatchDate: row.bulkBatchDate || null,
     updatedAt: row.updatedAt,
     created: !existed,
     updated: existed,
@@ -741,6 +756,7 @@ app.get('/api/projects', async (_req, res) => {
         teamKey: 1,
         teamLabel: 1,
         sourceTemplateId: 1,
+        bulkBatchDate: 1,
         updatedAt: 1,
         createdAt: 1,
       },
@@ -755,6 +771,7 @@ app.get('/api/projects', async (_req, res) => {
         teamKey: normalizeTeamKey(r.teamKey),
         teamLabel: normalizeTeamLabel(r.teamLabel, r.teamKey),
         sourceTemplateId: r.sourceTemplateId || null,
+        bulkBatchDate: r.bulkBatchDate || null,
         updatedAt: r.updatedAt,
         createdAt: r.createdAt,
       })),
@@ -782,6 +799,7 @@ app.get('/api/projects/:id', async (req, res) => {
       teamKey: json.teamKey,
       teamLabel: json.teamLabel,
       sourceTemplateId: row.sourceTemplateId || null,
+      bulkBatchDate: row.bulkBatchDate || json._bakeMeta?.bulkBatchDate || null,
       updatedAt: row.updatedAt,
       createdAt: row.createdAt,
       json,
@@ -801,6 +819,7 @@ app.put('/api/projects/:id', async (req, res) => {
       teamKey: body.teamKey,
       teamLabel: body.teamLabel,
       sourceTemplateId: body.sourceTemplateId,
+      bulkBatchDate: body.bulkBatchDate,
     })
     res.json(result)
   } catch (err) {
@@ -819,6 +838,7 @@ app.post('/api/projects', async (req, res) => {
       teamKey: body.teamKey,
       teamLabel: body.teamLabel,
       sourceTemplateId: body.sourceTemplateId,
+      bulkBatchDate: body.bulkBatchDate,
     })
     res.json(result)
   } catch (err) {

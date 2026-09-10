@@ -84,7 +84,7 @@ export default function ProjectEditPage({ Nav }) {
     [saving, smartCrop, prevSibling, nextSibling, navigate],
   )
 
-  // College-scoped poster list for ← → (Projects only; never touches templates)
+  // College-scoped poster list for ← → (same date batch when available)
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -92,22 +92,44 @@ export default function ProjectEditPage({ Nav }) {
         const list = await listProjects()
         if (cancelled) return
         const teamKey = project?.teamKey
-        const scoped = teamKey
-          ? list.filter((p) => p.teamKey === teamKey)
-          : list
+        const batch =
+          project?.bulkBatchDate ||
+          (project?.createdAt
+            ? (() => {
+                const d = new Date(project.createdAt)
+                if (Number.isNaN(d.getTime())) return null
+                return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+              })()
+            : null)
+        let scoped = teamKey ? list.filter((p) => p.teamKey === teamKey) : list
+        if (batch) {
+          const sameBatch = scoped.filter((p) => {
+            const pd =
+              p.bulkBatchDate ||
+              (p.createdAt
+                ? (() => {
+                    const d = new Date(p.createdAt)
+                    if (Number.isNaN(d.getTime())) return null
+                    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  })()
+                : null)
+            return pd === batch
+          })
+          if (sameBatch.length) scoped = sameBatch
+        }
         const sorted = [...scoped].sort((a, b) => {
           const at = a.createdAt || a.updatedAt || ''
           const bt = b.createdAt || b.updatedAt || ''
           if (at !== bt) return String(at).localeCompare(String(bt))
           return String(a.name || a.id).localeCompare(String(b.name || b.id))
         })
-        // Keep current id in the strip even if team filter momentarily empty
         if (projectId && !sorted.some((p) => p.id === projectId) && project) {
           sorted.push({
             id: project.id,
             name: project.name,
             teamKey: project.teamKey,
             category: project.category,
+            bulkBatchDate: project.bulkBatchDate,
           })
         }
         setSiblings(sorted)
@@ -118,7 +140,14 @@ export default function ProjectEditPage({ Nav }) {
     return () => {
       cancelled = true
     }
-  }, [project?.teamKey, project?.id, project?.name, project?.category, projectId])
+  }, [
+    project?.teamKey,
+    project?.id,
+    project?.name,
+    project?.category,
+    project?.bulkBatchDate,
+    projectId,
+  ])
 
   useEffect(() => {
     function onKey(e) {
@@ -400,8 +429,14 @@ export default function ProjectEditPage({ Nav }) {
         teamKey: project.teamKey,
         teamLabel: project.teamLabel,
         sourceTemplateId: project.sourceTemplateId,
+        bulkBatchDate: project.bulkBatchDate,
       })
-      setProject((p) => ({ ...p, updatedAt: saved.updatedAt, json }))
+      setProject((p) => ({
+        ...p,
+        updatedAt: saved.updatedAt,
+        bulkBatchDate: saved.bulkBatchDate || p.bulkBatchDate,
+        json,
+      }))
       setStatus(`Saved project “${project.name}”`)
     } catch (e) {
       setStatus(`Save failed: ${e.message || e}`)
@@ -559,14 +594,24 @@ export default function ProjectEditPage({ Nav }) {
               </button>
             </div>
             <Link
-              to={
-                project?.teamKey
-                  ? `/projects/team/${encodeURIComponent(project.teamKey)}`
-                  : '/projects'
-              }
+              to={(() => {
+                const team = project?.teamKey
+                if (!team) return '/projects'
+                let batch = project?.bulkBatchDate
+                if (!batch && project?.createdAt) {
+                  const d = new Date(project.createdAt)
+                  if (!Number.isNaN(d.getTime())) {
+                    batch = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+                  }
+                }
+                if (batch) {
+                  return `/projects/batch/${encodeURIComponent(batch)}/team/${encodeURIComponent(team)}`
+                }
+                return '/projects'
+              })()}
               className="ui-btn text-[12px]"
             >
-              {project?.teamKey ? 'Folder' : 'All projects'}
+              Folder
             </Link>
             <button
               type="button"
