@@ -75,6 +75,7 @@ export default function EditorPage({ Nav }) {
   const [extraTeams, setExtraTeams] = useState([]) // DB team folders (+ optimistic local)
   const [tplMenuId, setTplMenuId] = useState(null)
   const [tplMoveTeamOpen, setTplMoveTeamOpen] = useState(false)
+  const [tplMoveCategoryOpen, setTplMoveCategoryOpen] = useState(false)
   const tplMenuRef = useRef(null)
   /** Formats list spinner while a template is loading into the engine. */
   const [loadingTemplateId, setLoadingTemplateId] = useState(null)
@@ -119,18 +120,21 @@ export default function EditorPage({ Nav }) {
   useEffect(() => {
     if (!tplMenuId) {
       setTplMoveTeamOpen(false)
+      setTplMoveCategoryOpen(false)
       return
     }
     const onDoc = (e) => {
       if (tplMenuRef.current && !tplMenuRef.current.contains(e.target)) {
         setTplMenuId(null)
         setTplMoveTeamOpen(false)
+        setTplMoveCategoryOpen(false)
       }
     }
     const onKey = (e) => {
       if (e.key === 'Escape') {
         setTplMenuId(null)
         setTplMoveTeamOpen(false)
+        setTplMoveCategoryOpen(false)
       }
     }
     document.addEventListener('mousedown', onDoc)
@@ -582,6 +586,7 @@ export default function EditorPage({ Nav }) {
   async function onSetTemplateTeam(t, dest) {
     setTplMenuId(null)
     setTplMoveTeamOpen(false)
+    setTplMoveCategoryOpen(false)
     if (!t?.id || !dest) return
     const teamKey = normalizeTeamKey(dest.teamKey)
     const teamLabel = normalizeTeamLabel(dest.teamLabel, teamKey)
@@ -626,6 +631,76 @@ export default function EditorPage({ Nav }) {
       setStatus(`Moved “${json.name}” → ${teamLabel}`)
     } catch (e) {
       setStatus(e.message || 'Move failed')
+    }
+  }
+
+  /** Re-file a template under another Formats category (same college). Updates Mongo + JSON. */
+  async function onSetTemplateCategory(t, nextCategory) {
+    setTplMenuId(null)
+    setTplMoveTeamOpen(false)
+    setTplMoveCategoryOpen(false)
+    if (!t?.id || !nextCategory) return
+    const category = ['player', 'team', 'player_no_image', 'nostalgia'].includes(nextCategory)
+      ? nextCategory
+      : null
+    if (!category) {
+      setStatus('Unknown category')
+      return
+    }
+    const current = t.category || 'player'
+    const catLabel = CATEGORIES.find((c) => c.id === category)?.label || category
+    if (current === category) {
+      setStatus(`Already in “${catLabel}”`)
+      return
+    }
+    setStatus(`Moving “${t.name || t.id}” to ${catLabel}…`)
+    try {
+      await ensureTemplateInEngine(api, t.id, { updatedAt: t.updatedAt, force: true })
+      let json = null
+      try {
+        const row = await fetchDbTemplate(t.id)
+        json = row?.json
+      } catch (_) {}
+      if (!json) {
+        const baked = await api.bakeTemplate?.({ id: t.id, name: t.name || t.id, download: false })
+        json = baked?.json
+      }
+      if (!json) throw new Error('Could not load template JSON')
+      const teamKey = normalizeTeamKey(json.teamKey || teamOf(t).teamKey)
+      const teamLabel = normalizeTeamLabel(json.teamLabel || teamOf(t).teamLabel, teamKey)
+      json = {
+        ...json,
+        id: t.id,
+        name: json.name || t.name || t.id,
+        category,
+        teamKey,
+        teamLabel,
+      }
+      const saved = await saveTemplateToDb(json, { id: t.id })
+      markTemplateHydrated(saved.id, saved.updatedAt || Date.now())
+      const entry = {
+        id: saved.id,
+        name: json.name,
+        category,
+        teamKey,
+        teamLabel,
+        frozen: true,
+        updatedAt: saved.updatedAt,
+      }
+      setDbCatalog((prev) => [...prev.filter((x) => x.id !== saved.id), entry])
+      try {
+        api.injectRemoteTemplates?.(
+          [{ ...entry, json: { ...json, category, teamKey, teamLabel } }],
+          { sync: false },
+        )
+        api?.patchTemplateMeta?.(t.id, { category })
+      } catch (_) {}
+      if (api.listTemplates) refreshTemplates()
+      setFormatCategory(category)
+      setFormatTeamKey(teamKey)
+      setStatus(`Moved “${json.name}” → ${catLabel} (same team)`)
+    } catch (e) {
+      setStatus(e.message || 'Move category failed')
     }
   }
 
@@ -1196,6 +1271,7 @@ export default function EditorPage({ Nav }) {
                         onClick={(e) => {
                           e.stopPropagation()
                           setTplMoveTeamOpen(false)
+                          setTplMoveCategoryOpen(false)
                           setTplMenuId((cur) => (cur === t.id ? null : t.id))
                         }}
                       >
@@ -1235,6 +1311,7 @@ export default function EditorPage({ Nav }) {
                             className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-paper hover:bg-inset"
                             onClick={(e) => {
                               e.stopPropagation()
+                              setTplMoveCategoryOpen(false)
                               setTplMoveTeamOpen((open) => !open)
                             }}
                           >
@@ -1290,6 +1367,53 @@ export default function EditorPage({ Nav }) {
                               >
                                 + New team…
                               </button>
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            role="menuitem"
+                            aria-expanded={tplMoveCategoryOpen}
+                            className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-paper hover:bg-inset"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setTplMoveTeamOpen(false)
+                              setTplMoveCategoryOpen((open) => !open)
+                            }}
+                          >
+                            <span className="w-4 text-center text-[11px] text-dim" aria-hidden>
+                              ▤
+                            </span>
+                            <span className="flex-1">Move to category</span>
+                            <span className="text-[10px] text-muted">
+                              {tplMoveCategoryOpen ? '▾' : '▸'}
+                            </span>
+                          </button>
+                          {tplMoveCategoryOpen ? (
+                            <div className="max-h-48 overflow-y-auto border-y border-line/80 bg-inset/40 py-0.5">
+                              {CATEGORIES.map((cat) => {
+                                const current = (t.category || 'player') === cat.id
+                                return (
+                                  <button
+                                    key={cat.id}
+                                    type="button"
+                                    role="menuitem"
+                                    disabled={current}
+                                    className={`flex w-full items-center gap-2 px-3 py-1.5 pl-8 text-left text-[12px] ${
+                                      current
+                                        ? 'cursor-default text-muted'
+                                        : 'text-paper hover:bg-inset'
+                                    }`}
+                                    onClick={() => onSetTemplateCategory(t, cat.id)}
+                                  >
+                                    <span className="min-w-0 flex-1 truncate">{cat.label}</span>
+                                    {current ? (
+                                      <span className="shrink-0 text-[9px] uppercase tracking-wide text-muted">
+                                        current
+                                      </span>
+                                    ) : null}
+                                  </button>
+                                )
+                              })}
                             </div>
                           ) : null}
                           <button

@@ -8402,7 +8402,7 @@ window.__RENDER_API_V3__={
     const created=createBlankTemplate(opts);
     return { snapshot:buildEditorSnapshot(), template:created };
   },
-  /** Rename / team-folder metadata only — does not touch layers, images, or geometry. */
+  /** Rename / team-folder / category metadata only — does not touch layers, images, or geometry. */
   patchTemplateMeta(id, patch={}){
     const tid=String(id||state.template||"").trim();
     const t=TEMPLATES[tid];
@@ -8419,9 +8419,22 @@ window.__RENDER_API_V3__={
       t._json.teamKey=teamKey;
       t._json.teamLabel=teamLabel;
     }
+    if(patch.category!=null){
+      const category=normalizeTemplateCategory(patch.category);
+      t._json.category=category;
+      if(!t._json.settings) t._json.settings={};
+      t._json.settings.category=category;
+    }
     try{ buildTplChips(); }catch(_){}
     notifyEditorBridge("template-meta");
-    return { snapshot:buildEditorSnapshot(), id:tid, name:t.name, teamKey:t._json.teamKey, teamLabel:t._json.teamLabel };
+    return {
+      snapshot:buildEditorSnapshot(),
+      id:tid,
+      name:t.name,
+      category:t._json.category,
+      teamKey:t._json.teamKey,
+      teamLabel:t._json.teamLabel,
+    };
   },
   /** Deep-copy a poster (layers/images/layout) under a new id; caller Saves to Mongo. */
   async duplicateTemplate(opts={}){
