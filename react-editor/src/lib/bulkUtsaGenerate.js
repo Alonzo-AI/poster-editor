@@ -248,6 +248,26 @@ function applyTextToTemplateJson(json, fields) {
 }
 
 /**
+ * Projects-only: clear player image inherited from the Editor base template.
+ * Does not touch logo / background / conference / sponsor.
+ * Source templates are never mutated (works on the already-cloned project JSON).
+ */
+function stripPlayerImageForBulkProject(json) {
+  if (!json || typeof json !== 'object') return json
+  if (!json.defaults || typeof json.defaults !== 'object') json.defaults = {}
+  const images =
+    json.defaults.images && typeof json.defaults.images === 'object'
+      ? { ...json.defaults.images }
+      : {}
+  images.player = null
+  json.defaults.images = images
+  if (json.settings?.defaultImages && typeof json.settings.defaultImages === 'object') {
+    json.settings.defaultImages = { ...json.settings.defaultImages, player: null }
+  }
+  return json
+}
+
+/**
  * Pick one base template per category for a college (never prior bulk clones).
  */
 export function pickTeamBaseTemplates(templates, teamKey) {
@@ -328,6 +348,8 @@ export async function generateBulkPosters({
         const srcJson = full?.json || full
         if (!srcJson || typeof srcJson !== 'object') throw new Error(`Missing JSON for ${base.id}`)
         const json = applyTextToTemplateJson(srcJson, rec.fields)
+        // Project clone only — Editor/Automate base template keeps its player image
+        stripPlayerImageForBulkProject(json)
         json.id = id
         json.name = name
         json.category = cat
@@ -345,6 +367,7 @@ export async function generateBulkPosters({
           csvRow: rec.row,
           teamKey: tk,
           bulkBatchDate: batchDate,
+          playerImage: null,
         }
         const saved = await saveProject(json, {
           id,

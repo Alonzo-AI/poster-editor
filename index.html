@@ -6743,11 +6743,19 @@ function layerDefToJson(id, def, g){
       out.imgDuotoneTo=g.imgDuotoneTo||def.imgDuotoneTo||"#e8e0d4";
     }
   } else if(def.type==="block"){
-    const fill=g.fill||g.color||def.fill||def.color||"primary";
+    // Freeze fill to real hex at Save so Automate Primary/Secondary cannot recolor shapes
+    const fillRaw=g.fill||g.color||def.fill||def.color||"primary";
+    const fill=roleColor(fillRaw);
     out.fill=fill;
+    out.color=fill;
     const grad=normalizeShapeGradient(g, def);
     if(grad){
-      out.gradient={ type:grad.type, from:grad.from, to:grad.to, angle:grad.angle };
+      out.gradient={
+        type:grad.type,
+        from:roleColor(grad.from),
+        to:roleColor(grad.to),
+        angle:grad.angle,
+      };
     }
     const radius=g.radius??def.radius??0;
     out.radius=radius;
@@ -6831,7 +6839,14 @@ function buildFrozenTemplateJSON(opts={}){
   const settings={
     ...(base.settings||{}),
     logo:Object.assign({}, base.settings?.logo||{}, logoSettingsOf(srcId)),
-    brandColors:{ fromLogo:false, ...(base.settings?.brandColors||{}) },
+    // Lock the Editor brand pair into the template so Automate does not replace with its defaults
+    brandColors:{
+      fromLogo:false,
+      ...(base.settings?.brandColors||{}),
+      primary:state.colors.primary,
+      secondary:state.colors.secondary,
+      ...(state.colors.contrast?{ contrast:state.colors.contrast }:{}),
+    },
     // Lock positions/sizes so Automate cannot reflow this layout
     freezeLayout:true,
   };
@@ -7882,7 +7897,28 @@ window.__RENDER_API_V3__={
       buildTextFields();
       buildCaptionColorControls();
     }
-    if(payload.colors) Object.assign(state.colors, PosterRenderEngine.enrichThemeColors({ ...state.colors, ...payload.colors }));
+    if(payload.colors){
+      // Frozen Editor saves: prefer baked brand colors over Automate UI defaults
+      // so shapes/text linked to primary/secondary match what was Saved.
+      const bakedBrand=TEMPLATES[state.template]?._json?.settings?.brandColors;
+      const useBaked=
+        isFrozenTemplate(state.template) &&
+        bakedBrand &&
+        (bakedBrand.primary || bakedBrand.secondary) &&
+        payload.prefer_template_colors===true &&
+        !payload.force_colors;
+      if(useBaked){
+        state.colors=PosterRenderEngine.enrichThemeColors({
+          ...state.colors,
+          ...payload.colors,
+          primary:bakedBrand.primary || payload.colors.primary || state.colors.primary,
+          secondary:bakedBrand.secondary || payload.colors.secondary || state.colors.secondary,
+          ...(bakedBrand.contrast?{ contrast:bakedBrand.contrast }:{}),
+        });
+      } else {
+        Object.assign(state.colors, PosterRenderEngine.enrichThemeColors({ ...state.colors, ...payload.colors }));
+      }
+    }
     else state.colors = PosterRenderEngine.enrichThemeColors(state.colors);
     if(payload.primary_color||payload.secondary_color){
       if(payload.primary_color) state.colors.primary=payload.primary_color;

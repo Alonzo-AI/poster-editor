@@ -192,6 +192,8 @@ export default function AutomatePage({ Nav }) {
           // First paint / Reset: lock to baked positions. Later fills keep drag nudges.
           freeze_layout: shouldReset,
           preserve_layout: !shouldReset,
+          // On open/switch: use Editor-saved brand colors. Later: allow Automate pickers.
+          prefer_template_colors: shouldReset,
           text: textForPayload,
           colors: { ...colors },
         }

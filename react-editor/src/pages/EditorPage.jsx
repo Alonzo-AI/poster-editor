@@ -259,9 +259,15 @@ export default function EditorPage({ Nav }) {
     // Keep Save id locked to the active template so Mongo overwrites the same doc
     setBakeId(snapshot.template || '')
     setBakeName(snapshot.templateName || snapshot.template || '')
+  }, [snapshot?.template, snapshot?.templateName])
+
+  // Only when the open poster changes — do not yank the college filter back while browsing
+  // an empty/other folder (that mismatch was saving under the wrong college).
+  useEffect(() => {
+    if (!snapshot?.template) return
     if (snapshot.category) setFormatCategory(snapshot.category)
     if (snapshot.teamKey) setFormatTeamKey(normalizeTeamKey(snapshot.teamKey))
-  }, [snapshot?.template, snapshot?.templateName, snapshot?.category, snapshot?.teamKey])
+  }, [snapshot?.template])
 
   const selected = snapshot?.selected
   const layers = snapshot?.layers || []
@@ -353,6 +359,8 @@ export default function EditorPage({ Nav }) {
   async function onCopyTemplate(t) {
     if (!t?.id || !api?.duplicateTemplate) return
     setTplMenuId(null)
+    const savedOk = await autosaveCurrentBeforeSwitch()
+    if (!savedOk) return
     setStatus(`Loading “${t.name || t.id}”…`)
     try {
       await ensureTemplateInEngine(api, t.id, { updatedAt: t.updatedAt })
@@ -621,21 +629,105 @@ export default function EditorPage({ Nav }) {
     }
   }
 
-  async function onBake(download) {
-    if (!api?.bakeTemplate) return
+  /** Open a Formats-list poster so the canvas matches the sidebar filter. */
+  async function openFormatTemplate(t) {
+    if (!t?.id || !api) return false
+    const activeId = api.getEditorSnapshot?.()?.template || snapshot?.template
+    if (activeId === t.id) return true
+    if (loadingTemplateId) return false
+    // Persist current edits before leaving this poster
+    const savedOk = await autosaveCurrentBeforeSwitch()
+    if (!savedOk) return false
+    setTplMenuId(null)
+    setLoadingTemplateId(t.id)
+    setStatus(`Loading “${t.name || t.id}”…`)
+    try {
+      await ensureTemplateInEngine(api, t.id, { updatedAt: t.updatedAt })
+      refreshTemplates()
+      api?.switchTemplate?.(t.id)
+      setStatus('')
+      return true
+    } catch (e) {
+      setStatus(e.message || 'Failed to load template')
+      return false
+    } finally {
+      setLoadingTemplateId((cur) => (cur === t.id ? null : cur))
+    }
+  }
+
+  /**
+   * Keep canvas college/category aligned with the Formats filter so Save cannot
+   * write the previously open poster into another college folder.
+   */
+  async function alignCanvasToFormatFilter(nextTeamKey, nextCategory) {
+    const teamKey = normalizeTeamKey(nextTeamKey)
+    const category = nextCategory || 'player'
+    const activeId = api?.getEditorSnapshot?.()?.template || snapshot?.template
+    const activeMeta =
+      templates.find((x) => x.id === activeId) ||
+      (api?.listTemplates?.() || []).find((x) => x.id === activeId) ||
+      null
+    const activeTeam = activeMeta
+      ? teamOf(activeMeta).teamKey
+      : normalizeTeamKey(snapshot?.teamKey || UNASSIGNED_TEAM_KEY)
+    const activeCat = activeMeta?.category || snapshot?.category || 'player'
+    if (activeId && activeTeam === teamKey && activeCat === category) return
+
+    const pick = templates.find((x) => {
+      const cat = (x.category || 'player') === category
+      return cat && teamOf(x).teamKey === teamKey
+    })
+    if (pick) {
+      await openFormatTemplate(pick)
+      return
+    }
+    // Leaving this college/category with no target poster — still save current edits
+    if (activeId) {
+      const savedOk = await autosaveCurrentBeforeSwitch()
+      if (!savedOk) return
+    }
+    const teamLabel =
+      teamOptions.find((x) => x.teamKey === teamKey)?.teamLabel ||
+      normalizeTeamLabel('', teamKey)
+    const catLabel = CATEGORIES.find((c) => c.id === category)?.label || category
+    setStatus(
+      `Browsing ${teamLabel} / ${catLabel} — no templates here yet. Use + Add. Save stays blocked until a poster in this college is open.`,
+    )
+  }
+
+  async function onFormatTeamChange(rawKey) {
+    const teamKey = normalizeTeamKey(rawKey)
+    setFormatTeamKey(teamKey)
+    await alignCanvasToFormatFilter(teamKey, formatCategory)
+  }
+
+  async function onFormatCategoryChange(category) {
+    setFormatCategory(category)
+    await alignCanvasToFormatFilter(formatTeamKey, category)
+  }
+
+  async function onBake(download, opts = {}) {
+    const autosave = !!opts.autosave
+    if (!api?.bakeTemplate) return { ok: false }
     // Prefer live engine selection (after Copy this is the NEW id), not a stale React snapshot
     const liveId = api.getEditorSnapshot?.()?.template
     const id = String(liveId || bakeId || snapshot?.template || '').trim()
     if (!id) {
       setStatus('No template selected')
-      return
+      return { ok: false }
     }
     // Keep this template's own display name — never reuse another chip's name
     const listed = (api.listTemplates?.() || []).find((t) => t.id === id)
     const name = listed?.name || snapshot?.templateName || bakeName || id
     setBakeId(id)
     setBakeName(name)
-    setStatus(download ? 'Downloading…' : `Saving “${id}”…`)
+    setStatus(
+      download
+        ? 'Downloading…'
+        : autosave
+          ? `Auto-saving “${name}”…`
+          : `Saving “${id}”…`,
+    )
     try {
       const result = await api.bakeTemplate({ id, name, download })
       const json = result?.json
@@ -660,6 +752,16 @@ export default function EditorPage({ Nav }) {
         )
         json.teamKey = teamKey
         json.teamLabel = teamLabel
+        // Manual Save only — autosave on switch must keep the open poster's own college
+        if (!download && !autosave && teamKey !== formatTeamKey) {
+          const filterLabel =
+            teamOptions.find((x) => x.teamKey === formatTeamKey)?.teamLabel ||
+            normalizeTeamLabel('', formatTeamKey)
+          setStatus(
+            `Save blocked — open poster is under “${teamLabel}” but you're browsing “${filterLabel}”. Open a poster in this college, or use Move to team.`,
+          )
+          return { ok: false, blocked: true }
+        }
       }
       if (json && !download) {
         try {
@@ -679,9 +781,11 @@ export default function EditorPage({ Nav }) {
             return [...prev.filter((x) => x.id !== saved.id), entry]
           })
           setStatus(
-            saved.updated
-              ? `Updated “${name}” (id: ${saved.id}) · JSON overwritten`
-              : `Created “${name}” (id: ${saved.id}) · later Saves overwrite this id`,
+            autosave
+              ? `Auto-saved “${name}”`
+              : saved.updated
+                ? `Updated “${name}” (id: ${saved.id}) · JSON overwritten`
+                : `Created “${name}” (id: ${saved.id}) · later Saves overwrite this id`,
           )
           try {
             api.injectRemoteTemplates?.(
@@ -708,21 +812,37 @@ export default function EditorPage({ Nav }) {
           } catch (_) {}
           if (api.listTemplates) refreshTemplates()
           if (api.listTextFields) setTextFields(api.listTextFields() || [])
-          return
+          return { ok: true }
         } catch (dbErr) {
           setApiOnline(false)
           setStatus(
             `Saved in browser only · DB failed: ${dbErr.message}. Start server/Mongo or use Download.`,
           )
-          return
+          // Engine bake already committed — allow switch so in-session edits aren't stranded
+          return { ok: true, browserOnly: true }
         }
       }
       setStatus(download ? 'Template downloaded' : 'Saved to session')
       if (api.listTemplates) refreshTemplates()
       if (api.listTextFields) setTextFields(api.listTextFields() || [])
+      return { ok: true }
     } catch (e) {
       setStatus(e.message || 'Save failed')
+      return { ok: false }
     }
+  }
+
+  /** Save the open poster before switching college / category / template. */
+  async function autosaveCurrentBeforeSwitch() {
+    if (!api?.bakeTemplate) return true
+    const activeId = api.getEditorSnapshot?.()?.template || snapshot?.template
+    if (!activeId) return true
+    const result = await onBake(false, { autosave: true })
+    if (result?.ok) return true
+    setStatus(
+      'Auto-save failed — stay on this poster, fix Save, then switch so edits are not lost.',
+    )
+    return false
   }
 
   const onBakeRef = useRef(onBake)
@@ -921,10 +1041,12 @@ export default function EditorPage({ Nav }) {
                   type="button"
                   className="text-[11px] font-medium text-paper hover:text-blaze"
                   disabled={!ready}
-                  onClick={() => {
+                  onClick={async () => {
                     const name = window.prompt('New template name', 'New template')
                     if (name == null || !String(name).trim()) return
                     try {
+                      const savedOk = await autosaveCurrentBeforeSwitch()
+                      if (!savedOk) return
                       const res = api?.createTemplate?.({
                         name: String(name).trim(),
                         category: formatCategory,
@@ -956,7 +1078,7 @@ export default function EditorPage({ Nav }) {
                 <select
                   className={`${inputClass} min-w-0 flex-1 py-1.5 text-[11px]`}
                   value={formatTeamKey}
-                  onChange={(e) => setFormatTeamKey(normalizeTeamKey(e.target.value))}
+                  onChange={(e) => onFormatTeamChange(e.target.value)}
                   aria-label="Team folder"
                 >
                   {teamOptions.map((t) => (
@@ -985,7 +1107,7 @@ export default function EditorPage({ Nav }) {
                       if (prev.some((x) => x.teamKey === created.teamKey)) return prev
                       return [...prev, created]
                     })
-                    setFormatTeamKey(created.teamKey)
+                    await onFormatTeamChange(created.teamKey)
                     try {
                       await upsertTeamFolder(created)
                       setApiOnline(true)
@@ -1012,7 +1134,7 @@ export default function EditorPage({ Nav }) {
                         ? 'bg-panel text-paper shadow-sm'
                         : 'text-dim hover:text-paper'
                     }`}
-                    onClick={() => setFormatCategory(c.id)}
+                    onClick={() => onFormatCategoryChange(c.id)}
                   >
                     {c.label}
                   </button>
@@ -1030,21 +1152,7 @@ export default function EditorPage({ Nav }) {
                       aria-busy={isLoading}
                       onClick={async () => {
                         if (isActive || loadingTemplateId) return
-                        setTplMenuId(null)
-                        setLoadingTemplateId(t.id)
-                        setStatus(`Loading “${t.name || t.id}”…`)
-                        try {
-                          await ensureTemplateInEngine(api, t.id, {
-                            updatedAt: t.updatedAt,
-                          })
-                          refreshTemplates()
-                          api?.switchTemplate?.(t.id)
-                          setStatus('')
-                        } catch (e) {
-                          setStatus(e.message || 'Failed to load template')
-                        } finally {
-                          setLoadingTemplateId((cur) => (cur === t.id ? null : cur))
-                        }
+                        await openFormatTemplate(t)
                       }}
                       className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2 text-left ${
                         isActive
