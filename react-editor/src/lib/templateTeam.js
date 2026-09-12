@@ -60,3 +60,23 @@ export function promptNewTeam() {
   if (teamKey === UNASSIGNED_TEAM_KEY) return null
   return { teamKey, teamLabel: normalizeTeamLabel(teamLabel, teamKey) }
 }
+
+/** Persist Formats college filter across refresh (Editor / Automate). */
+export const EDITOR_FORMAT_TEAM_LS = 'poster.editor.formatTeamKey'
+export const AUTOMATE_FORMAT_TEAM_LS = 'poster.automate.formatTeamKey'
+
+export function readStoredTeamKey(storageKey, fallback = UNASSIGNED_TEAM_KEY) {
+  try {
+    const v = localStorage.getItem(storageKey)
+    if (v == null || !String(v).trim()) return fallback
+    return normalizeTeamKey(v)
+  } catch (_) {
+    return fallback
+  }
+}
+
+export function writeStoredTeamKey(storageKey, teamKey) {
+  try {
+    localStorage.setItem(storageKey, normalizeTeamKey(teamKey))
+  } catch (_) {}
+}

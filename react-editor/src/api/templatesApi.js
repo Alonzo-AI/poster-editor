@@ -87,7 +87,13 @@ export function mergeTemplateCatalog(dbLite = [], engineList = [], opts = {}) {
       frozen: t.frozen !== false,
       disk: !!prev.disk,
       fields: prev.fields || [],
-      images: prev.images || [],
+      // Prefer hydrated engine slots over a sticky empty [] from a prior lite merge
+      images:
+        (engineById.get(t.id)?.images?.length
+          ? engineById.get(t.id).images
+          : null) ||
+        (prev.images?.length ? prev.images : null) ||
+        [],
       automation: prev.automation || null,
       fromDb: true,
       updatedAt: t.updatedAt || prev.updatedAt,

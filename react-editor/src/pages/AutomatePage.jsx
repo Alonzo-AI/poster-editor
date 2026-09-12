@@ -16,6 +16,7 @@ import {
   upsertTeamFolder,
 } from '../api/templatesApi.js'
 import { uploadDataUrlToS3, uploadImageOrDataUrl, isRemoteImageUrl } from '../api/uploadsApi.js'
+import { saveAutomateSave } from '../api/automateSavesApi.js'
 import {
   UNASSIGNED_TEAM_KEY,
   collectTeamOptions,
@@ -23,6 +24,9 @@ import {
   normalizeTeamLabel,
   promptNewTeam,
   teamOf,
+  AUTOMATE_FORMAT_TEAM_LS,
+  readStoredTeamKey,
+  writeStoredTeamKey,
 } from '../lib/templateTeam.js'
 const inputClass = 'ui-input'
 
@@ -66,18 +70,23 @@ export default function AutomatePage({ Nav }) {
   const [dbCatalog, setDbCatalog] = useState([])
   const [templateId, setTemplateId] = useState(null)
   const [formatCategory, setFormatCategory] = useState('player')
-  const [formatTeamKey, setFormatTeamKey] = useState(UNASSIGNED_TEAM_KEY)
+  const [formatTeamKey, setFormatTeamKey] = useState(() =>
+    readStoredTeamKey(AUTOMATE_FORMAT_TEAM_LS),
+  )
   const [extraTeams, setExtraTeams] = useState([])
   const [text, setText] = useState({})
   const [colors, setColors] = useState({ primary: '#006F73', secondary: '#C5B358' })
   const [images, setImages] = useState({})
   const [status, setStatus] = useState('')
+  const [savingAutomate, setSavingAutomate] = useState(false)
   const [fields, setFields] = useState([])
   const [imageSlots, setImageSlots] = useState([])
   const [apiOnline, setApiOnline] = useState(null)
   const layoutTemplateRef = useRef(null)
   /** Per-template Automate fill values — never share one form across posters. */
   const textByTemplateRef = useRef({})
+  /** Per-template session image uploads — never leak across colleges/templates. */
+  const imagesByTemplateRef = useRef({})
   /** Left-rail chip spinner while a poster is loading into the stage. */
   const [loadingTemplateId, setLoadingTemplateId] = useState(null)
   const [smartCrop, setSmartCrop] = useState(null)
@@ -87,6 +96,10 @@ export default function AutomatePage({ Nav }) {
   const [editMode, setEditMode] = useState(false)
   const [studioMode, setStudioMode] = useState(null)
   const [shapePresets, setShapePresets] = useState([])
+
+  useEffect(() => {
+    writeStoredTeamKey(AUTOMATE_FORMAT_TEAM_LS, formatTeamKey)
+  }, [formatTeamKey])
 
   const teamOptions = useMemo(() => {
     const fromTpl = collectTeamOptions(templates)
@@ -107,6 +120,9 @@ export default function AutomatePage({ Nav }) {
   const filteredTemplates = useMemo(
     () =>
       templates.filter((t) => {
+        // Never list Automate-save / project bake ghosts in the template picker
+        const id = String(t.id || '')
+        if (id.startsWith('autosave_') || id.includes('_bulk_')) return false
         const cat = (t.category || 'player') === formatCategory
         return cat && teamOf(t).teamKey === formatTeamKey
       }),
@@ -167,7 +183,15 @@ export default function AutomatePage({ Nav }) {
         // Each template keeps its own fill values (JSON defaults / session cache).
         // Do not reuse the previous poster’s form state on switch.
         let textForPayload = { ...text }
+        let imagesForPayload = { ...images }
         if (switching) {
+          // Preserve the poster we’re leaving before swapping form state
+          const prevId = layoutTemplateRef.current
+          if (prevId) {
+            textByTemplateRef.current[prevId] = { ...text }
+            imagesByTemplateRef.current[prevId] = { ...images }
+          }
+
           const cached = textByTemplateRef.current[templateId]
           if (cached && typeof cached === 'object') {
             textForPayload = { ...cached }
@@ -182,8 +206,16 @@ export default function AutomatePage({ Nav }) {
             textByTemplateRef.current[templateId] = { ...textForPayload }
           }
           setText(textForPayload)
+
+          // Images are session overrides per template only — never carry College A upload to College B.
+          const cachedImg = imagesByTemplateRef.current[templateId]
+          imagesForPayload =
+            cachedImg && typeof cachedImg === 'object' ? { ...cachedImg } : {}
+          imagesByTemplateRef.current[templateId] = { ...imagesForPayload }
+          setImages(imagesForPayload)
         } else if (templateId) {
           textByTemplateRef.current[templateId] = { ...textForPayload }
+          imagesByTemplateRef.current[templateId] = { ...imagesForPayload }
         }
 
         const payload = {
@@ -198,13 +230,18 @@ export default function AutomatePage({ Nav }) {
           colors: { ...colors },
         }
         if (includeImages) {
-          if (images.player) payload.player_image = images.player
-          if (images.background) payload.background_image = images.background
-          if (images.logo) payload.logo_url = images.logo
-          if (images.conference) payload.conference_logo = images.conference
-          if (images.sponsor) payload.sponsor_logo = images.sponsor
+          if (imagesForPayload.player) payload.player_image = imagesForPayload.player
+          if (imagesForPayload.background) payload.background_image = imagesForPayload.background
+          if (imagesForPayload.logo) payload.logo_url = imagesForPayload.logo
+          if (imagesForPayload.conference) payload.conference_logo = imagesForPayload.conference
+          if (imagesForPayload.sponsor) payload.sponsor_logo = imagesForPayload.sponsor
         }
         await api.setPayload(payload)
+        // Refresh Automate image uploads from hydrated template (team / no-image / nostalgia)
+        try {
+          const live = (api.listTemplates?.() || []).find((x) => x.id === templateId)
+          if (live?.images?.length) setImageSlots(live.images)
+        } catch (_) {}
         if (shouldReset) {
           try {
             api.freezeCurrentLayout?.()
@@ -374,6 +411,13 @@ export default function AutomatePage({ Nav }) {
     textByTemplateRef.current[templateId] = { ...text }
   }, [text, templateId])
 
+  // Keep per-template image uploads in sync (active template only)
+  useEffect(() => {
+    if (!templateId) return
+    if (layoutTemplateRef.current !== templateId) return
+    imagesByTemplateRef.current[templateId] = { ...images }
+  }, [images, templateId])
+
   // Auto-apply fill values — paused while Edit automate is open so canvas tools don't fight the form.
   // Template switches still load (and clear the left-rail spinner) even in edit mode.
   useEffect(() => {
@@ -405,6 +449,106 @@ export default function AutomatePage({ Nav }) {
       setStatus('PNG downloaded · layout tweaks were not saved to DB')
     } catch (e) {
       setStatus('Export failed: ' + (e.message || e))
+    }
+  }
+
+  /**
+   * Bake current Automate fill into a NEW id and store in automate_saves only.
+   * Never writes Editor templates or Projects.
+   */
+  async function onSaveAutomate() {
+    if (!api?.bakeTemplate || !templateId || savingAutomate) return
+    const sourceId = templateId
+    const listed = templates.find((t) => t.id === sourceId) || current
+    const team = teamOf(listed || { teamKey: formatTeamKey })
+    const category = (listed?.category || formatCategory || 'player')
+    const defaultName =
+      String(text.player_name || text.name || text.athlete || listed?.name || 'Automate save').trim() ||
+      'Automate save'
+    const nameInput = window.prompt('Save Automate poster as:', defaultName)
+    if (nameInput == null) return
+    const name = String(nameInput).trim() || defaultName
+    const slug = name
+      .toLowerCase()
+      .replace(/[^\w]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .slice(0, 40)
+    const id = `autosave_${team.teamKey || 'team'}_${slug || 'poster'}_${Date.now().toString(36)}`
+
+    setSavingAutomate(true)
+    setStatus('Saving Automate poster…')
+    try {
+      await apply(true, { resetLayout: false })
+      const result = await api.bakeTemplate({ id, name, download: false })
+      const json = result?.json
+      if (!json) throw new Error('Bake returned no JSON')
+      json.id = id
+      json.name = name
+      json.category = category
+      json.teamKey = team.teamKey
+      json.teamLabel = team.teamLabel
+      if (!json._bakeMeta || typeof json._bakeMeta !== 'object') json._bakeMeta = {}
+      json._bakeMeta.source = 'automate-save'
+      json._bakeMeta.sourceTemplate = sourceId
+
+      await saveAutomateSave(json, {
+        id,
+        name,
+        category,
+        teamKey: team.teamKey,
+        teamLabel: team.teamLabel,
+        sourceTemplateId: sourceId,
+      })
+
+      // Drop ghost bake from engine so Automate stays on Editor templates
+      try {
+        api.removeRemoteTemplate?.(id)
+      } catch (_) {}
+
+      // Restore the original template with current fills (bake switched engine onto autosave_*)
+      try {
+        await ensureTemplateInEngine(api, sourceId, {
+          updatedAt: listed?.updatedAt,
+        })
+        await api.setPayload({
+          template: sourceId,
+          auto_palette: false,
+          freeze_layout: false,
+          preserve_layout: true,
+          prefer_template_colors: false,
+          text: { ...text },
+          colors: { ...colors },
+          ...(images.player ? { player_image: images.player } : {}),
+          ...(images.background ? { background_image: images.background } : {}),
+          ...(images.logo ? { logo_url: images.logo } : {}),
+          ...(images.conference ? { conference_logo: images.conference } : {}),
+          ...(images.sponsor ? { sponsor_logo: images.sponsor } : {}),
+        })
+        layoutTemplateRef.current = sourceId
+      } catch (restoreErr) {
+        console.warn('[automate-save] restore template failed', restoreErr)
+      }
+
+      setStatus(`Saved “${name}” · open from Home → Automate saves`)
+    } catch (e) {
+      setStatus(`Save failed: ${e.message || e}`)
+      // Best-effort restore if bake left us on autosave id
+      try {
+        if (sourceId) {
+          await ensureTemplateInEngine(api, sourceId)
+          await api.setPayload({
+            template: sourceId,
+            preserve_layout: true,
+            freeze_layout: false,
+            text: { ...text },
+            colors: { ...colors },
+          })
+          layoutTemplateRef.current = sourceId
+        }
+      } catch (_) {}
+    } finally {
+      setSavingAutomate(false)
     }
   }
 
@@ -545,6 +689,15 @@ export default function AutomatePage({ Nav }) {
             {apiOnline === true ? 'DB' : apiOnline === false ? 'Offline' : '…'}
           </span>
           <Nav />
+          <button
+            type="button"
+            className="ui-btn"
+            disabled={!ready || !templateId || savingAutomate}
+            title="Save filled poster to Automate saves (not templates / not Projects)"
+            onClick={onSaveAutomate}
+          >
+            {savingAutomate ? 'Saving…' : 'Save'}
+          </button>
           <button type="button" className="ui-btn ui-btn-primary" disabled={!ready} onClick={onExport}>
             Export PNG
           </button>
@@ -789,16 +942,25 @@ export default function AutomatePage({ Nav }) {
 
         <button
           type="button"
-          className="ui-btn ui-btn-primary w-full disabled:opacity-55"
+          className="ui-btn w-full disabled:opacity-55"
+          disabled={!ready || !templateId || savingAutomate}
+          onClick={onSaveAutomate}
+        >
+          {savingAutomate ? 'Saving…' : 'Save'}
+        </button>
+        <button
+          type="button"
+          className="ui-btn ui-btn-primary mt-2 w-full disabled:opacity-55"
           disabled={!ready}
           onClick={onExport}
         >
           Export PNG
         </button>
         <p className="mt-2 text-[11px] text-muted">
-          Drag text or images on the canvas to fine-tune before export. Tweaks are session-only —
-          they are not written to Atlas. Use <b className="font-medium text-dim">Reset layout</b> to
-          restore the template.
+          <b className="font-medium text-dim">Save</b> stores this fill in Automate saves (Home).{' '}
+          <b className="font-medium text-dim">Export PNG</b> downloads only. Tweaks are not written
+          to Editor templates. Use <b className="font-medium text-dim">Reset layout</b> to restore
+          the template.
         </p>
         <p className="mt-1 text-xs text-dim">{status}</p>
       </aside>

@@ -576,8 +576,9 @@
   .layer.txt.fixed-box:has(sup) > .txt-flow,
   .layer.txt.fixed-box:has(sup) > .txt-clip > .txt-flow{padding-top:0.18em;}
   .layer.txt sup,.layer.txt .s-n sup,.layer.txt .s-l sup{
-    font-size:0.52em;line-height:1;vertical-align:baseline;position:relative;top:-0.42em;
-    font-weight:inherit;font-style:inherit;letter-spacing:inherit;
+    font-size:0.52em;line-height:1;vertical-align:baseline;position:relative;top:-0.90em;
+    margin-left:-0.05em;letter-spacing:0.02em;
+    font-weight:inherit;font-style:inherit;
   }
   /* inspector helpers */
   .ibtns{display:flex;gap:6px;flex-wrap:wrap;}
@@ -3838,6 +3839,21 @@ function layerAutoFitEnabled(g, def){
   if(def && def.autoFit===false) return false;
   return true;
 }
+/** When turning Auto-fit off, lock size to the px currently drawn (fitSize) so text does not jump larger. */
+function lockTextSizeToDrawnPx(g, def, el){
+  const pref=textPreferredSize(g, def);
+  let drawn=null;
+  if(g.fitSize!=null && +g.fitSize>0) drawn=Math.round(+g.fitSize);
+  if(drawn==null && el?.style?.fontSize){
+    const n=Math.round(parseFloat(el.style.fontSize));
+    if(Number.isFinite(n) && n>0) drawn=n;
+  }
+  const lock=Math.max(8, Math.min(400, drawn!=null?drawn:pref));
+  g.size=lock;
+  g.baseSize=lock;
+  g.fitSize=lock;
+  return lock;
+}
 function applyLayerAutofit(el, g, def){
   if(!el || !def || def.type!=="text" || def.kind==="stat") return;
   if(!layerAutoFitEnabled(g, def)){
@@ -5109,14 +5125,28 @@ function syncInspector(){
     const iAutoFit=$("iAutoFit");
     if(iAutoFit){
       iAutoFit.onchange=e=>withUndo(()=>{
-        g.autoFit=!!e.target.checked;
+        const nextOn=!!e.target.checked;
+        const layerEl=el();
+        // Turning off: keep the on-screen (fitted) size — do not snap up to preferred px
+        if(!nextOn) lockTextSizeToDrawnPx(g, def, layerEl);
+        g.autoFit=nextOn;
         const runtime=TEMPLATES[state.template]?.layers?.[id];
         if(runtime) runtime.autoFit=g.autoFit;
         const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===id);
         if(jl) jl.autoFit=g.autoFit;
-        const layerEl=el();
         if(layerEl) applyLayerAutofit(layerEl, g, def);
-        applyFontPx(g.baseSize ?? g.size ?? def.size ?? 30);
+        if(nextOn){
+          applyFontPx(g.baseSize ?? g.size ?? def.size ?? 30);
+        } else {
+          const px=g.baseSize ?? g.size ?? def.size ?? 30;
+          if($("ivs")) $("ivs").textContent=String(px);
+          if($("iFs") && document.activeElement!==$("iFs")) $("iFs").value=String(px);
+          if($("iFsNum") && document.activeElement!==$("iFsNum")) $("iFsNum").value=String(px);
+          const hint=$("iFsHint");
+          if(hint){
+            hint.innerHTML=`Auto-fit is <b>off</b> — text stays at <b>${px}px</b> (may clip if the box is too small).`;
+          }
+        }
         scheduleSave();
       });
     }
@@ -8164,7 +8194,13 @@ window.__RENDER_API_V3__={
       }
     }
     if(patch.autoFit!=null){
-      g.autoFit=!!patch.autoFit;
+      const nextOn=!!patch.autoFit;
+      // React PropertiesPanel toggle — same lock so size does not jump when disabling
+      if(!nextOn){
+        const layerEl=document.getElementById(lid);
+        lockTextSizeToDrawnPx(g, def, layerEl);
+      }
+      g.autoFit=nextOn;
       const runtime=TEMPLATES[state.template]?.layers?.[lid];
       if(runtime) runtime.autoFit=g.autoFit;
       const jl=TEMPLATES[state.template]?._json?.layers?.find(l=>l.id===lid);
@@ -8880,16 +8916,53 @@ window.__RENDER_API_V3__={
 function templateImageSlots(templateId){
   const t=TEMPLATES[templateId];
   if(!t) return [];
-  let layers;
-  try{ layers=t.layers||{}; }catch(_){ layers={}; }
-  const slots=[];
+  const SLOT_META=[
+    ["player","Player image"],
+    ["background","Background"],
+    ["logo","Team logo"],
+    ["conference","Conference logo"],
+    ["sponsor","Sponsor logo"],
+  ];
+  const labelOf=Object.fromEntries(SLOT_META);
+  const order=SLOT_META.map(([k])=>k);
   const seen=new Set();
-  for(const def of Object.values(layers)){
-    if(!def || def.type!=="image"||!def.bind||seen.has(def.bind)) continue;
-    seen.add(def.bind);
-    slots.push({ key:def.bind, label:labelFor(def.bind) });
+  const keys=[];
+  const add=(key)=>{
+    const k=String(key||"").trim();
+    if(!k||seen.has(k)) return;
+    seen.add(k);
+    keys.push(k);
+  };
+  // Live layers + editor extras
+  let layers={};
+  try{ layers=Object.assign({}, t.layers||{}, state.extraLayers?.[templateId]||{}); }catch(_){ layers=t.layers||{}; }
+  for(const def of Object.values(layers||{})){
+    if(def?.type==="image"&&def.bind) add(def.bind);
   }
-  return slots;
+  // Baked JSON layers (full picture after hydrate; lite stubs may have empty t.layers)
+  if(Array.isArray(t._json?.layers)){
+    for(const def of t._json.layers){
+      if(def?.type==="image"&&def.bind) add(def.bind);
+    }
+  }
+  // Declared Automate swap slots even when the canvas layer is not created yet
+  const swap=t._json?.automation?.swapImages;
+  if(Array.isArray(swap)) swap.forEach(add);
+  // Lite / incomplete templates: still expose category-appropriate uploads in Automate
+  if(!keys.length){
+    const cat=normalizeTemplateCategory(t._json?.category ?? t.category);
+    if(cat==="team"||cat==="player_no_image"){
+      ["logo","conference","sponsor","background"].forEach(add);
+    } else {
+      // player + nostalgia
+      ["player","logo","conference","sponsor","background"].forEach(add);
+    }
+  }
+  keys.sort((a,b)=>{
+    const ia=order.indexOf(a), ib=order.indexOf(b);
+    return (ia<0?999:ia)-(ib<0?999:ib);
+  });
+  return keys.map((key)=>({ key, label:labelOf[key]||labelFor(key)||key }));
 }
 function templateInputFields(templateId){
   const t=TEMPLATES[templateId];

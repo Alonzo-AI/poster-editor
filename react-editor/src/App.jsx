@@ -6,6 +6,8 @@ const EditorPage = lazy(() => import('./pages/EditorPage.jsx'))
 const AutomatePage = lazy(() => import('./pages/AutomatePage.jsx'))
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage.jsx'))
 const ProjectEditPage = lazy(() => import('./pages/ProjectEditPage.jsx'))
+const AutomateSavesPage = lazy(() => import('./pages/AutomateSavesPage.jsx'))
+const AutomateSaveEditPage = lazy(() => import('./pages/AutomateSaveEditPage.jsx'))
 
 function ShellNav() {
   return (
@@ -52,6 +54,17 @@ function ShellNav() {
       >
         Projects
       </NavLink>
+      <NavLink
+        to="/automate-saves"
+        end={false}
+        className={({ isActive }) =>
+          `rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+            isActive ? 'bg-panel text-paper shadow-sm' : 'text-dim hover:text-paper'
+          }`
+        }
+      >
+        Saves
+      </NavLink>
     </nav>
   )
 }
@@ -76,6 +89,8 @@ export default function App() {
           />
           <Route path="/projects/team/:teamKey" element={<ProjectsPage Nav={ShellNav} />} />
           <Route path="/projects/:id" element={<ProjectEditPage Nav={ShellNav} />} />
+          <Route path="/automate-saves" element={<AutomateSavesPage Nav={ShellNav} />} />
+          <Route path="/automate-saves/:id" element={<AutomateSaveEditPage Nav={ShellNav} />} />
         </Routes>
       </Suspense>
     </div>

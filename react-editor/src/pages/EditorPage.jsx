@@ -28,6 +28,9 @@ import {
   normalizeTeamLabel,
   promptNewTeam,
   teamOf,
+  EDITOR_FORMAT_TEAM_LS,
+  readStoredTeamKey,
+  writeStoredTeamKey,
 } from '../lib/templateTeam.js'
 
 const inputClass = 'ui-input'
@@ -71,7 +74,9 @@ export default function EditorPage({ Nav }) {
   const [renamingBind, setRenamingBind] = useState(null)
   const [renameDraft, setRenameDraft] = useState('')
   const [formatCategory, setFormatCategory] = useState('player')
-  const [formatTeamKey, setFormatTeamKey] = useState(UNASSIGNED_TEAM_KEY)
+  const [formatTeamKey, setFormatTeamKey] = useState(() =>
+    readStoredTeamKey(EDITOR_FORMAT_TEAM_LS),
+  )
   const [extraTeams, setExtraTeams] = useState([]) // DB team folders (+ optimistic local)
   const [tplMenuId, setTplMenuId] = useState(null)
   const [tplMoveTeamOpen, setTplMoveTeamOpen] = useState(false)
@@ -83,6 +88,8 @@ export default function EditorPage({ Nav }) {
   const [cutoutBusy, setCutoutBusy] = useState(false)
   const [cutoutDone, setCutoutDone] = useState(false)
   const [studioMode, setStudioMode] = useState(null) // font | effects | position | color
+  /** After refresh: open a poster in the persisted college once templates are ready. */
+  const restoredTeamFilterRef = useRef(false)
 
   const CATEGORIES = [
     { id: 'player', label: 'Player' },
@@ -265,12 +272,17 @@ export default function EditorPage({ Nav }) {
     setBakeName(snapshot.templateName || snapshot.template || '')
   }, [snapshot?.template, snapshot?.templateName])
 
-  // Only when the open poster changes — do not yank the college filter back while browsing
-  // an empty/other folder (that mismatch was saving under the wrong college).
+  // Persist college filter so refresh keeps the active team
+  useEffect(() => {
+    writeStoredTeamKey(EDITOR_FORMAT_TEAM_LS, formatTeamKey)
+  }, [formatTeamKey])
+
+  // When the open poster changes, sync category tab only.
+  // Do not overwrite formatTeamKey from the engine template — that was resetting
+  // the college dropdown on refresh.
   useEffect(() => {
     if (!snapshot?.template) return
     if (snapshot.category) setFormatCategory(snapshot.category)
-    if (snapshot.teamKey) setFormatTeamKey(normalizeTeamKey(snapshot.teamKey))
   }, [snapshot?.template])
 
   const selected = snapshot?.selected
@@ -780,6 +792,15 @@ export default function EditorPage({ Nav }) {
     setFormatCategory(category)
     await alignCanvasToFormatFilter(formatTeamKey, category)
   }
+
+  // After refresh: keep the persisted college and open a poster in that folder
+  useEffect(() => {
+    if (!ready || !api || restoredTeamFilterRef.current) return
+    if (!templates.length) return
+    restoredTeamFilterRef.current = true
+    alignCanvasToFormatFilter(formatTeamKey, formatCategory)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot restore after catalog load
+  }, [ready, api, templates.length])
 
   async function onBake(download, opts = {}) {
     const autosave = !!opts.autosave

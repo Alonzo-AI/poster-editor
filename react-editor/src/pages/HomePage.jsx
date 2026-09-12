@@ -9,7 +9,7 @@ export default function HomePage({ Nav }) {
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-4">
         <div>
           <div className="text-sm font-semibold text-paper">Poster Lab</div>
-          <div className="text-[11px] text-muted">Design · Automate · Projects</div>
+          <div className="text-[11px] text-muted">Design · Automate · Projects · Saves</div>
         </div>
         {Nav ? <Nav /> : null}
       </header>
@@ -18,13 +18,12 @@ export default function HomePage({ Nav }) {
         <section className="max-w-2xl">
           <h1 className="text-3xl font-semibold tracking-tight text-paper">Sports poster workspace</h1>
           <p className="mt-3 text-[15px] leading-relaxed text-dim">
-            Build frozen 1080×1350 layouts in the Editor, fill copy in Automate, and open
-            CSV-generated posters as editable Projects — without mixing them into your template
-            library.
+            Build frozen layouts in the Editor, fill copy in Automate, open CSV Projects, or revisit
+            posters you saved from Automate — each area stays in its own bucket.
           </p>
         </section>
 
-        <section className="grid gap-4 sm:grid-cols-3">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Link
             to="/"
             className="rounded-2xl border border-line bg-panel p-5 shadow-sm transition hover:border-blaze/40"
@@ -53,6 +52,18 @@ export default function HomePage({ Nav }) {
             <div className="mt-2 text-lg font-semibold text-paper">Bulk posters</div>
             <p className="mt-2 text-[13px] text-muted">
               CSV-generated posters stored separately, grouped by college, editable anytime.
+            </p>
+          </Link>
+          <Link
+            to="/automate-saves"
+            className="rounded-2xl border border-line bg-panel p-5 shadow-sm transition hover:border-blaze/40"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-dim">
+              Automate saves
+            </div>
+            <div className="mt-2 text-lg font-semibold text-paper">Saved from Automate</div>
+            <p className="mt-2 text-[13px] text-muted">
+              Posters you Save in Automate — separate from templates and CSV Projects.
             </p>
           </Link>
         </section>
