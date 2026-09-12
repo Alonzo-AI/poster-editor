@@ -83,8 +83,10 @@ const projectSchema = new mongoose.Schema(
     teamKey: { type: String, default: '__unassigned__', index: true },
     teamLabel: { type: String, default: 'Unassigned' },
     sourceTemplateId: { type: String, default: null },
-    /** YYYY-MM-DD batch stamp for multi/single CSV bulk runs (Projects folders). */
+    /** Per-CSV-run folder id (unique each generate). Legacy values may be YYYY-MM-DD. */
     bulkBatchDate: { type: String, default: null, index: true },
+    /** Display name for the batch folder (renameable). */
+    bulkBatchLabel: { type: String, default: null },
     json: { type: mongoose.Schema.Types.Mixed, required: true },
     updatedAt: { type: Date, default: Date.now },
     createdAt: { type: Date, default: Date.now },
@@ -172,6 +174,26 @@ function teamFieldsFromJson(json = {}) {
     teamKey,
   )
   return { teamKey, teamLabel }
+}
+
+/** Per-run Projects folder id (not calendar-day only). Legacy YYYY-MM-DD still valid. */
+function normalizeBulkBatchId(raw) {
+  const v = String(raw ?? '')
+    .trim()
+    .replace(/[^\w.-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 64)
+  return v || null
+}
+
+function normalizeBulkBatchLabel(raw, fallbackId = '') {
+  const label = String(raw ?? '').trim().slice(0, 120)
+  if (label) return label
+  const id = normalizeBulkBatchId(fallbackId) || ''
+  if (/^\d{4}-\d{2}-\d{2}$/.test(id)) return id
+  if (id.startsWith('run_')) return `Bulk · ${id.replace(/^run_/, '').replace(/_/g, ' ')}`
+  return id || 'Bulk run'
 }
 
 async function upsertTeamFolder(teamKeyIn, teamLabelIn) {
@@ -713,11 +735,15 @@ async function upsertProjectJson(rawJson, forcedId, meta = {}) {
 
   const bulkBatchDateRaw =
     meta.bulkBatchDate ?? json._bakeMeta?.bulkBatchDate ?? json.bulkBatchDate ?? null
-  const bulkBatchDate = bulkBatchDateRaw
-    ? String(bulkBatchDateRaw).trim().slice(0, 10)
+  const bulkBatchDate = normalizeBulkBatchId(bulkBatchDateRaw)
+  const bulkBatchLabelRaw =
+    meta.bulkBatchLabel ?? json._bakeMeta?.bulkBatchLabel ?? json.bulkBatchLabel ?? null
+  const bulkBatchLabel = bulkBatchDate
+    ? normalizeBulkBatchLabel(bulkBatchLabelRaw, bulkBatchDate)
     : null
   if (bulkBatchDate && json._bakeMeta && typeof json._bakeMeta === 'object') {
     json._bakeMeta.bulkBatchDate = bulkBatchDate
+    if (bulkBatchLabel) json._bakeMeta.bulkBatchLabel = bulkBatchLabel
   }
 
   const approx = Buffer.byteLength(JSON.stringify(json), 'utf8')
@@ -741,6 +767,7 @@ async function upsertProjectJson(rawJson, forcedId, meta = {}) {
     updatedAt: new Date(),
   }
   if (bulkBatchDate) $set.bulkBatchDate = bulkBatchDate
+  if (bulkBatchLabel) $set.bulkBatchLabel = bulkBatchLabel
 
   const row = await Project.findOneAndUpdate(
     { id },
@@ -764,6 +791,7 @@ async function upsertProjectJson(rawJson, forcedId, meta = {}) {
     teamLabel: normalizeTeamLabel(row.teamLabel, row.teamKey),
     sourceTemplateId: row.sourceTemplateId || null,
     bulkBatchDate: row.bulkBatchDate || null,
+    bulkBatchLabel: row.bulkBatchLabel || null,
     updatedAt: row.updatedAt,
     created: !existed,
     updated: existed,
@@ -782,6 +810,7 @@ app.get('/api/projects', async (_req, res) => {
         teamLabel: 1,
         sourceTemplateId: 1,
         bulkBatchDate: 1,
+        bulkBatchLabel: 1,
         updatedAt: 1,
         createdAt: 1,
       },
@@ -797,10 +826,55 @@ app.get('/api/projects', async (_req, res) => {
         teamLabel: normalizeTeamLabel(r.teamLabel, r.teamKey),
         sourceTemplateId: r.sourceTemplateId || null,
         bulkBatchDate: r.bulkBatchDate || null,
+        bulkBatchLabel: r.bulkBatchLabel || null,
         updatedAt: r.updatedAt,
         createdAt: r.createdAt,
       })),
     })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
+/** Rename a Projects batch folder (updates every project in that batch). Projects only. */
+app.patch('/api/projects/batches/:batchId', async (req, res) => {
+  try {
+    const batchId = normalizeBulkBatchId(req.params.batchId)
+    if (!batchId) return res.status(400).json({ error: 'Batch id required' })
+    const label = normalizeBulkBatchLabel(req.body?.label ?? req.body?.bulkBatchLabel, batchId)
+    const rows = await Project.find({ bulkBatchDate: batchId }).lean()
+    if (!rows.length) return res.status(404).json({ error: 'Batch folder not found' })
+    const now = new Date()
+    let updated = 0
+    for (const row of rows) {
+      const json =
+        row.json && typeof row.json === 'object' ? { ...row.json } : { id: row.id, name: row.name }
+      if (!json._bakeMeta || typeof json._bakeMeta !== 'object') json._bakeMeta = {}
+      json._bakeMeta.bulkBatchDate = batchId
+      json._bakeMeta.bulkBatchLabel = label
+      json.bulkBatchLabel = label
+      await Project.updateOne(
+        { id: row.id },
+        { $set: { bulkBatchLabel: label, json, updatedAt: now } },
+      )
+      updated += 1
+    }
+    console.log(`[api] project batch rename id=${batchId} label=${label} n=${updated}`)
+    res.json({ ok: true, bulkBatchDate: batchId, bulkBatchLabel: label, updated })
+  } catch (err) {
+    res.status(500).json({ error: err.message || String(err) })
+  }
+})
+
+/** Delete a Projects batch folder (deletes every project in that batch). Projects only. */
+app.delete('/api/projects/batches/:batchId', async (req, res) => {
+  try {
+    const batchId = normalizeBulkBatchId(req.params.batchId)
+    if (!batchId) return res.status(400).json({ error: 'Batch id required' })
+    const r = await Project.deleteMany({ bulkBatchDate: batchId })
+    if (!r.deletedCount) return res.status(404).json({ error: 'Batch folder not found' })
+    console.log(`[api] project batch delete id=${batchId} n=${r.deletedCount}`)
+    res.json({ ok: true, bulkBatchDate: batchId, deleted: r.deletedCount })
   } catch (err) {
     res.status(500).json({ error: err.message || String(err) })
   }
@@ -825,6 +899,7 @@ app.get('/api/projects/:id', async (req, res) => {
       teamLabel: json.teamLabel,
       sourceTemplateId: row.sourceTemplateId || null,
       bulkBatchDate: row.bulkBatchDate || json._bakeMeta?.bulkBatchDate || null,
+      bulkBatchLabel: row.bulkBatchLabel || json._bakeMeta?.bulkBatchLabel || null,
       updatedAt: row.updatedAt,
       createdAt: row.createdAt,
       json,
@@ -845,6 +920,7 @@ app.put('/api/projects/:id', async (req, res) => {
       teamLabel: body.teamLabel,
       sourceTemplateId: body.sourceTemplateId,
       bulkBatchDate: body.bulkBatchDate,
+      bulkBatchLabel: body.bulkBatchLabel,
     })
     res.json(result)
   } catch (err) {
@@ -864,6 +940,7 @@ app.post('/api/projects', async (req, res) => {
       teamLabel: body.teamLabel,
       sourceTemplateId: body.sourceTemplateId,
       bulkBatchDate: body.bulkBatchDate,
+      bulkBatchLabel: body.bulkBatchLabel,
     })
     res.json(result)
   } catch (err) {

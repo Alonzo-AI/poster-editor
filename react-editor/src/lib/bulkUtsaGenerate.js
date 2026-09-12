@@ -305,6 +305,7 @@ export async function generateBulkPosters({
   saveProject,
   onProgress,
   bulkBatchDate = null,
+  bulkBatchLabel = null,
 } = {}) {
   if (typeof saveProject !== 'function') {
     throw new Error('saveProject is required (projects collection — not templates)')
@@ -318,7 +319,8 @@ export async function generateBulkPosters({
   }
   const label = normalizeTeamLabel(teamLabel, tk)
   const byCategory = pickTeamBaseTemplates(templates, tk)
-  const batchDate = bulkBatchDate || todayBatchDate()
+  const batchDate = bulkBatchDate || createBulkBatchId()
+  const batchLabel = bulkBatchLabel || defaultBulkBatchLabel()
 
   const created = []
   const skipped = []
@@ -367,6 +369,7 @@ export async function generateBulkPosters({
           csvRow: rec.row,
           teamKey: tk,
           bulkBatchDate: batchDate,
+          bulkBatchLabel: batchLabel,
           playerImage: null,
         }
         const saved = await saveProject(json, {
@@ -377,6 +380,7 @@ export async function generateBulkPosters({
           teamLabel: label,
           sourceTemplateId: base.id,
           bulkBatchDate: batchDate,
+          bulkBatchLabel: batchLabel,
         })
         created.push({
           id: saved.id || id,
@@ -387,6 +391,7 @@ export async function generateBulkPosters({
           teamKey: tk,
           teamLabel: label,
           bulkBatchDate: batchDate,
+          bulkBatchLabel: batchLabel,
         })
         onProgress?.({
           type: 'ok',
@@ -422,6 +427,7 @@ export async function generateBulkPosters({
     teamKey: tk,
     teamLabel: label,
     bulkBatchDate: batchDate,
+    bulkBatchLabel: batchLabel,
   }
 }
 
@@ -470,12 +476,12 @@ function collectTeamsWithTemplates(templates) {
  */
 export function csvRowsToMultiCollegeRecords(csvText, { templates = [], folders = [] } = {}) {
   const table = parseCsv(csvText)
-  if (!table.length) return { groups: [], errors: ['CSV is empty'], bulkBatchDate: todayBatchDate() }
+  const batchId = createBulkBatchId()
+  if (!table.length) return { groups: [], errors: ['CSV is empty'], bulkBatchDate: batchId }
   const headers = table[0].map(normHeader)
   const keys = headers.map((h) => HEADER_ALIASES[h] || HEADER_ALIASES[h.replace(/_/g, '')] || h)
   const errors = []
   const byTeam = new Map()
-  const batchDate = todayBatchDate()
 
   for (let i = 1; i < table.length; i++) {
     const cells = table[i]
@@ -530,17 +536,29 @@ export function csvRowsToMultiCollegeRecords(csvText, { templates = [], folders 
   return {
     groups: [...byTeam.values()],
     errors,
-    bulkBatchDate: batchDate,
+    bulkBatchDate: batchId,
   }
 }
 
-function todayBatchDate() {
-  // Local calendar day (not UTC) so "today" matches the user's timezone
+/** Unique folder id per CSV generate run (never merges same-day runs). */
+export function createBulkBatchId() {
   const d = new Date()
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  const rand = Math.random().toString(36).slice(2, 8)
+  return `run_${y}${m}${day}_${hh}${mm}${ss}_${rand}`
+}
+
+/** Default display label for a new batch folder. */
+export function defaultBulkBatchLabel(customName = '') {
+  const custom = String(customName || '').trim()
+  if (custom) return custom.slice(0, 120)
+  const d = new Date()
+  return `Bulk · ${d.toLocaleString()}`
 }
 
 /**
@@ -553,8 +571,10 @@ export async function generateMultiCollegeBulkPosters({
   saveProject,
   onProgress,
   bulkBatchDate = null,
+  bulkBatchLabel = null,
 } = {}) {
-  const batchDate = bulkBatchDate || todayBatchDate()
+  const batchDate = bulkBatchDate || createBulkBatchId()
+  const batchLabel = bulkBatchLabel || defaultBulkBatchLabel()
   const created = []
   const skipped = []
   const failed = []
@@ -575,6 +595,7 @@ export async function generateMultiCollegeBulkPosters({
       fetchTemplate,
       saveProject,
       bulkBatchDate: batchDate,
+      bulkBatchLabel: batchLabel,
       onProgress,
     })
     created.push(...result.created)
@@ -588,7 +609,14 @@ export async function generateMultiCollegeBulkPosters({
     })
   }
 
-  return { created, skipped, failed, colleges, bulkBatchDate: batchDate }
+  return {
+    created,
+    skipped,
+    failed,
+    colleges,
+    bulkBatchDate: batchDate,
+    bulkBatchLabel: batchLabel,
+  }
 }
 
 /** @deprecated prefer generateBulkPosters — UTSA wrapper for older call sites */

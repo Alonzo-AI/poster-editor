@@ -23,7 +23,7 @@ export async function fetchProject(id) {
 
 export async function saveProject(
   json,
-  { id, name, category, teamKey, teamLabel, sourceTemplateId, bulkBatchDate } = {},
+  { id, name, category, teamKey, teamLabel, sourceTemplateId, bulkBatchDate, bulkBatchLabel } = {},
 ) {
   const payload = json && typeof json === 'object' ? { ...json } : {}
   const tid = String(id || payload.id || '')
@@ -44,6 +44,7 @@ export async function saveProject(
     teamLabel: teamLabel || payload.teamLabel,
     sourceTemplateId: sourceTemplateId || payload._bakeMeta?.sourceTemplate || null,
     bulkBatchDate: bulkBatchDate || payload._bakeMeta?.bulkBatchDate || null,
+    bulkBatchLabel: bulkBatchLabel || payload._bakeMeta?.bulkBatchLabel || null,
   })
 
   const res = await fetch(`${API}/projects/${encodeURIComponent(tid)}`, {
@@ -60,5 +61,33 @@ export async function deleteProject(id) {
     .replace(/[^\w-]+/g, '_')
   if (!tid) throw new Error('Project id required')
   const res = await fetch(`${API}/projects/${encodeURIComponent(tid)}`, { method: 'DELETE' })
+  return parse(res)
+}
+
+/** Rename a Projects batch folder (persists on every project in that batch). */
+export async function renameProjectBatch(batchId, label) {
+  const id = String(batchId || '')
+    .trim()
+    .replace(/[^\w.-]+/g, '_')
+    .slice(0, 64)
+  if (!id) throw new Error('Batch id required')
+  const res = await fetch(`${API}/projects/batches/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  })
+  return parse(res)
+}
+
+/** Delete a Projects batch folder and all posters inside it. */
+export async function deleteProjectBatch(batchId) {
+  const id = String(batchId || '')
+    .trim()
+    .replace(/[^\w.-]+/g, '_')
+    .slice(0, 64)
+  if (!id) throw new Error('Batch id required')
+  const res = await fetch(`${API}/projects/batches/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
   return parse(res)
 }

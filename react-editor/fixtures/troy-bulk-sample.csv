@@ -1,3 +1,5 @@
-college,category,playerName,stat_name,stat_value,story,opponent_score
-Troy,player,Jordan Miles,Rushing Yards,142,Career-high rushing night,vs. South Alabama | 31-24
-Troy,team,,,28,Conference win streak continues,
+college,category,name,player_name,stat_name,stat_value,story,class_position,opponent_score
+Troy,player,Jordan Miles,Jordan Miles,Rushing Yards,142,Career-high rushing night against South Alabama,Senior | RB,vs. South Alabama | 31-24
+Troy,team,Troy Football,,Team Wins,8,Troy Trojans climb the Sun Belt standings,,Sun Belt | 8-2
+Troy,no image,Kimberly Hayes,Kimberly Hayes,Receiving Yards,87,Breakout performance without a player photo,Junior | WR,vs. Coastal Carolina | 27-21
+Troy,nostalgia,Marcus Reed,Marcus Reed,All-Time TDs,54,Throwback night celebrating a Troy legend,Class of 2012,Troy Classic | Forever

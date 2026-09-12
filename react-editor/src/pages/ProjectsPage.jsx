@@ -1,11 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { listDbTemplates, fetchDbTemplate, listTeamFolders } from '../api/templatesApi.js'
-import { listProjects, saveProject } from '../api/projectsApi.js'
+import {
+  listProjects,
+  saveProject,
+  renameProjectBatch,
+  deleteProjectBatch,
+} from '../api/projectsApi.js'
 import {
   BULK_CATEGORIES,
+  createBulkBatchId,
   csvRowsToBulkRecords,
   csvRowsToMultiCollegeRecords,
+  defaultBulkBatchLabel,
   generateBulkPosters,
   generateMultiCollegeBulkPosters,
   pickTeamBaseTemplates,
@@ -25,9 +32,9 @@ const CATEGORY_LABEL = {
   nostalgia: 'Nostalgia',
 }
 
-function projectBatchDate(p) {
-  if (p?.bulkBatchDate) return String(p.bulkBatchDate).slice(0, 10)
-  // Legacy projects without stamp → folder by local created day (not UTC)
+/** Stable folder id stored on each project (per CSV run, or legacy YYYY-MM-DD). */
+function projectBatchId(p) {
+  if (p?.bulkBatchDate) return String(p.bulkBatchDate).trim().slice(0, 64)
   if (p?.createdAt) {
     const d = new Date(p.createdAt)
     if (!Number.isNaN(d.getTime())) {
@@ -40,28 +47,30 @@ function projectBatchDate(p) {
   return 'undated'
 }
 
-function localToday() {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+function projectBatchLabel(p, batchId) {
+  const label = String(p?.bulkBatchLabel || '').trim()
+  if (label) return label
+  const id = batchId || projectBatchId(p)
+  if (!id || id === 'undated') return 'Undated'
+  if (/^\d{4}-\d{2}-\d{2}$/.test(id)) return id
+  return defaultBulkBatchLabel(id.replace(/^run_/, '').replace(/_/g, ' '))
 }
 
-function formatDateFolderLabel(date) {
-  if (!date || date === 'undated') return 'Undated'
-  if (date === localToday()) return `Today · ${date}`
-  return date
+function promptBatchFolderName(defaultName) {
+  const name = window.prompt('Name for this bulk folder', defaultName || defaultBulkBatchLabel())
+  if (name == null) return null
+  const trimmed = String(name).trim()
+  return trimmed || defaultBulkBatchLabel()
 }
 
 /**
- * Projects gallery only — date folders → college folders → posters.
- * Single-college CSV + multi-college CSV. Does not touch Editor or Automate.
+ * Projects gallery — batch folders (one per CSV generate) → college → posters.
+ * Does not touch Editor, Automate, or Automate saves.
  */
 export default function ProjectsPage({ Nav }) {
   const navigate = useNavigate()
   const { batchDate: routeBatch, teamKey: routeTeamKey } = useParams()
-  const openBatchDate = routeBatch ? String(routeBatch).trim().slice(0, 32) : null
+  const openBatchId = routeBatch ? String(routeBatch).trim().slice(0, 64) : null
   const openTeamKey = routeTeamKey
     ? String(routeTeamKey)
         .trim()
@@ -77,6 +86,7 @@ export default function ProjectsPage({ Nav }) {
   const [bulkLog, setBulkLog] = useState('')
   const [multiBusy, setMultiBusy] = useState(false)
   const [multiLog, setMultiLog] = useState('')
+  const [folderBusyId, setFolderBusyId] = useState(null)
   const bulkFileRef = useRef(null)
   const multiFileRef = useRef(null)
 
@@ -149,46 +159,101 @@ export default function ProjectsPage({ Nav }) {
     return BULK_CATEGORIES.filter((c) => bases.has(c))
   }, [templateCatalog, bulkTeamKey])
 
-  /** Root: date batch folders */
-  const byDate = useMemo(() => {
+  /** Root: one folder per CSV generate run */
+  const byBatch = useMemo(() => {
     const map = new Map()
     for (const p of projects) {
-      const d = projectBatchDate(p)
-      if (!map.has(d)) map.set(d, [])
-      map.get(d).push(p)
+      const id = projectBatchId(p)
+      if (!map.has(id)) {
+        map.set(id, {
+          id,
+          label: projectBatchLabel(p, id),
+          items: [],
+          updatedAt: p.updatedAt || p.createdAt || '',
+        })
+      }
+      const g = map.get(id)
+      g.items.push(p)
+      if (p.bulkBatchLabel) g.label = String(p.bulkBatchLabel).trim() || g.label
+      const ts = p.updatedAt || p.createdAt || ''
+      if (ts && String(ts) > String(g.updatedAt || '')) g.updatedAt = ts
     }
-    return [...map.entries()]
-      .map(([date, items]) => {
-        const colleges = new Set(items.map((p) => teamOf(p).teamKey))
-        return { date, items, collegeCount: colleges.size, posterCount: items.length }
+    return [...map.values()]
+      .map((g) => {
+        const colleges = new Set(g.items.map((p) => teamOf(p).teamKey))
+        return {
+          ...g,
+          collegeCount: colleges.size,
+          posterCount: g.items.length,
+        }
       })
-      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      .sort((a, b) => String(b.updatedAt || b.id).localeCompare(String(a.updatedAt || a.id)))
   }, [projects])
 
-  /** Inside a date: college folders */
+  const openBatchMeta = useMemo(
+    () => byBatch.find((b) => b.id === openBatchId) || null,
+    [byBatch, openBatchId],
+  )
+
   const collegesInBatch = useMemo(() => {
-    if (!openBatchDate) return []
+    if (!openBatchId) return []
     const map = new Map()
     for (const p of projects) {
-      if (projectBatchDate(p) !== openBatchDate) continue
+      if (projectBatchId(p) !== openBatchId) continue
       const { teamKey, teamLabel } = teamOf(p)
       if (!map.has(teamKey)) map.set(teamKey, { teamKey, teamLabel, items: [] })
       map.get(teamKey).items.push(p)
     }
     return [...map.values()].sort((a, b) => a.teamLabel.localeCompare(b.teamLabel))
-  }, [projects, openBatchDate])
+  }, [projects, openBatchId])
 
   const openCollege = useMemo(() => {
-    if (!openTeamKey || !openBatchDate) return null
+    if (!openTeamKey || !openBatchId) return null
     return collegesInBatch.find((g) => g.teamKey === openTeamKey) || null
-  }, [collegesInBatch, openTeamKey, openBatchDate])
+  }, [collegesInBatch, openTeamKey, openBatchId])
 
-  // If someone hits legacy /projects/team/:teamKey (no date), send them to date root.
   useEffect(() => {
-    if (openTeamKey && !openBatchDate) {
+    if (openTeamKey && !openBatchId) {
       navigate('/projects', { replace: true })
     }
-  }, [openTeamKey, openBatchDate, navigate])
+  }, [openTeamKey, openBatchId, navigate])
+
+  async function onRenameBatch(batch) {
+    if (!batch?.id || folderBusyId) return
+    const next = window.prompt('Rename batch folder', batch.label || batch.id)
+    if (next == null) return
+    const label = String(next).trim()
+    if (!label) return
+    setFolderBusyId(batch.id)
+    try {
+      await renameProjectBatch(batch.id, label)
+      await refresh()
+      setStatus(`Renamed folder to “${label}”`)
+    } catch (e) {
+      setStatus(e.message || 'Rename failed')
+    } finally {
+      setFolderBusyId(null)
+    }
+  }
+
+  async function onDeleteBatch(batch) {
+    if (!batch?.id || folderBusyId) return
+    const ok = window.confirm(
+      `Delete folder “${batch.label || batch.id}” and all ${batch.posterCount} poster(s) inside?\n\nThis cannot be undone.`,
+    )
+    if (!ok) return
+    setFolderBusyId(batch.id)
+    try {
+      const res = await deleteProjectBatch(batch.id)
+      await refresh()
+      setStatus(`Deleted folder · ${res.deleted || 0} poster(s) removed`)
+      if (openBatchId === batch.id) navigate('/projects')
+    } catch (e) {
+      setStatus(e.message || 'Delete folder failed')
+    } finally {
+      setFolderBusyId(null)
+    }
+  }
 
   async function onBulkGenerate() {
     if (bulkBusy || multiBusy) return
@@ -201,6 +266,11 @@ export default function ProjectsPage({ Nav }) {
       setBulkLog('Choose a CSV file first (text fields only).')
       return
     }
+    const folderName = promptBatchFolderName(
+      defaultBulkBatchLabel(`${selectedBulkTeam.teamLabel} bulk`),
+    )
+    if (folderName == null) return
+
     setBulkBusy(true)
     setBulkLog('Reading CSV…')
     try {
@@ -222,10 +292,12 @@ export default function ProjectsPage({ Nav }) {
         const loaded = await loadTeamSources()
         templates = loaded.templates || templateCatalog
       } catch (_) {}
+      const bulkBatchDate = createBulkBatchId()
+      const bulkBatchLabel = folderName
       const lines = []
       if (errors.length) lines.push(...errors)
       lines.push(
-        `Generating ${records.length} CSV row(s) for “${selectedBulkTeam.teamLabel}” → Projects…`,
+        `Folder “${bulkBatchLabel}” · ${records.length} CSV row(s) for “${selectedBulkTeam.teamLabel}”…`,
       )
       setBulkLog(lines.join('\n'))
 
@@ -236,6 +308,8 @@ export default function ProjectsPage({ Nav }) {
         teamLabel: selectedBulkTeam.teamLabel,
         fetchTemplate: fetchDbTemplate,
         saveProject,
+        bulkBatchDate,
+        bulkBatchLabel,
         onProgress: (ev) => {
           if (ev.type === 'skip') lines.push(`Skip row ${ev.row} / ${ev.category}`)
           else if (ev.type === 'ok') lines.push(`OK ${ev.category}: ${ev.name}`)
@@ -251,11 +325,9 @@ export default function ProjectsPage({ Nav }) {
       lines.push(
         `Done: ${result.created.length} projects · ${result.skipped.length} skipped · ${result.failed.length} failed`,
       )
-      lines.push(`Batch date folder: ${result.bulkBatchDate}`)
+      lines.push(`Batch folder: ${result.bulkBatchLabel || result.bulkBatchDate}`)
       setBulkLog(lines.join('\n'))
-      setStatus(
-        `Created ${result.created.length} project(s) for ${selectedBulkTeam.teamLabel}`,
-      )
+      setStatus(`Created ${result.created.length} project(s) in “${result.bulkBatchLabel}”`)
       navigate(
         `/projects/batch/${encodeURIComponent(result.bulkBatchDate)}/team/${encodeURIComponent(selectedBulkTeam.teamKey)}`,
       )
@@ -274,6 +346,9 @@ export default function ProjectsPage({ Nav }) {
       setMultiLog('Choose a multi-college CSV (college column required on every row).')
       return
     }
+    const folderName = promptBatchFolderName(defaultBulkBatchLabel('Multi-college bulk'))
+    if (folderName == null) return
+
     setMultiBusy(true)
     setMultiLog('Reading multi-college CSV…')
     try {
@@ -296,10 +371,11 @@ export default function ProjectsPage({ Nav }) {
         )
         return
       }
+      const bulkBatchLabel = folderName
       const lines = []
       if (errors.length) lines.push(...errors)
       lines.push(
-        `Multi-college bulk · ${groups.length} college(s) · batch ${bulkBatchDate}`,
+        `Folder “${bulkBatchLabel}” · ${groups.length} college(s)`,
       )
       for (const g of groups) {
         lines.push(`  · ${g.teamLabel}: ${g.records.length} row(s)`)
@@ -312,6 +388,7 @@ export default function ProjectsPage({ Nav }) {
         fetchTemplate: fetchDbTemplate,
         saveProject,
         bulkBatchDate,
+        bulkBatchLabel,
         onProgress: (ev) => {
           if (ev.type === 'college') {
             lines.push(`— ${ev.teamLabel} (${ev.rows} rows)`)
@@ -329,14 +406,14 @@ export default function ProjectsPage({ Nav }) {
       await refresh()
       lines.push('---')
       lines.push(
-        `Done: ${result.created.length} projects · ${result.colleges.length} college folder(s) · batch ${result.bulkBatchDate}`,
+        `Done: ${result.created.length} projects · ${result.colleges.length} college folder(s)`,
       )
       for (const c of result.colleges) {
         lines.push(`  · ${c.teamLabel}: ${c.created} poster(s)`)
       }
       setMultiLog(lines.join('\n'))
       setStatus(
-        `Created ${result.created.length} posters across ${result.colleges.length} colleges (${result.bulkBatchDate})`,
+        `Created ${result.created.length} posters in “${result.bulkBatchLabel || result.bulkBatchDate}”`,
       )
       navigate(`/projects/batch/${encodeURIComponent(result.bulkBatchDate)}`)
     } catch (e) {
@@ -347,21 +424,21 @@ export default function ProjectsPage({ Nav }) {
     }
   }
 
-  const atRoot = !openBatchDate && !openTeamKey
-  const inBatch = !!openBatchDate && !openTeamKey
-  const inCollege = !!openBatchDate && !!openTeamKey
+  const atRoot = !openBatchId && !openTeamKey
+  const inBatch = !!openBatchId && !openTeamKey
+  const inCollege = !!openBatchId && !!openTeamKey
 
   const headerTitle = inCollege
     ? openCollege?.teamLabel || openTeamKey
     : inBatch
-      ? formatDateFolderLabel(openBatchDate)
+      ? openBatchMeta?.label || openBatchId
       : 'Projects'
 
   const headerSub = inCollege
-    ? `${openCollege?.items.length || 0} poster(s) · only ${openBatchDate}`
+    ? `${openCollege?.items.length || 0} poster(s) · ${openBatchMeta?.label || openBatchId}`
     : inBatch
-      ? `${collegesInBatch.length} college(s) generated on ${openBatchDate}`
-      : 'Date → college → posters (each day is separate)'
+      ? `${collegesInBatch.length} college(s) in this bulk folder`
+      : 'Each CSV generate → its own folder → colleges → posters'
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-ink">
@@ -373,7 +450,7 @@ export default function ProjectsPage({ Nav }) {
         <div className="flex items-center gap-2">
           {inCollege ? (
             <Link
-              to={`/projects/batch/${encodeURIComponent(openBatchDate)}`}
+              to={`/projects/batch/${encodeURIComponent(openBatchId)}`}
               className="ui-btn text-[12px]"
             >
               Colleges
@@ -381,7 +458,7 @@ export default function ProjectsPage({ Nav }) {
           ) : null}
           {inBatch || inCollege ? (
             <Link to="/projects" className="ui-btn text-[12px]">
-              All dates
+              All folders
             </Link>
           ) : null}
           {Nav ? <Nav /> : null}
@@ -396,8 +473,8 @@ export default function ProjectsPage({ Nav }) {
                 Bulk generate · one college
               </h2>
               <p className="mt-1 text-[12px] text-muted">
-                Pick a college, upload its CSV. Creates a <strong className="text-dim">date</strong>{' '}
-                folder, then that college folder under it.
+                Each generate creates a <strong className="text-dim">new folder</strong> (not by
+                calendar date), then that college under it.
               </p>
               <label className="mt-3 block text-[11px] text-dim">
                 College / team
@@ -454,9 +531,9 @@ export default function ProjectsPage({ Nav }) {
                 Bulk CSV · multiple colleges
               </h2>
               <p className="mt-1 text-[12px] text-muted">
-                One CSV with many <code className="text-dim">college</code> values. Creates today’s{' '}
-                <strong className="text-dim">date folder</strong>, then a college folder for each
-                team found in the CSV (teams must already have templates).
+                One CSV with many <code className="text-dim">college</code> values. Creates a{' '}
+                <strong className="text-dim">new folder</strong> for this run, then a college folder
+                for each team (teams must already have templates).
               </p>
               <input
                 ref={multiFileRef}
@@ -484,36 +561,54 @@ export default function ProjectsPage({ Nav }) {
         {status ? <p className="text-[12px] text-dim">{status}</p> : null}
 
         {atRoot ? (
-          !byDate.length ? (
+          !byBatch.length ? (
             <p className="text-[13px] text-muted">No projects yet. Generate from a CSV above.</p>
           ) : (
             <section>
               <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">
-                Date folders
+                Bulk folders
               </h2>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {byDate.map((g) => (
-                  <button
-                    key={g.date}
-                    type="button"
-                    onClick={() => navigate(`/projects/batch/${encodeURIComponent(g.date)}`)}
-                    className="aspect-square rounded-2xl border border-line bg-panel p-4 text-left shadow-sm transition hover:border-blaze/40"
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {byBatch.map((g) => (
+                  <div
+                    key={g.id}
+                    className="rounded-2xl border border-line bg-panel p-4 shadow-sm transition hover:border-blaze/40"
                   >
-                    <div className="flex h-full flex-col justify-between">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/projects/batch/${encodeURIComponent(g.id)}`)}
+                      className="w-full text-left"
+                    >
                       <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-inset text-[11px] font-semibold text-dim">
-                        DATE
+                        RUN
                       </div>
-                      <div>
-                        <div className="truncate text-[15px] font-semibold text-paper">
-                          {formatDateFolderLabel(g.date)}
-                        </div>
-                        <div className="mt-1 text-[11px] text-muted">
-                          {g.collegeCount} college{g.collegeCount === 1 ? '' : 's'} · {g.posterCount}{' '}
-                          poster{g.posterCount === 1 ? '' : 's'}
-                        </div>
+                      <div className="mt-3 truncate text-[15px] font-semibold text-paper">
+                        {g.label}
                       </div>
+                      <div className="mt-1 text-[11px] text-muted">
+                        {g.collegeCount} college{g.collegeCount === 1 ? '' : 's'} · {g.posterCount}{' '}
+                        poster{g.posterCount === 1 ? '' : 's'}
+                      </div>
+                    </button>
+                    <div className="mt-3 flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="rounded border border-line px-2 py-1 text-[11px] text-dim hover:border-blaze hover:text-paper disabled:opacity-40"
+                        disabled={folderBusyId === g.id}
+                        onClick={() => onRenameBatch(g)}
+                      >
+                        Rename
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded border border-line px-2 py-1 text-[11px] text-red-400 hover:border-red-400/50 disabled:opacity-40"
+                        disabled={folderBusyId === g.id}
+                        onClick={() => onDeleteBatch(g)}
+                      >
+                        Delete
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 ))}
               </div>
             </section>
@@ -522,12 +617,32 @@ export default function ProjectsPage({ Nav }) {
 
         {inBatch ? (
           !collegesInBatch.length ? (
-            <p className="text-[13px] text-muted">No colleges in this date folder.</p>
+            <p className="text-[13px] text-muted">No colleges in this folder.</p>
           ) : (
             <section>
-              <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">
-                College folders · {openBatchDate}
-              </h2>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-[10px] font-semibold uppercase tracking-[0.06em] text-dim">
+                  College folders · {openBatchMeta?.label || openBatchId}
+                </h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded border border-line px-2 py-1 text-[11px] text-dim hover:border-blaze hover:text-paper"
+                    disabled={!openBatchMeta || folderBusyId === openBatchId}
+                    onClick={() => openBatchMeta && onRenameBatch(openBatchMeta)}
+                  >
+                    Rename folder
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-line px-2 py-1 text-[11px] text-red-400 hover:border-red-400/50"
+                    disabled={!openBatchMeta || folderBusyId === openBatchId}
+                    onClick={() => openBatchMeta && onDeleteBatch(openBatchMeta)}
+                  >
+                    Delete folder
+                  </button>
+                </div>
+              </div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                 {collegesInBatch.map((group) => (
                   <button
@@ -535,7 +650,7 @@ export default function ProjectsPage({ Nav }) {
                     type="button"
                     onClick={() =>
                       navigate(
-                        `/projects/batch/${encodeURIComponent(openBatchDate)}/team/${encodeURIComponent(group.teamKey)}`,
+                        `/projects/batch/${encodeURIComponent(openBatchId)}/team/${encodeURIComponent(group.teamKey)}`,
                       )
                     }
                     className="aspect-square rounded-2xl border border-line bg-panel p-4 text-left shadow-sm transition hover:border-blaze/40"
@@ -565,11 +680,11 @@ export default function ProjectsPage({ Nav }) {
             <div className="mb-3 flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold text-paper">{openCollege?.teamLabel}</h2>
               <span className="text-[11px] text-muted">
-                {openCollege?.items.length || 0} posters · {openBatchDate}
+                {openCollege?.items.length || 0} posters · {openBatchMeta?.label || openBatchId}
               </span>
             </div>
             {!openCollege?.items?.length ? (
-              <p className="text-[13px] text-muted">No posters for this college on this date.</p>
+              <p className="text-[13px] text-muted">No posters for this college in this folder.</p>
             ) : (
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {openCollege.items.map((p) => (
@@ -595,7 +710,7 @@ export default function ProjectsPage({ Nav }) {
             Back to home
           </Link>
           {' · '}
-          Editor and Automate routes are unchanged.
+          Editor, Automate, and Saves are unchanged.
         </p>
       </div>
     </div>

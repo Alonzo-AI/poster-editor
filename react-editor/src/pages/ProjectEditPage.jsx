@@ -430,11 +430,13 @@ export default function ProjectEditPage({ Nav }) {
         teamLabel: project.teamLabel,
         sourceTemplateId: project.sourceTemplateId,
         bulkBatchDate: project.bulkBatchDate,
+        bulkBatchLabel: project.bulkBatchLabel,
       })
       setProject((p) => ({
         ...p,
         updatedAt: saved.updatedAt,
         bulkBatchDate: saved.bulkBatchDate || p.bulkBatchDate,
+        bulkBatchLabel: saved.bulkBatchLabel || p.bulkBatchLabel,
         json,
       }))
       setStatus(`Saved project “${project.name}”`)
