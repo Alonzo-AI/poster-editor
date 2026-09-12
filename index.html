@@ -1568,7 +1568,40 @@ function blankLayersForCategory(category){
       seedText:{ playerName:"PLAYER NAME" },
     };
   }
-  // player + nostalgia: same starter slots (player photo + logos + name)
+  // New Player templates only — CSV-aligned fixed text binds (does not rewrite existing DB templates).
+  // Default canvas text = field label so boxes are visible (not empty, not leaked Automate fills).
+  if(cat==="player"){
+    return {
+      layers:[
+        bg,
+        { id:"player", type:"image", bind:"player", x:240, y:180, w:600, h:900, z:12, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
+        { id:"logo", type:"image", bind:"logo", x:48, y:48, w:160, h:160, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
+        { id:"conference", type:"image", bind:"conference", x:860, y:48, w:160, h:80, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
+        { id:"player_name", type:"text", bind:"player_name", label:"Player name", x:60, y:900, w:960, h:72, size:52, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
+        { id:"stat_name", type:"text", bind:"stat_name", label:"Stat name", x:60, y:980, w:960, h:48, size:28, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat name" },
+        { id:"stat_value", type:"text", bind:"stat_value", label:"Stat value", x:60, y:1032, w:960, h:56, size:40, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat value" },
+        { id:"story", type:"text", bind:"story", label:"Story", x:80, y:1100, w:920, h:80, size:22, weight:500, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Story" },
+        { id:"opponent_score", type:"text", bind:"opponent_score", label:"Opponent score", x:60, y:1190, w:960, h:48, size:26, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Opponent score" },
+      ],
+      swapFields:["player_name","stat_name","stat_value","story","opponent_score"],
+      swapImages:["player","logo","conference","sponsor","background"],
+      fieldLabels:{
+        player_name:"Player name",
+        stat_name:"Stat name",
+        stat_value:"Stat value",
+        story:"Story",
+        opponent_score:"Opponent score",
+      },
+      seedText:{
+        player_name:"Player name",
+        stat_name:"Stat name",
+        stat_value:"Stat value",
+        story:"Story",
+        opponent_score:"Opponent score",
+      },
+    };
+  }
+  // nostalgia (unchanged starter — player photo + logos + name only)
   return {
     layers:[
       bg,
@@ -3394,6 +3427,24 @@ function createBlankTemplate(opts={}){
     if(!state.text[k]) state.text[k]=v;
   }
   switchTemplate(id);
+  // state.text is global — force THIS blank’s binds to field labels (visible guides),
+  // never leftover Automate/Editor values from another poster.
+  {
+    const labels=starter.fieldLabels||{};
+    const blankBinds=new Set(starter.swapFields||[]);
+    for(const layer of starter.layers||[]){
+      if(layer?.type==="text" && layer.bind) blankBinds.add(layer.bind);
+    }
+    for(const bind of blankBinds){
+      const guide=
+        (starter.seedText && starter.seedText[bind]) ||
+        labels[bind] ||
+        (starter.layers||[]).find((l)=>l && l.bind===bind)?.label ||
+        bind;
+      state.text[bind]=String(guide);
+    }
+    try{ render(); }catch(_){}
+  }
   try{ buildTplChips(); }catch(_){}
   buildTextFields();
   buildCaptionColorControls();
