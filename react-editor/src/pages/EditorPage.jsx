@@ -15,6 +15,7 @@ import {
   syncDbTemplatesIntoEngine,
   ensureTemplateInEngine,
   markTemplateHydrated,
+  isTemplateLiteInEngine,
   fetchDbTemplate,
   patchTemplateMeta,
   listTeamFolders,
@@ -812,6 +813,27 @@ export default function EditorPage({ Nav }) {
       setStatus('No template selected')
       return { ok: false }
     }
+
+    // Never persist a lite stub / unloaded poster over the real Mongo JSON
+    if (!download && isTemplateLiteInEngine(api, id)) {
+      try {
+        const meta = dbCatalog.find((t) => t.id === id) || templates.find((t) => t.id === id)
+        await ensureTemplateInEngine(api, id, {
+          updatedAt: meta?.updatedAt,
+          force: true,
+        })
+      } catch (_) {}
+      if (isTemplateLiteInEngine(api, id)) {
+        setStatus(
+          autosave
+            ? `Skipped auto-save — “${id}” still loading`
+            : `Save blocked — “${id}” is still loading. Wait for the poster to appear, then Save.`,
+        )
+        // Autosave skip must not block switching; manual Save stays blocked
+        return autosave ? { ok: true, skipped: true } : { ok: false, blocked: true }
+      }
+    }
+
     // Keep this template's own display name — never reuse another chip's name
     const listed = (api.listTemplates?.() || []).find((t) => t.id === id)
     const name = listed?.name || snapshot?.templateName || bakeName || id
@@ -860,6 +882,30 @@ export default function EditorPage({ Nav }) {
         }
       }
       if (json && !download) {
+        // Guard: don't overwrite a richer DB poster with a near-empty bake (load race)
+        const bakedLayers = Array.isArray(json.layers) ? json.layers : []
+        const bakedText = bakedLayers.filter((l) => l && l.type === 'text').length
+        const sparseBake = bakedLayers.length <= 2 && bakedText === 0
+        if (sparseBake) {
+          try {
+            const existing = await fetchDbTemplate(id)
+            const prevLayers = Array.isArray(existing?.json?.layers) ? existing.json.layers : []
+            const prevText = prevLayers.filter((l) => l && l.type === 'text').length
+            if (prevLayers.length >= 5 || prevText >= 1) {
+              setStatus(
+                autosave
+                  ? `Skipped auto-save — “${name}” looks unloaded (would wipe DB)`
+                  : `Save blocked — canvas looks empty/unloaded but DB has a full “${name}”. Wait for load, then Save.`,
+              )
+              return autosave
+                ? { ok: true, skipped: true }
+                : { ok: false, blocked: true }
+            }
+          } catch (_) {
+            // No existing DB row (new blank) — allow sparse save
+          }
+        }
+
         try {
           const saved = await saveTemplateToDb(json, { id })
           setApiOnline(true)
@@ -933,6 +979,26 @@ export default function EditorPage({ Nav }) {
     if (!api?.bakeTemplate) return true
     const activeId = api.getEditorSnapshot?.()?.template || snapshot?.template
     if (!activeId) return true
+    // Still loading another poster — don't bake/write mid-switch
+    if (loadingTemplateId) {
+      setStatus('Wait for the current template to finish loading before switching.')
+      return false
+    }
+    // Unloaded lite stub: never auto-write empty JSON; allow leaving safely
+    if (isTemplateLiteInEngine(api, activeId)) {
+      try {
+        const meta =
+          dbCatalog.find((t) => t.id === activeId) || templates.find((t) => t.id === activeId)
+        await ensureTemplateInEngine(api, activeId, {
+          updatedAt: meta?.updatedAt,
+          force: true,
+        })
+      } catch (_) {}
+      if (isTemplateLiteInEngine(api, activeId)) {
+        setStatus(`Skipped auto-save — “${activeId}” still loading`)
+        return true
+      }
+    }
     const result = await onBake(false, { autosave: true })
     if (result?.ok) return true
     setStatus(

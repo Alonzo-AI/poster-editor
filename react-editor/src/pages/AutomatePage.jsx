@@ -479,7 +479,38 @@ export default function AutomatePage({ Nav }) {
     setSavingAutomate(true)
     setStatus('Saving Automate poster…')
     try {
-      await apply(true, { resetLayout: false })
+      let liveText = { ...text }
+      let liveColors = { ...colors }
+      try {
+        const snap = api.getEditorSnapshot?.()
+        if (snap?.text && typeof snap.text === 'object') {
+          liveText = { ...liveText, ...snap.text }
+        }
+        if (snap?.colors?.primary || snap?.colors?.secondary) {
+          liveColors = {
+            primary: snap.colors.primary || liveColors.primary,
+            secondary: snap.colors.secondary || liveColors.secondary,
+          }
+        }
+      } catch (_) {}
+      setText(liveText)
+      setColors(liveColors)
+
+      await api.setPayload?.({
+        template: sourceId,
+        auto_palette: false,
+        freeze_layout: false,
+        preserve_layout: true,
+        prefer_template_colors: false,
+        text: liveText,
+        colors: liveColors,
+        ...(images.player ? { player_image: images.player } : {}),
+        ...(images.background ? { background_image: images.background } : {}),
+        ...(images.logo ? { logo_url: images.logo } : {}),
+        ...(images.conference ? { conference_logo: images.conference } : {}),
+        ...(images.sponsor ? { sponsor_logo: images.sponsor } : {}),
+      })
+
       const result = await api.bakeTemplate({ id, name, download: false })
       const json = result?.json
       if (!json) throw new Error('Bake returned no JSON')
@@ -491,6 +522,10 @@ export default function AutomatePage({ Nav }) {
       if (!json._bakeMeta || typeof json._bakeMeta !== 'object') json._bakeMeta = {}
       json._bakeMeta.source = 'automate-save'
       json._bakeMeta.sourceTemplate = sourceId
+      const layerCount = Array.isArray(json.layers) ? json.layers.length : 0
+      if (layerCount < 1) {
+        throw new Error('Bake produced empty layers — refused to save')
+      }
 
       await saveAutomateSave(json, {
         id,
@@ -517,8 +552,8 @@ export default function AutomatePage({ Nav }) {
           freeze_layout: false,
           preserve_layout: true,
           prefer_template_colors: false,
-          text: { ...text },
-          colors: { ...colors },
+          text: liveText,
+          colors: liveColors,
           ...(images.player ? { player_image: images.player } : {}),
           ...(images.background ? { background_image: images.background } : {}),
           ...(images.logo ? { logo_url: images.logo } : {}),
@@ -530,7 +565,7 @@ export default function AutomatePage({ Nav }) {
         console.warn('[automate-save] restore template failed', restoreErr)
       }
 
-      setStatus(`Saved “${name}” · open from Home → Automate saves`)
+      setStatus(`Saved “${name}” · ${layerCount} layers · open from Home → Automate saves`)
     } catch (e) {
       setStatus(`Save failed: ${e.message || e}`)
       // Best-effort restore if bake left us on autosave id

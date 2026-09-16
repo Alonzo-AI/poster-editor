@@ -330,14 +330,22 @@ export default function ProjectEditPage({ Nav }) {
           }
         }
 
+        // Use baked brand colors — never the React default teal/gold pair
+        const brand = json.settings?.brandColors || {}
+        const nextColors = {
+          primary: brand.primary || colors.primary,
+          secondary: brand.secondary || colors.secondary,
+        }
+
         // Paint like Automate first-open: setPayload + freeze
         await api.setPayload({
           template: row.id,
           auto_palette: false,
           freeze_layout: true,
           preserve_layout: false,
+          prefer_template_colors: true,
           text: nextText,
-          colors: { ...colors },
+          colors: nextColors,
         })
         try {
           api.freezeCurrentLayout?.()
@@ -356,6 +364,7 @@ export default function ProjectEditPage({ Nav }) {
         setFields(fieldList)
         setImageSlots(imageList)
         setText(nextText)
+        setColors(nextColors)
         setHydrated(true)
         setLayoutReady(true)
         setStatus(`Project “${row.name}”`)
@@ -408,8 +417,39 @@ export default function ProjectEditPage({ Nav }) {
     setSaving(true)
     setStatus('Saving project…')
     try {
-      // Apply current fill before bake so text/images land in JSON
-      await apply(true, { resetLayout: false })
+      // Merge live canvas + form. Do not let stale React state overwrite engine edits
+      // (font/size/position live in the iframe; form text may lag while Edit is open).
+      let liveText = { ...text }
+      let liveColors = { ...colors }
+      try {
+        const snap = api.getEditorSnapshot?.()
+        if (snap?.text && typeof snap.text === 'object') {
+          liveText = { ...liveText, ...snap.text }
+        }
+        if (snap?.colors?.primary || snap?.colors?.secondary) {
+          liveColors = {
+            primary: snap.colors.primary || liveColors.primary,
+            secondary: snap.colors.secondary || liveColors.secondary,
+          }
+        }
+      } catch (_) {}
+      setText(liveText)
+      setColors(liveColors)
+
+      await api.setPayload?.({
+        template: projectId,
+        auto_palette: false,
+        freeze_layout: false,
+        preserve_layout: true,
+        text: liveText,
+        colors: liveColors,
+        ...(images.player ? { player_image: images.player } : {}),
+        ...(images.background ? { background_image: images.background } : {}),
+        ...(images.logo ? { logo_url: images.logo } : {}),
+        ...(images.conference ? { conference_logo: images.conference } : {}),
+        ...(images.sponsor ? { sponsor_logo: images.sponsor } : {}),
+      })
+
       const result = await api.bakeTemplate({
         id: project.id,
         name: project.name,
@@ -422,6 +462,10 @@ export default function ProjectEditPage({ Nav }) {
       json.category = project.category || json.category
       json.teamKey = project.teamKey || json.teamKey
       json.teamLabel = project.teamLabel || json.teamLabel
+      const layerCount = Array.isArray(json.layers) ? json.layers.length : 0
+      if (layerCount < 1) {
+        throw new Error('Bake produced empty layers — refused to overwrite project')
+      }
       const saved = await saveProject(json, {
         id: project.id,
         name: project.name,
@@ -432,6 +476,23 @@ export default function ProjectEditPage({ Nav }) {
         bulkBatchDate: project.bulkBatchDate,
         bulkBatchLabel: project.bulkBatchLabel,
       })
+      try {
+        api.injectRemoteTemplates?.(
+          [
+            {
+              id: project.id,
+              name: project.name,
+              category: json.category,
+              teamKey: json.teamKey,
+              teamLabel: json.teamLabel,
+              frozen: true,
+              updatedAt: saved.updatedAt,
+              json,
+            },
+          ],
+          { sync: false },
+        )
+      } catch (_) {}
       setProject((p) => ({
         ...p,
         updatedAt: saved.updatedAt,
@@ -439,7 +500,7 @@ export default function ProjectEditPage({ Nav }) {
         bulkBatchLabel: saved.bulkBatchLabel || p.bulkBatchLabel,
         json,
       }))
-      setStatus(`Saved project “${project.name}”`)
+      setStatus(`Saved project “${project.name}” · ${layerCount} layers`)
     } catch (e) {
       setStatus(`Save failed: ${e.message || e}`)
     } finally {

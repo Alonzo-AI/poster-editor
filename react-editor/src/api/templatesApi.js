@@ -223,6 +223,11 @@ function isLiteInEngine(api, id) {
   }
 }
 
+/** True when engine only has a metadata stub (not full layers) for this id. */
+export function isTemplateLiteInEngine(api, id) {
+  return isLiteInEngine(api, id)
+}
+
 /** updatedAt string of the full JSON last injected per template id */
 const hydratedUpdatedAt = new Map()
 

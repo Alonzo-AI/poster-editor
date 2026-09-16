@@ -1,0 +1,46 @@
+{
+  "batch": "run_20260912_124951_7zc3wx",
+  "label": "Troy bulk sample 2",
+  "projects": [
+    {
+      "file": "troy_bulk_nostalgia_marcus_reed_mty21wuy_4.json",
+      "id": "troy_bulk_nostalgia_marcus_reed_mty21wuy_4",
+      "name": "Marcus Reed \u00b7 nostalgia",
+      "category": "nostalgia",
+      "teamKey": "troy",
+      "bulkBatchDate": "run_20260912_124951_7zc3wx",
+      "bulkBatchLabel": "Troy bulk sample 2",
+      "sourceTemplateId": "Troy_-_Nostalgia_2"
+    },
+    {
+      "file": "troy_bulk_player_jordan_miles_mty21sus_1.json",
+      "id": "troy_bulk_player_jordan_miles_mty21sus_1",
+      "name": "Jordan Miles \u00b7 player",
+      "category": "player",
+      "teamKey": "troy",
+      "bulkBatchDate": "run_20260912_124951_7zc3wx",
+      "bulkBatchLabel": "Troy bulk sample 2",
+      "sourceTemplateId": "Troy"
+    },
+    {
+      "file": "troy_bulk_player_no_image_kimberly_hayes_mty21vjm_3.json",
+      "id": "troy_bulk_player_no_image_kimberly_hayes_mty21vjm_3",
+      "name": "Kimberly Hayes \u00b7 player_no_image",
+      "category": "player_no_image",
+      "teamKey": "troy",
+      "bulkBatchDate": "run_20260912_124951_7zc3wx",
+      "bulkBatchLabel": "Troy bulk sample 2",
+      "sourceTemplateId": "Troy_-_PWOI"
+    },
+    {
+      "file": "troy_bulk_team_troy_football_mty21u95_2.json",
+      "id": "troy_bulk_team_troy_football_mty21u95_2",
+      "name": "Troy Football \u00b7 team",
+      "category": "team",
+      "teamKey": "troy",
+      "bulkBatchDate": "run_20260912_124951_7zc3wx",
+      "bulkBatchLabel": "Troy bulk sample 2",
+      "sourceTemplateId": "Troy_2"
+    }
+  ]
+}

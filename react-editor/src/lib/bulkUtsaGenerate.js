@@ -212,6 +212,74 @@ function slugPart(s) {
   )
 }
 
+/**
+ * Projects bulk only — expand CSV fields onto common bind variants / typos.
+ * Does not change Editor templates, Automate, or Saved Automate posters.
+ */
+const BULK_TEXT_ALIAS_GROUPS = [
+  ['playerName', 'player_name', 'Player_name', 'Player_Name', 'player'],
+  ['stat_value', 'Stat_Value', 'Stat_value', 'statValue', 'Stat', 'heroNumber', 'statvalue'],
+  [
+    'stat_name',
+    'Stat_Name',
+    'Stat_name',
+    'statName',
+    'heroDesc',
+    'stat_text',
+    'stat_subtext',
+    'stat_name_2',
+  ],
+  ['story', 'Story', 'callout', 'subtext'],
+  [
+    'class_position',
+    'class_positon', // common typo
+    'class_osition', // common typo
+    'Class_Position',
+    'classPosition',
+    'classposition',
+  ],
+  [
+    'opponent_score',
+    'Opponent_Score',
+    'opponentScore',
+    'date_and_opponen',
+    'vs_and_date',
+    'opponent_score_2',
+  ],
+  ['teamName', 'team_name', 'Team_Name'],
+]
+
+function expandBulkTextAliases(fields) {
+  const textFields = { ...(fields || {}) }
+  for (const group of BULK_TEXT_ALIAS_GROUPS) {
+    let val = null
+    for (const k of group) {
+      if (textFields[k] != null && String(textFields[k]).trim() !== '') {
+        val = textFields[k]
+        break
+      }
+    }
+    if (val == null) continue
+    for (const k of group) {
+      if (textFields[k] == null || String(textFields[k]).trim() === '') {
+        textFields[k] = val
+      }
+    }
+  }
+  return textFields
+}
+
+/** Case-insensitive + exact lookup for a layer bind against expanded CSV fields. */
+function lookupBulkTextValue(textFields, bind) {
+  if (!bind || !textFields) return null
+  if (textFields[bind] != null) return textFields[bind]
+  const lower = String(bind).toLowerCase()
+  for (const [k, v] of Object.entries(textFields)) {
+    if (String(k).toLowerCase() === lower && v != null) return v
+  }
+  return null
+}
+
 function applyTextToTemplateJson(json, fields) {
   const next =
     typeof structuredClone === 'function'
@@ -220,14 +288,8 @@ function applyTextToTemplateJson(json, fields) {
   if (!next.defaults || typeof next.defaults !== 'object') next.defaults = {}
   if (!next.defaults.text || typeof next.defaults.text !== 'object') next.defaults.text = {}
 
-  // CSV uses playerName; many templates bind player_name — keep both in sync (bulk only).
-  const textFields = { ...(fields || {}) }
-  if (textFields.playerName != null && textFields.player_name == null) {
-    textFields.player_name = textFields.playerName
-  }
-  if (textFields.player_name != null && textFields.playerName == null) {
-    textFields.playerName = textFields.player_name
-  }
+  // Bulk only: CSV columns → common bind variants (typos / legacy names).
+  const textFields = expandBulkTextAliases(fields)
 
   for (const [k, v] of Object.entries(textFields)) {
     next.defaults.text[k] = v
@@ -235,12 +297,18 @@ function applyTextToTemplateJson(json, fields) {
   if (Array.isArray(next.layers)) {
     for (const layer of next.layers) {
       if (!layer || layer.type !== 'text' || !layer.bind) continue
-      if (textFields[layer.bind] != null) layer.placeholder = String(textFields[layer.bind])
+      const direct = lookupBulkTextValue(textFields, layer.bind)
+      if (direct != null) layer.placeholder = String(direct)
       if (layer.kind === 'stat') {
-        const numKey = layer.bind + 'num'
-        const labelKey = layer.bind + 'label'
-        if (textFields[numKey] != null) layer.placeholderNum = String(textFields[numKey])
-        if (textFields[labelKey] != null) layer.placeholderLabel = String(textFields[labelKey])
+        const numVal = lookupBulkTextValue(textFields, layer.bind + 'num')
+        const labelVal = lookupBulkTextValue(textFields, layer.bind + 'label')
+        // Also allow CSV stat_value / stat_name to fill composite stat layers
+        const numFromStat =
+          numVal != null ? numVal : lookupBulkTextValue(textFields, 'stat_value')
+        const labelFromStat =
+          labelVal != null ? labelVal : lookupBulkTextValue(textFields, 'stat_name')
+        if (numFromStat != null) layer.placeholderNum = String(numFromStat)
+        if (labelFromStat != null) layer.placeholderLabel = String(labelFromStat)
       }
     }
   }

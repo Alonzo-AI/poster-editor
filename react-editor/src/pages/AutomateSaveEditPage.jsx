@@ -304,14 +304,21 @@ export default function AutomateSaveEditPage({ Nav }) {
           }
         }
 
+        const brand = json.settings?.brandColors || {}
+        const nextColors = {
+          primary: brand.primary || colors.primary,
+          secondary: brand.secondary || colors.secondary,
+        }
+
         // Paint like Automate first-open: setPayload + freeze
         await api.setPayload({
           template: row.id,
           auto_palette: false,
           freeze_layout: true,
           preserve_layout: false,
+          prefer_template_colors: true,
           text: nextText,
-          colors: { ...colors },
+          colors: nextColors,
         })
         try {
           api.freezeCurrentLayout?.()
@@ -330,6 +337,7 @@ export default function AutomateSaveEditPage({ Nav }) {
         setFields(fieldList)
         setImageSlots(imageList)
         setText(nextText)
+        setColors(nextColors)
         setHydrated(true)
         setLayoutReady(true)
         setStatus(`Automate save “${row.name}”`)
@@ -382,8 +390,37 @@ export default function AutomateSaveEditPage({ Nav }) {
     setSaving(true)
     setStatus('Saving Automate save…')
     try {
-      // Apply current fill before bake so text/images land in JSON
-      await apply(true, { resetLayout: false })
+      let liveText = { ...text }
+      let liveColors = { ...colors }
+      try {
+        const snap = api.getEditorSnapshot?.()
+        if (snap?.text && typeof snap.text === 'object') {
+          liveText = { ...liveText, ...snap.text }
+        }
+        if (snap?.colors?.primary || snap?.colors?.secondary) {
+          liveColors = {
+            primary: snap.colors.primary || liveColors.primary,
+            secondary: snap.colors.secondary || liveColors.secondary,
+          }
+        }
+      } catch (_) {}
+      setText(liveText)
+      setColors(liveColors)
+
+      await api.setPayload?.({
+        template: saveId,
+        auto_palette: false,
+        freeze_layout: false,
+        preserve_layout: true,
+        text: liveText,
+        colors: liveColors,
+        ...(images.player ? { player_image: images.player } : {}),
+        ...(images.background ? { background_image: images.background } : {}),
+        ...(images.logo ? { logo_url: images.logo } : {}),
+        ...(images.conference ? { conference_logo: images.conference } : {}),
+        ...(images.sponsor ? { sponsor_logo: images.sponsor } : {}),
+      })
+
       const result = await api.bakeTemplate({
         id: saveRow.id,
         name: saveRow.name,
@@ -396,6 +433,10 @@ export default function AutomateSaveEditPage({ Nav }) {
       json.category = saveRow.category || json.category
       json.teamKey = saveRow.teamKey || json.teamKey
       json.teamLabel = saveRow.teamLabel || json.teamLabel
+      const layerCount = Array.isArray(json.layers) ? json.layers.length : 0
+      if (layerCount < 1) {
+        throw new Error('Bake produced empty layers — refused to overwrite Automate save')
+      }
       const saved = await saveAutomateSave(json, {
         id: saveRow.id,
         name: saveRow.name,
@@ -404,12 +445,29 @@ export default function AutomateSaveEditPage({ Nav }) {
         teamLabel: saveRow.teamLabel,
         sourceTemplateId: saveRow.sourceTemplateId,
       })
+      try {
+        api.injectRemoteTemplates?.(
+          [
+            {
+              id: saveRow.id,
+              name: saveRow.name,
+              category: json.category,
+              teamKey: json.teamKey,
+              teamLabel: json.teamLabel,
+              frozen: true,
+              updatedAt: saved.updatedAt,
+              json,
+            },
+          ],
+          { sync: false },
+        )
+      } catch (_) {}
       setSaveRow((p) => ({
         ...p,
         updatedAt: saved.updatedAt,
         json,
       }))
-      setStatus(`Saved Automate save “${saveRow.name}”`)
+      setStatus(`Saved Automate save “${saveRow.name}” · ${layerCount} layers`)
     } catch (e) {
       setStatus(`Save failed: ${e.message || e}`)
     } finally {
