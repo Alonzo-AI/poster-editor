@@ -4313,14 +4313,14 @@
       "style": "normal"
     },
     {
-      "id": "fontspringdemoproximanovaregular",
-      "family": "Proxima Nova regular",
-      "label": "Proxima Nova regular",
-      "file": "Fontspring-DEMO-proximanova-regular.otf",
+      "id": "proximanova",
+      "family": "Proxima Nova",
+      "label": "Proxima Nova",
+      "file": "ProximaNova.ttf",
       "team": "proxima-nova",
-      "key": "fonts/remote/drake/proxima-nova/Fontspring-DEMO-proximanova-regular.otf",
-      "url": "/api/media/fonts/remote/drake/proxima-nova/Fontspring-DEMO-proximanova-regular.otf",
-      "format": "opentype",
+      "key": "fonts/remote/proxima-nova/ProximaNova.ttf",
+      "url": "/api/media/fonts/remote/proxima-nova/ProximaNova.ttf",
+      "format": "truetype",
       "weight": 400,
       "style": "normal"
     },

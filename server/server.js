@@ -16,6 +16,7 @@ import express from 'express'
 import multer from 'multer'
 import mongoose from 'mongoose'
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { createExternalApiRouter } from './routes/externalApi.js'
 
 const PORT = Number(process.env.PORT || 8787)
 const MONGODB_URI =
@@ -1131,6 +1132,17 @@ app.delete('/api/automate-saves/:id', async (req, res) => {
     res.status(500).json({ error: err.message || String(err) })
   }
 })
+
+/* ---------- External Stories portal API (additive — does not alter Editor/Automate/Projects UI) ---------- */
+app.use(
+  '/api/external',
+  createExternalApiRouter({
+    Template,
+    Project,
+    TeamFolder,
+    upsertProjectJson,
+  }),
+)
 
 async function main() {
   // Force DB name even if URI omits the path (Atlas default is "test")

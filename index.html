@@ -240,6 +240,21 @@
     font-style:normal;
     font-display:swap;
   }
+  @font-face{
+    font-family:"Proxima Nova";
+    src:url("assets/fonts/Proxima%20Nova.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  /* Alias: old DEMO picker name → same fixed file */
+  @font-face{
+    font-family:"Proxima Nova regular";
+    src:url("assets/fonts/Proxima%20Nova.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
   :root{
     --bg:#0c0d10;
     --panel:#14161c;
@@ -457,6 +472,22 @@
   #alignGuidesOverlay .guide-rot{
     position:absolute;height:1.5px;margin:0;pointer-events:none;
     background:var(--guide);box-shadow:none;transform-origin:center center;
+  }
+  /* Canva-style spacing ticks + number pills (move drag only) */
+  #alignGuidesOverlay .guide-gap-h{
+    position:absolute;height:1.5px;background:var(--guide);pointer-events:none;
+  }
+  #alignGuidesOverlay .guide-gap-v{
+    position:absolute;width:1.5px;background:var(--guide);pointer-events:none;
+  }
+  #alignGuidesOverlay .guide-gap-tick{
+    position:absolute;background:var(--guide);pointer-events:none;
+  }
+  #alignGuidesOverlay .guide-gap-label{
+    position:absolute;transform:translate(-50%,-50%);
+    background:var(--guide);color:#fff;border-radius:6px;
+    padding:6px 10px;font:800 18px/1.15 ui-sans-serif,system-ui,sans-serif;
+    white-space:nowrap;pointer-events:none;box-shadow:0 1px 3px rgba(0,0,0,.4);
   }
   .layer.cropping{outline:2px dashed var(--warn);outline-offset:2px;}
   .layer.cropping .imgcontent{cursor:move;pointer-events:auto;}
@@ -1385,7 +1416,8 @@ const F = { disp:"'Anton',sans-serif", cond:"'Oswald',sans-serif", sans:"'Archiv
             antennaBlack:"'Ford Antenna Black',sans-serif",
             antennaCond:"'Ford Antenna Medium Condensed',sans-serif",
             antennaExtraCond:"'Ford Antenna Extra Condensed',sans-serif",
-            norwester:"'Norwester',sans-serif" };
+            norwester:"'Norwester',sans-serif",
+            proximaNova:"'Proxima Nova',sans-serif" };
 const FONT_OPTS = [
   ["Anton — display",F.disp],["Oswald — condensed",F.cond],["Archivo — sans",F.sans],
   ["Bebas Neue",F.bebas],["Playfair — serif",F.serif],["Permanent Marker — chalk",F.chalk],
@@ -1407,6 +1439,7 @@ const FONT_OPTS = [
   ["Ford Antenna Medium Condensed",F.antennaCond],
   ["Ford Antenna Extra Condensed",F.antennaExtraCond],
   ["Norwester",F.norwester],
+  ["Proxima Nova",F.proximaNova],
 ];
 
 /**
@@ -4408,23 +4441,176 @@ function snapRotateDeg(deg, excludeId){
 function clearAlignGuides(){
   document.getElementById("alignGuidesOverlay")?.remove();
 }
-function renderAlignGuides(vGuides, hGuides){
+/** Visible layer boxes for align/spacing (excludes hidden + self). */
+function collectVisibleBoxes(excludeId){
+  const out=[];
+  const L=ensureLayout();
+  for(const [id,def] of Object.entries(layersOf())){
+    if(id===excludeId) continue;
+    const g=L[id]; if(!g||g.hidden) continue;
+    out.push(layerBox(g, def));
+  }
+  return out;
+}
+function rangesOverlap(a0,a1,b0,b1){
+  return a0<b1 && a1>b0;
+}
+/**
+ * Nearest gap on each of 4 sides to another layer (Y/X-overlap) or the canvas edge.
+ * Used only while moving — does not change snap math.
+ */
+function computeSideSpacings(box, excludeId){
+  const others=collectVisibleBoxes(excludeId);
+  const midY=(a,b)=> (Math.max(a.top,b.top)+Math.min(a.bottom,b.bottom))/2;
+  const midX=(a,b)=> (Math.max(a.left,b.left)+Math.min(a.right,b.right))/2;
+  const sides={
+    left:{ gap:Math.max(0, box.left), x0:0, x1:box.left, y:box.cy },
+    right:{ gap:Math.max(0, SW-box.right), x0:box.right, x1:SW, y:box.cy },
+    top:{ gap:Math.max(0, box.top), y0:0, y1:box.top, x:box.cx },
+    bottom:{ gap:Math.max(0, SH-box.bottom), y0:box.bottom, y1:SH, x:box.cx },
+  };
+  for(const o of others){
+    if(o.right<=box.left+0.5 && rangesOverlap(box.top,box.bottom,o.top,o.bottom)){
+      const gap=box.left-o.right;
+      if(gap>=0 && gap<sides.left.gap){
+        sides.left={ gap, x0:o.right, x1:box.left, y:midY(box,o) };
+      }
+    }
+    if(o.left>=box.right-0.5 && rangesOverlap(box.top,box.bottom,o.top,o.bottom)){
+      const gap=o.left-box.right;
+      if(gap>=0 && gap<sides.right.gap){
+        sides.right={ gap, x0:box.right, x1:o.left, y:midY(box,o) };
+      }
+    }
+    if(o.bottom<=box.top+0.5 && rangesOverlap(box.left,box.right,o.left,o.right)){
+      const gap=box.top-o.bottom;
+      if(gap>=0 && gap<sides.top.gap){
+        sides.top={ gap, y0:o.bottom, y1:box.top, x:midX(box,o) };
+      }
+    }
+    if(o.top>=box.bottom-0.5 && rangesOverlap(box.left,box.right,o.left,o.right)){
+      const gap=o.top-box.bottom;
+      if(gap>=0 && gap<sides.bottom.gap){
+        sides.bottom={ gap, y0:box.bottom, y1:o.top, x:midX(box,o) };
+      }
+    }
+  }
+  return sides;
+}
+function formatGapLabel(px){
+  const n=Math.round(Number(px)||0);
+  return String(n);
+}
+function appendGapGuides(wrap, spacings){
+  if(!spacings) return;
+  const TICK=10;
+  const addLabel=(x,y,text)=>{
+    const lab=document.createElement("div");
+    lab.className="guide-gap-label";
+    lab.textContent=text;
+    lab.style.left=x+"px";
+    lab.style.top=y+"px";
+    wrap.appendChild(lab);
+  };
+  const left=spacings.left, right=spacings.right, top=spacings.top, bottom=spacings.bottom;
+  if(left && left.gap>0){
+    const seg=document.createElement("div");
+    seg.className="guide-gap-h";
+    seg.style.left=left.x0+"px";
+    seg.style.top=left.y+"px";
+    seg.style.width=Math.max(0, left.x1-left.x0)+"px";
+    wrap.appendChild(seg);
+    for(const x of [left.x0, left.x1]){
+      const t=document.createElement("div");
+      t.className="guide-gap-tick";
+      t.style.left=x+"px";
+      t.style.top=(left.y-TICK/2)+"px";
+      t.style.width="1.5px";
+      t.style.height=TICK+"px";
+      wrap.appendChild(t);
+    }
+    addLabel((left.x0+left.x1)/2, left.y, formatGapLabel(left.gap));
+  }
+  if(right && right.gap>0){
+    const seg=document.createElement("div");
+    seg.className="guide-gap-h";
+    seg.style.left=right.x0+"px";
+    seg.style.top=right.y+"px";
+    seg.style.width=Math.max(0, right.x1-right.x0)+"px";
+    wrap.appendChild(seg);
+    for(const x of [right.x0, right.x1]){
+      const t=document.createElement("div");
+      t.className="guide-gap-tick";
+      t.style.left=x+"px";
+      t.style.top=(right.y-TICK/2)+"px";
+      t.style.width="1.5px";
+      t.style.height=TICK+"px";
+      wrap.appendChild(t);
+    }
+    addLabel((right.x0+right.x1)/2, right.y, formatGapLabel(right.gap));
+  }
+  if(top && top.gap>0){
+    const seg=document.createElement("div");
+    seg.className="guide-gap-v";
+    seg.style.left=top.x+"px";
+    seg.style.top=top.y0+"px";
+    seg.style.height=Math.max(0, top.y1-top.y0)+"px";
+    wrap.appendChild(seg);
+    for(const y of [top.y0, top.y1]){
+      const t=document.createElement("div");
+      t.className="guide-gap-tick";
+      t.style.left=(top.x-TICK/2)+"px";
+      t.style.top=y+"px";
+      t.style.width=TICK+"px";
+      t.style.height="1.5px";
+      wrap.appendChild(t);
+    }
+    addLabel(top.x, (top.y0+top.y1)/2, formatGapLabel(top.gap));
+  }
+  if(bottom && bottom.gap>0){
+    const seg=document.createElement("div");
+    seg.className="guide-gap-v";
+    seg.style.left=bottom.x+"px";
+    seg.style.top=bottom.y0+"px";
+    seg.style.height=Math.max(0, bottom.y1-bottom.y0)+"px";
+    wrap.appendChild(seg);
+    for(const y of [bottom.y0, bottom.y1]){
+      const t=document.createElement("div");
+      t.className="guide-gap-tick";
+      t.style.left=(bottom.x-TICK/2)+"px";
+      t.style.top=y+"px";
+      t.style.width=TICK+"px";
+      t.style.height="1.5px";
+      wrap.appendChild(t);
+    }
+    addLabel(bottom.x, (bottom.y0+bottom.y1)/2, formatGapLabel(bottom.gap));
+  }
+}
+function renderAlignGuides(vGuides, hGuides, spacings){
   clearAlignGuides();
-  if(!vGuides.length && !hGuides.length) return;
+  const hasAlign=(vGuides&&vGuides.length)||(hGuides&&hGuides.length);
+  const hasSpace=spacings && (
+    (spacings.left&&spacings.left.gap>0)||
+    (spacings.right&&spacings.right.gap>0)||
+    (spacings.top&&spacings.top.gap>0)||
+    (spacings.bottom&&spacings.bottom.gap>0)
+  );
+  if(!hasAlign && !hasSpace) return;
   const wrap=document.createElement("div");
   wrap.id="alignGuidesOverlay";
-  for(const x of vGuides){
+  for(const x of (vGuides||[])){
     const d=document.createElement("div");
     d.className="guide-v";
     d.style.left=x+"px";
     wrap.appendChild(d);
   }
-  for(const y of hGuides){
+  for(const y of (hGuides||[])){
     const d=document.createElement("div");
     d.className="guide-h";
     d.style.top=y+"px";
     wrap.appendChild(d);
   }
+  appendGapGuides(wrap, spacings);
   stage.appendChild(wrap);
 }
 /** Crosshair through layer center at the snapped rotation (same cyan as move guides). */
@@ -4511,7 +4697,9 @@ function attachLayerEvents(el, def, g){
       const box=layerBox({...gg,x:nx,y:ny},def);
       const snap=snapMoveBox(nx,ny,box.w,box.h,d.id);
       gg.x=snap.x; gg.y=snap.y;
-      renderAlignGuides(snap.vGuides,snap.hGuides);
+      // Align lines (existing) + Canva-style 4-side spacing numbers (move only)
+      const live=layerBox({...gg,x:snap.x,y:snap.y},def);
+      renderAlignGuides(snap.vGuides, snap.hGuides, computeSideSpacings(live, d.id));
     } else if(d.mode==="rot"){
       const ang=Math.atan2(e.clientY-d.cy, e.clientX-d.cx)*180/Math.PI;
       let step=ang-d.lastAng;
