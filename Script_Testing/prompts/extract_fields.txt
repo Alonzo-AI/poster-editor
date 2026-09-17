@@ -1,0 +1,80 @@
+You are extracting poster fields from ONE sports "CORE STORY" sentence (college football / basketball style).
+
+Return ONLY one JSON object. No markdown. No extra keys. Use "" when unknown.
+
+## Output keys
+{
+  "category": "player" | "team",
+  "college": "school name from the story (e.g. Appalachian State, Arkansas)",
+  "player_name": "athlete full name if category=player, else \"\"",
+  "class_position": "Year | Position  (e.g. Senior | QB). \"\" for team",
+  "stat_value": "the hero number only (e.g. 3, 348, 210)",
+  "stat_name": "short stat label (e.g. Passing TDs, Passing Yards, Yards After Catch)",
+  "rank": "ranking phrase ONLY (e.g. Tied for most, 2nd most, 3rd most)",
+  "story_context": "the qualifier after the rank (e.g. in the SBC this week)",
+  "opponent_score": "vs. Opponent | SCORE  if a final score is in the text, else \"\"",
+  "name": "poster title = player_name for player, or college/team nickname for team"
+}
+
+## Critical rule — poster story line
+The spreadsheet has two columns: **rank** and **story**.
+For the poster CSV, those combine as:
+
+  poster_story = rank + " " + story_context
+
+Examples of the SPLIT (do NOT put the full sentence in story_context):
+
+1) CORE:
+"Senior QB Malachi Singleton posted three passing touchdowns in Appalachian State's 55-3 win against Maine on Sept. 5, tied for the most passing touchdowns in the Sun Belt Conference this week."
+→
+  category: "player"
+  college: "Appalachian State"
+  player_name: "Malachi Singleton"
+  class_position: "Senior | QB"
+  stat_value: "3"
+  stat_name: "Passing TDs"
+  rank: "Tied for most"
+  story_context: "in the SBC this week"
+  opponent_score: "vs. Maine | 55-3"
+  (poster story later = "Tied for most in the SBC this week")
+
+2) CORE:
+"Sophomore QB KJ Jackson posted three passing touchdowns in Arkansas' 31-14 win against North Alabama on Sept. 5, the second-most passing TDs in a game in the Southeastern Conference among sophomore players this season so far."
+→
+  category: "player"
+  college: "Arkansas"
+  player_name: "KJ Jackson"
+  class_position: "Sophomore | QB"
+  stat_value: "3"
+  stat_name: "Passing TDs"
+  rank: "2nd most"
+  story_context: "in a game among SEC sophomores this season so far"
+  opponent_score: "vs. North Alabama | 31-14"
+
+3) CORE (team — no player fields):
+"Arkansas posted 210 yards after catch in its 31-14 win against North Alabama on Sept. 5, the third-most YAC in the Southeastern Conference this week."
+→
+  category: "team"
+  college: "Arkansas"
+  player_name: ""
+  class_position: ""
+  stat_value: "210"
+  stat_name: "Yards After Catch"
+  rank: "3rd most"
+  story_context: "in SEC this week"
+  opponent_score: "vs. North Alabama | 31-14"
+
+## Extraction rules
+1. ENTITY: if the subject is a named athlete → category "player"; if the school/team posted the stat → "team".
+2. Take ONE hero stat (the number tied to the conference/rank claim). Ignore follow-up history sentences ("most since 2021…").
+3. class_position = "Class | POS" from phrases like "Senior QB", "Junior WR", "Sophomore QB". Expand Fr/So/Jr/Sr to Freshman/Sophomore/Junior/Senior when clear.
+4. rank = ONLY the ranking words (Tied for most / 2nd most / 3rd most / Most). Do not include conference or "this week" inside rank.
+5. story_context = ONLY the trailing qualifier (conference / week / season / among group). Prefer short conference codes when natural: Sun Belt Conference → SBC, Southeastern Conference → SEC.
+6. Do NOT copy the full CORE STORY into story_context.
+7. Do NOT invent numbers, names, ranks, or scores. If no rank phrase exists, rank="" and story_context="" .
+8. Title Case for stat_name and player_name (not ALL CAPS). rank may be Title Case like "Tied for most" or "2nd most".
+9. Drop dates like "on Sept. 5" from outputs.
+
+<<<STORY>>>
+{STORY_JSON}
+<<<END>>>

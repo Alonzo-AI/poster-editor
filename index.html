@@ -255,6 +255,48 @@
     font-style:normal;
     font-display:swap;
   }
+  @font-face{
+    font-family:"Work Sans";
+    src:url("assets/fonts/WorkSans-Regular.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Work Sans Regular";
+    src:url("assets/fonts/WorkSans-Regular.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Microgramma Extended Medium";
+    src:url("assets/fonts/Microgramma-Extd-D-Medium.otf") format("opentype");
+    font-weight:500;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Microgramma Extended Bold";
+    src:url("assets/fonts/Microgramma-Extd-D-Bold.otf") format("opentype");
+    font-weight:700;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Open Sans";
+    src:url("assets/fonts/OpenSans-Regular.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
+  @font-face{
+    font-family:"Open Sans Regular";
+    src:url("assets/fonts/OpenSans-Regular.ttf") format("truetype");
+    font-weight:400;
+    font-style:normal;
+    font-display:swap;
+  }
   :root{
     --bg:#0c0d10;
     --panel:#14161c;
@@ -1417,7 +1459,11 @@ const F = { disp:"'Anton',sans-serif", cond:"'Oswald',sans-serif", sans:"'Archiv
             antennaCond:"'Ford Antenna Medium Condensed',sans-serif",
             antennaExtraCond:"'Ford Antenna Extra Condensed',sans-serif",
             norwester:"'Norwester',sans-serif",
-            proximaNova:"'Proxima Nova',sans-serif" };
+            proximaNova:"'Proxima Nova',sans-serif",
+            workSans:"'Work Sans',sans-serif",
+            microgrammaMed:"'Microgramma Extended Medium',sans-serif",
+            microgrammaBold:"'Microgramma Extended Bold',sans-serif",
+            openSans:"'Open Sans',sans-serif" };
 const FONT_OPTS = [
   ["Anton — display",F.disp],["Oswald — condensed",F.cond],["Archivo — sans",F.sans],
   ["Bebas Neue",F.bebas],["Playfair — serif",F.serif],["Permanent Marker — chalk",F.chalk],
@@ -1440,6 +1486,10 @@ const FONT_OPTS = [
   ["Ford Antenna Extra Condensed",F.antennaExtraCond],
   ["Norwester",F.norwester],
   ["Proxima Nova",F.proximaNova],
+  ["Work Sans",F.workSans],
+  ["Microgramma Extended Medium",F.microgrammaMed],
+  ["Microgramma Extended Bold",F.microgrammaBold],
+  ["Open Sans",F.openSans],
 ];
 
 /**
@@ -1574,31 +1624,62 @@ function blankLayersForCategory(category){
   const cat=normalizeTemplateCategory(category);
   const bg={ id:"bgImage", type:"image", bind:"background", x:0, y:0, w:SW, h:SH, z:1, fit:"cover", cropX:0.5, cropY:0.5 };
   if(cat==="team"){
+    // New Team templates only — CSV-aligned binds (does not rewrite existing DB templates).
     return {
       layers:[
         bg,
         { id:"logo", type:"image", bind:"logo", x:40, y:40, w:160, h:160, z:18, fit:"contain", cropX:0.5, cropY:0.5 },
         { id:"conference", type:"image", bind:"conference", x:860, y:40, w:160, h:80, z:18, fit:"contain", cropX:0.5, cropY:0.5 },
-        { id:"title", type:"text", bind:"teamName", label:"Team name", x:60, y:560, w:960, h:120, size:64, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Team name" },
+        { id:"stat_name", type:"text", bind:"stat_name", label:"Stat name", x:60, y:900, w:960, h:48, size:28, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat name" },
+        { id:"stat_value", type:"text", bind:"stat_value", label:"Stat value", x:60, y:960, w:960, h:72, size:52, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat value" },
+        { id:"story", type:"text", bind:"story", label:"Story", x:80, y:1050, w:920, h:80, size:22, weight:500, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Story" },
+        { id:"opponent_score", type:"text", bind:"opponent_score", label:"Opponent score", x:60, y:1150, w:960, h:48, size:26, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Opponent score" },
       ],
-      swapFields:["teamName"],
+      swapFields:["opponent_score","story","stat_value","stat_name"],
       swapImages:["logo","conference","sponsor","background"],
-      fieldLabels:{ teamName:"Team name" },
-      seedText:{ teamName:"TEAM NAME" },
+      fieldLabels:{
+        opponent_score:"Opponent score",
+        story:"Story",
+        stat_value:"Stat value",
+        stat_name:"Stat name",
+      },
+      seedText:{
+        opponent_score:"Opponent score",
+        story:"Story",
+        stat_value:"Stat value",
+        stat_name:"Stat name",
+      },
     };
   }
   if(cat==="player_no_image"){
+    // New No-image templates only — CSV-aligned binds (does not rewrite existing DB templates).
     return {
       layers:[
         bg,
         { id:"logo", type:"image", bind:"logo", x:48, y:48, w:160, h:160, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
         { id:"conference", type:"image", bind:"conference", x:860, y:48, w:160, h:80, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
-        { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:560, w:960, h:120, size:64, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
+        { id:"player_name", type:"text", bind:"player_name", label:"Player name", x:60, y:860, w:960, h:72, size:52, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
+        { id:"stat_name", type:"text", bind:"stat_name", label:"Stat name", x:60, y:950, w:960, h:48, size:28, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat name" },
+        { id:"stat_value", type:"text", bind:"stat_value", label:"Stat value", x:60, y:1010, w:960, h:56, size:40, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat value" },
+        { id:"story", type:"text", bind:"story", label:"Story", x:80, y:1080, w:920, h:80, size:22, weight:500, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Story" },
+        { id:"opponent_score", type:"text", bind:"opponent_score", label:"Opponent score", x:60, y:1180, w:960, h:48, size:26, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Opponent score" },
       ],
-      swapFields:["playerName"],
+      swapFields:["player_name","opponent_score","stat_name","stat_value","story"],
       swapImages:["logo","conference","sponsor","background"],
-      fieldLabels:{ playerName:"Player name" },
-      seedText:{ playerName:"PLAYER NAME" },
+      fieldLabels:{
+        player_name:"Player name",
+        opponent_score:"Opponent score",
+        stat_name:"Stat name",
+        stat_value:"Stat value",
+        story:"Story",
+      },
+      seedText:{
+        player_name:"Player name",
+        opponent_score:"Opponent score",
+        stat_name:"Stat name",
+        stat_value:"Stat value",
+        story:"Story",
+      },
     };
   }
   // New Player templates only — CSV-aligned fixed text binds (does not rewrite existing DB templates).

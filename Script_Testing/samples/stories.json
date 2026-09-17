@@ -1,0 +1,37 @@
+[
+  {
+    "id": "s1",
+    "entity": "player",
+    "college": "Appalachian State",
+    "category": "player",
+    "text": "Senior QB Malachi Singleton posted three passing touchdowns in Appalachian State's 55-3 win against Maine on Sept. 5, tied for the most passing touchdowns in the Sun Belt Conference this week."
+  },
+  {
+    "id": "s2",
+    "entity": "team",
+    "college": "Appalachian State",
+    "category": "team",
+    "text": "Appalachian State posted 348 passing yards in its 55-3 win against Maine on Sept. 5, the third-most passing yards in a game in the Sun Belt Conference this season so far."
+  },
+  {
+    "id": "s3",
+    "entity": "team",
+    "college": "Appalachian State",
+    "category": "team",
+    "text": "Appalachian State posted 29 pass completions in its 55-3 win against Maine on Sept. 5, the second-most pass completions in a game in the Sun Belt Conference this season so far."
+  },
+  {
+    "id": "s4",
+    "entity": "player",
+    "college": "Arkansas",
+    "category": "player",
+    "text": "Sophomore QB KJ Jackson posted three passing touchdowns in Arkansas' 31-14 win against North Alabama on Sept. 5, the second-most passing TDs in a game in the Southeastern Conference among sophomore players this season so far. The last Razorback to match three passing TDs was KJ Jefferson in 2021."
+  },
+  {
+    "id": "s5",
+    "entity": "player",
+    "college": "Arkansas",
+    "category": "player",
+    "text": "Senior WR Chris Marshall posted seven receptions in Arkansas' 31-14 win against North Alabama on Sept. 5, tied for the most receptions in the Southeastern Conference among senior players this week."
+  }
+]
