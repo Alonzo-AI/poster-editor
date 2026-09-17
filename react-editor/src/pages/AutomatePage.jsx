@@ -87,6 +87,8 @@ export default function AutomatePage({ Nav }) {
   const textByTemplateRef = useRef({})
   /** Per-template session image uploads — never leak across colleges/templates. */
   const imagesByTemplateRef = useRef({})
+  /** Per-template brand colors — seeded from Editor, never the teal/gold React defaults. */
+  const colorsByTemplateRef = useRef({})
   /** Left-rail chip spinner while a poster is loading into the stage. */
   const [loadingTemplateId, setLoadingTemplateId] = useState(null)
   const [smartCrop, setSmartCrop] = useState(null)
@@ -174,6 +176,14 @@ export default function AutomatePage({ Nav }) {
         await ensureTemplateInEngine(api, templateId, {
           updatedAt: templates.find((t) => t.id === templateId)?.updatedAt,
         })
+        // Re-read after hydrate so brandColors from Editor JSON are available
+        const hydratedRow = (() => {
+          try {
+            return (api.listTemplates?.() || []).find((t) => t.id === templateId) || null
+          } catch (_) {
+            return null
+          }
+        })()
         setTemplates(
           mergeTemplateCatalog(dbCatalog, api.listTemplates?.() || [], {
             dbAuthority: true,
@@ -184,12 +194,18 @@ export default function AutomatePage({ Nav }) {
         // Do not reuse the previous poster’s form state on switch.
         let textForPayload = { ...text }
         let imagesForPayload = { ...images }
+        const cachedColors = colorsByTemplateRef.current[templateId]
+        let colorsForPayload =
+          cachedColors && typeof cachedColors === 'object'
+            ? { ...cachedColors }
+            : { ...colors }
         if (switching) {
           // Preserve the poster we’re leaving before swapping form state
           const prevId = layoutTemplateRef.current
           if (prevId) {
             textByTemplateRef.current[prevId] = { ...text }
             imagesByTemplateRef.current[prevId] = { ...images }
+            colorsByTemplateRef.current[prevId] = { ...colors }
           }
 
           const cached = textByTemplateRef.current[templateId]
@@ -213,9 +229,27 @@ export default function AutomatePage({ Nav }) {
             cachedImg && typeof cachedImg === 'object' ? { ...cachedImg } : {}
           imagesByTemplateRef.current[templateId] = { ...imagesForPayload }
           setImages(imagesForPayload)
+
+          // Seed brand from Editor JSON — never leave teal/gold defaults on primary-bound text.
+          if (!cachedColors) {
+            const listed =
+              hydratedRow ||
+              (api.listTemplates?.() || []).find((t) => t.id === templateId) ||
+              templates.find((t) => t.id === templateId)
+            const brand = listed?.brandColors || {}
+            if (brand.primary || brand.secondary) {
+              colorsForPayload = {
+                primary: brand.primary || colorsForPayload.primary,
+                secondary: brand.secondary || colorsForPayload.secondary,
+              }
+            }
+          }
+          colorsByTemplateRef.current[templateId] = { ...colorsForPayload }
+          setColors(colorsForPayload)
         } else if (templateId) {
           textByTemplateRef.current[templateId] = { ...textForPayload }
           imagesByTemplateRef.current[templateId] = { ...imagesForPayload }
+          colorsByTemplateRef.current[templateId] = { ...colorsForPayload }
         }
 
         const payload = {
@@ -227,7 +261,7 @@ export default function AutomatePage({ Nav }) {
           // On open/switch: use Editor-saved brand colors. Later: allow Automate pickers.
           prefer_template_colors: shouldReset,
           text: textForPayload,
-          colors: { ...colors },
+          colors: { ...colorsForPayload },
         }
         if (includeImages) {
           if (imagesForPayload.player) payload.player_image = imagesForPayload.player
@@ -247,6 +281,18 @@ export default function AutomatePage({ Nav }) {
             api.freezeCurrentLayout?.()
           } catch (_) {}
           layoutTemplateRef.current = templateId
+          // Lock React/session colors to what the engine actually painted (Editor brand).
+          try {
+            const snap = api.getEditorSnapshot?.()
+            if (snap?.colors?.primary || snap?.colors?.secondary) {
+              const liveColors = {
+                primary: snap.colors.primary || colorsForPayload.primary,
+                secondary: snap.colors.secondary || colorsForPayload.secondary,
+              }
+              colorsByTemplateRef.current[templateId] = liveColors
+              setColors(liveColors)
+            }
+          } catch (_) {}
         }
         try {
           api.zoomFit?.()
@@ -313,10 +359,14 @@ export default function AutomatePage({ Nav }) {
         setText(next)
       }
       if (snap?.colors?.primary || snap?.colors?.secondary) {
-        setColors((c) => ({
-          primary: snap.colors.primary || c.primary,
-          secondary: snap.colors.secondary || c.secondary,
-        }))
+        setColors((c) => {
+          const next = {
+            primary: snap.colors.primary || c.primary,
+            secondary: snap.colors.secondary || c.secondary,
+          }
+          if (templateId) colorsByTemplateRef.current[templateId] = next
+          return next
+        })
       }
     } catch (_) {}
   }
@@ -411,6 +461,13 @@ export default function AutomatePage({ Nav }) {
     textByTemplateRef.current[templateId] = { ...text }
   }, [text, templateId])
 
+  // Keep per-template brand colors in sync (active template only)
+  useEffect(() => {
+    if (!templateId) return
+    if (layoutTemplateRef.current !== templateId) return
+    colorsByTemplateRef.current[templateId] = { ...colors }
+  }, [colors, templateId])
+
   // Keep per-template image uploads in sync (active template only)
   useEffect(() => {
     if (!templateId) return
@@ -418,22 +475,18 @@ export default function AutomatePage({ Nav }) {
     imagesByTemplateRef.current[templateId] = { ...images }
   }, [images, templateId])
 
-  // Auto-apply fill values — paused while Edit automate is open so canvas tools don't fight the form.
-  // Template switches still load (and clear the left-rail spinner) even in edit mode.
+  // Auto-apply fill values with preserve_layout (keeps drag/style nudges).
+  // Also runs while Edit automate is open so left-rail fields update the canvas.
   useEffect(() => {
     if (!ready || !templateId) return
-    const switching = layoutTemplateRef.current !== templateId
-    if (editMode && !switching) return
     const t = setTimeout(() => apply(false), 120)
     return () => clearTimeout(t)
-  }, [text, colors, templateId, ready, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [text, colors, templateId, ready]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!ready || !templateId) return
-    const switching = layoutTemplateRef.current !== templateId
-    if (editMode && !switching) return
     apply(true)
-  }, [images, templateId, ready, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [images, templateId, ready]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function onExport() {
     if (!api?.exportPng) return
@@ -622,6 +675,7 @@ export default function AutomatePage({ Nav }) {
     setCutoutDone(false)
     setCutoutBusy(false)
     try {
+      await api.setImageSlot?.('player', url)
       await api.setPayload?.({
         template: templateId,
         preserve_layout: true,
@@ -630,8 +684,16 @@ export default function AutomatePage({ Nav }) {
         text: { ...text },
         colors: { ...colors },
       })
-    } catch (_) {}
+      syncFieldsFromEngine()
+    } catch (e) {
+      setStatus(e.message || 'Player image failed to load on canvas')
+      return
+    }
     const frame = api.getImageFrame?.('player') || {}
+    if (!frame?.layerId) {
+      setStatus('No player frame on this template — cannot open smart crop')
+      return
+    }
     setSmartCrop({
       key: 'player',
       src: url,
@@ -639,6 +701,7 @@ export default function AutomatePage({ Nav }) {
       frameW: frame.w || 560,
       frameH: frame.h || 1017,
     })
+    setStatus('Player image on canvas · adjust crop then Apply fit')
   }
 
   async function onSmartCropRemoveBg() {
@@ -673,11 +736,13 @@ export default function AutomatePage({ Nav }) {
   async function onSmartCropApply({ zoom, cropX, cropY, bake }) {
     if (!api || !smartCrop) return
     try {
-      await apply(true, { resetLayout: false })
+      const live = api.getImageSlot?.('player')?.src || images.player || smartCrop.src
+      if (live) await api.setImageSlot?.('player', live)
       await api.applySmartCrop?.(smartCrop.key, { zoom, cropX, cropY, bake })
       let src = api.getImageSlot?.('player')?.src
       if (bake !== false && src) src = await persistProcessedImage('player', src)
       if (src) setImages((img) => ({ ...img, player: src }))
+      syncFieldsFromEngine()
       setStatus(`Player fitted to ${smartCrop.frameW}×${smartCrop.frameH}`)
       setSmartCrop(null)
     } catch (e) {

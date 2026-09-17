@@ -381,18 +381,19 @@ export default function ProjectEditPage({ Nav }) {
     }
   }, [ready, api, projectId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Live fill updates — only after first paint succeeded (skip empty race on mount)
+  // Live fill updates — keep layout nudges (preserve_layout). Runs in edit mode too so
+  // left-rail text/colors still paint the canvas while Edit automate tools are open.
   useEffect(() => {
-    if (!ready || !hydrated || !layoutReady || !projectId || editMode) return
+    if (!ready || !hydrated || !layoutReady || !projectId) return
     const t = setTimeout(() => apply(false), 120)
     return () => clearTimeout(t)
-  }, [text, colors, projectId, ready, hydrated, layoutReady, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [text, colors, projectId, ready, hydrated, layoutReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!ready || !hydrated || !layoutReady || !projectId || editMode) return
+    if (!ready || !hydrated || !layoutReady || !projectId) return
     const t = setTimeout(() => apply(false), 80)
     return () => clearTimeout(t)
-  }, [images, projectId, ready, hydrated, layoutReady, editMode]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [images, projectId, ready, hydrated, layoutReady]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function enterEditMode() {
     setEditMode(true)
@@ -493,6 +494,29 @@ export default function ProjectEditPage({ Nav }) {
           { sync: false },
         )
       } catch (_) {}
+
+      // Re-paint immediately from the baked JSON (inject alone does not render).
+      // Direct setPayload — does not rely on the fill apply() effect (paused in editMode).
+      try {
+        await api.setPayload?.({
+          template: project.id,
+          auto_palette: false,
+          freeze_layout: true,
+          preserve_layout: false,
+          prefer_template_colors: true,
+          text: liveText,
+          colors: liveColors,
+          ...(images.player ? { player_image: images.player } : {}),
+          ...(images.background ? { background_image: images.background } : {}),
+          ...(images.logo ? { logo_url: images.logo } : {}),
+          ...(images.conference ? { conference_logo: images.conference } : {}),
+          ...(images.sponsor ? { sponsor_logo: images.sponsor } : {}),
+        })
+        try {
+          api.freezeCurrentLayout?.()
+        } catch (_) {}
+      } catch (_) {}
+
       setProject((p) => ({
         ...p,
         updatedAt: saved.updatedAt,
@@ -556,6 +580,8 @@ export default function ProjectEditPage({ Nav }) {
     setCutoutDone(false)
     setCutoutBusy(false)
     try {
+      // Load into engine + create player layer if missing + notify Layers panel
+      await api.setImageSlot?.('player', url)
       await api.setPayload?.({
         template: projectId,
         preserve_layout: true,
@@ -564,8 +590,16 @@ export default function ProjectEditPage({ Nav }) {
         text: { ...text },
         colors: { ...colors },
       })
-    } catch (_) {}
+      syncFieldsFromEngine()
+    } catch (e) {
+      setStatus(e.message || 'Player image failed to load on canvas')
+      return
+    }
     const frame = api.getImageFrame?.('player') || {}
+    if (!frame?.layerId) {
+      setStatus('No player frame on this template — cannot open smart crop')
+      return
+    }
     setSmartCrop({
       key: 'player',
       src: url,
@@ -573,6 +607,7 @@ export default function ProjectEditPage({ Nav }) {
       frameW: frame.w || 560,
       frameH: frame.h || 1017,
     })
+    setStatus('Player image on canvas · adjust crop then Apply fit')
   }
 
   async function onSmartCropRemoveBg() {
@@ -601,11 +636,13 @@ export default function ProjectEditPage({ Nav }) {
   async function onSmartCropApply({ zoom, cropX, cropY, bake }) {
     if (!api || !smartCrop) return
     try {
-      await apply(true, { resetLayout: false })
+      const live = api.getImageSlot?.('player')?.src || images.player || smartCrop.src
+      if (live) await api.setImageSlot?.('player', live)
       await api.applySmartCrop?.(smartCrop.key, { zoom, cropX, cropY, bake })
       let srcOut = api.getImageSlot?.('player')?.src
       if (bake !== false && srcOut) srcOut = await persistProcessedImage('player', srcOut)
       if (srcOut) setImages((img) => ({ ...img, player: srcOut }))
+      syncFieldsFromEngine()
       setSmartCrop(null)
       setStatus('Player crop applied')
     } catch (e) {

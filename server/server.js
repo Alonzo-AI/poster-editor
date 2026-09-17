@@ -421,8 +421,9 @@ app.post('/api/uploads', (req, res) => {
       )
 
       const s3Url = publicObjectUrl(key)
-      // Prefer proxied URL so private buckets still render in the editor / export.
-      const url = S3_PUBLIC_BASE_URL ? s3Url : mediaUrl(key)
+      // Always return the proxied /api/media URL for canvas (CORS-safe with crossOrigin).
+      // s3Url remains available for callers that want the direct object URL.
+      const url = mediaUrl(key)
       console.log(`[api] s3 upload ok key=${key} ~${Math.round(file.buffer.length / 1024)}KB`)
       res.json({
         ok: true,

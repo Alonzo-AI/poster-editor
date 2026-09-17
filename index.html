@@ -5583,13 +5583,13 @@ function findImageLayerId(bind){
   return null;
 }
 /**
- * Many templates list logo/conference in swapImages but have no canvas layer.
+ * Many templates list logo/conference/player in swapImages but have no canvas layer.
  * Create a visible layer on upload so the image actually appears on the poster.
  * opts.select — select the new layer (default true for upload UX).
  */
 function ensureImageSlotLayer(bind, opts={}){
   const key=String(bind||"");
-  if(!["logo","conference","sponsor"].includes(key)) return findImageLayerId(key);
+  if(!["player","logo","conference","sponsor"].includes(key)) return findImageLayerId(key);
   const existing=findImageLayerId(key);
   if(existing){
     revealImageLayers(key);
@@ -5598,6 +5598,8 @@ function ensureImageSlotLayer(bind, opts={}){
   const t=state.template;
   if(!t) return null;
   const defaults={
+    // Match common player poster frame; logo/conference/sponsor sit in corners
+    player:{ x:12, y:226, w:598, h:899, z:12 },
     logo:{ x:48, y:48, w:160, h:160, z:21 },
     conference:{ x:860, y:48, w:160, h:80, z:21 },
     sponsor:{ x:48, y:1240, w:180, h:80, z:21 },
@@ -5629,7 +5631,7 @@ function ensureImageSlotLayer(bind, opts={}){
     x:def.x, y:def.y, w:def.w, h:def.h, z:def.z,
     fit:"contain", zoom:1, cropX:0.5, cropY:0.5,
     // Hide until an image is uploaded — avoids empty frames disturbing the layout
-    hidden:true, opacity:1, lockAspect:true,
+    hidden:true, opacity:1, lockAspect:key!=="player",
   });
   if(opts.select!==false){
     try{ select(id); }catch(_){}
@@ -7473,6 +7475,7 @@ function loadImageFromUrl(key, url){
       else if(key==="player") applyTemplateHeaderColors();
       else if(key==="logo" && state.autoPalette && shouldUseLogoPaletteForTemplate(state.template)) applyPaletteFromLogo();
       buildAssets(); buildLogoControls(); render(); scheduleSave();
+      try{ notifyEditorBridge("image"); }catch(_){}
       resolve();
     };
     im.onerror=()=>reject(new Error("Failed to load image: "+url));
@@ -8094,6 +8097,8 @@ window.__RENDER_API_V3__={
       fields:templateInputFields(id),
       images:templateImageSlots(id),
       automation:TEMPLATES[id]?._json?.automation||null,
+      // Editor-saved brand so Automate can seed text primary/secondary without teal defaults
+      brandColors:TEMPLATES[id]?._json?.settings?.brandColors||null,
     }));
   },
   listTemplateCategories(){
@@ -8841,6 +8846,8 @@ window.__RENDER_API_V3__={
    */
   async applySmartCrop(bind="player", opts={}){
     const key=bind||"player";
+    // Team / no-image templates often omit a player layer — create one so Apply fit works
+    try{ ensureImageSlotLayer(key, { select:false }); }catch(_){}
     const frame=window.__RENDER_API_V3__.getImageFrame(key);
     if(!frame?.layerId) throw new Error("No image frame on this template");
     const im=imagesOf()?.[key];
@@ -8909,6 +8916,8 @@ window.__RENDER_API_V3__={
   },
   async setImageSlot(key, dataUrl){
     if(!key || !dataUrl) return buildEditorSnapshot();
+    // Create missing player/logo/… frame before load so Apply fit + Layers work
+    try{ ensureImageSlotLayer(key, { select:false }); }catch(_){}
     await loadImageFromUrl(key, dataUrl);
     notifyEditorBridge("image");
     return buildEditorSnapshot();
