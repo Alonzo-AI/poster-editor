@@ -12,6 +12,10 @@ import { normalizeTeamKey, normalizeTeamLabel } from '../lib/templateTeam.js'
 
 const CHECK_DROPDOWN_KEYS = new Set(['final_check', 'poster_check'])
 const CHECK_OPTIONS = ['pass', 'fail', 'not sure', 'not done']
+const UI_COLUMN_LABELS = {
+  final_check: 'Final Check - Alonzo',
+  poster_check: 'Final Check - Samina',
+}
 const WIDE_KEYS = new Set(['story', 'core_story', 'notes', 'canva_link'])
 const MIN_COL_W = 72
 const MAX_COL_W = 560
@@ -381,7 +385,9 @@ export default function QaGraphicsFolderPage({ Nav }) {
                   className="relative sticky top-0 z-10 border-b border-r border-line bg-inset px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-dim"
                   title="Drag the right edge to resize"
                 >
-                  <span className="block truncate pr-2">{col.label || col.key}</span>
+                  <span className="block truncate pr-2">
+                    {UI_COLUMN_LABELS[col.key] || col.label || col.key}
+                  </span>
                   <span
                     role="separator"
                     aria-orientation="vertical"

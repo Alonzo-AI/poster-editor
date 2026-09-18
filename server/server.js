@@ -18,6 +18,7 @@ import mongoose from 'mongoose'
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { createExternalApiRouter } from './routes/externalApi.js'
 import { createQaGraphicsRouter } from './routes/qaGraphics.js'
+import { createAutoStoriesRouter } from './routes/autoStories.js'
 import { initQaPg } from './lib/qaPg.js'
 
 const PORT = Number(process.env.PORT || 8787)
@@ -1150,6 +1151,9 @@ app.use(
 
 /* ---------- QA Graphics Testing (Postgres spreadsheet — additive only) ---------- */
 app.use('/api/qa-graphics', createQaGraphicsRouter())
+
+/* ---------- Auto Stories → LLM → QA folder (additive only) ---------- */
+app.use('/api/auto-stories', createAutoStoriesRouter())
 
 async function main() {
   // Force DB name even if URI omits the path (Atlas default is "test")

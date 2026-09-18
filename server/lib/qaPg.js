@@ -19,9 +19,9 @@ export const DEFAULT_QA_COLUMNS = [
   { id: 'class_positon', key: 'class_positon', label: 'class_positon' },
   { id: 'rank', key: 'rank', label: 'rank' },
   { id: 'story', key: 'story', label: 'story' },
-  { id: 'final_check', key: 'final_check', label: 'FINAL CHECK' },
+  { id: 'final_check', key: 'final_check', label: 'Final Check - Alonzo' },
   { id: 'canva_link', key: 'canva_link', label: 'CANVA LINK' },
-  { id: 'poster_check', key: 'poster_check', label: 'POSTER CHECK' },
+  { id: 'poster_check', key: 'poster_check', label: 'Final Check - Samina' },
   { id: 'notes', key: 'notes', label: 'NOTES' },
 ]
 

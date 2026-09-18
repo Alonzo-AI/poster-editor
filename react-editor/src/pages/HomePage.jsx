@@ -68,7 +68,7 @@ export default function HomePage({ Nav }) {
           </Link>
           <Link
             to="/qa-graphics"
-            className="rounded-2xl border border-line bg-panel p-5 shadow-sm transition hover:border-blaze/40 sm:col-span-2 lg:col-span-1"
+            className="rounded-2xl border border-line bg-panel p-5 shadow-sm transition hover:border-blaze/40"
           >
             <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-dim">
               QA Graphics Testing
@@ -76,6 +76,18 @@ export default function HomePage({ Nav }) {
             <div className="mt-2 text-lg font-semibold text-paper">Excel-like sheets</div>
             <p className="mt-2 text-[13px] text-muted">
               Named folders, each with its own spreadsheet — saves to Postgres when connected.
+            </p>
+          </Link>
+          <Link
+            to="/auto-stories"
+            className="rounded-2xl border border-line bg-panel p-5 shadow-sm transition hover:border-blaze/40"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-dim">
+              Auto select stories
+            </div>
+            <div className="mt-2 text-lg font-semibold text-paper">Stories → QA sheet</div>
+            <p className="mt-2 text-[13px] text-muted">
+              Run LLM extract on combined stories and fill a new QA Graphics folder automatically.
             </p>
           </Link>
         </section>
