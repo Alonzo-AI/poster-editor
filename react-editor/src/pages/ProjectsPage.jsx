@@ -29,7 +29,9 @@ const CATEGORY_LABEL = {
   player: 'Player',
   team: 'Team',
   player_no_image: 'No image',
-  nostalgia: 'Nostalgia',
+  nostalgia_player: 'Nostalgia player',
+  nostalgia_team: 'Nostalgia team',
+  nostalgia: 'Nostalgia team', // legacy
 }
 
 /** Stable folder id stored on each project (per CSV run, or legacy YYYY-MM-DD). */

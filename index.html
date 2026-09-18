@@ -1583,13 +1583,16 @@ const TEMPLATE_CATEGORIES = [
   { id:"player", label:"Player poster" },
   { id:"team", label:"Team poster" },
   { id:"player_no_image", label:"Player (no image)" },
-  { id:"nostalgia", label:"Nostalgia" },
+  { id:"nostalgia_player", label:"Nostalgia player" },
+  { id:"nostalgia_team", label:"Nostalgia team" },
 ];
 function normalizeTemplateCategory(raw){
   const v=String(raw||"").trim().toLowerCase().replace(/[\s-]+/g,"_");
   if(v==="team"||v==="team_poster") return "team";
   if(v==="player_no_image"||v==="player_noimage"||v==="no_image"||v==="player_without_image") return "player_no_image";
-  if(v==="nostalgia"||v==="nostalgic") return "nostalgia";
+  // Legacy "nostalgia" → nostalgia_team; accept hyphen/underscore forms
+  if(v==="nostalgia_team"||v==="nostalgia"||v==="nostalgic") return "nostalgia_team";
+  if(v==="nostalgia_player") return "nostalgia_player";
   return "player";
 }
 const UNASSIGNED_TEAM_KEY="__unassigned__";
@@ -1623,8 +1626,8 @@ function templateCategoryOf(templateId){
 function blankLayersForCategory(category){
   const cat=normalizeTemplateCategory(category);
   const bg={ id:"bgImage", type:"image", bind:"background", x:0, y:0, w:SW, h:SH, z:1, fit:"cover", cropX:0.5, cropY:0.5 };
-  if(cat==="team"){
-    // New Team templates only — CSV-aligned binds (does not rewrite existing DB templates).
+  if(cat==="team"||cat==="nostalgia_team"){
+    // New Team / Nostalgia-team templates only — CSV-aligned binds (does not rewrite existing DB templates).
     return {
       layers:[
         bg,
@@ -1682,9 +1685,9 @@ function blankLayersForCategory(category){
       },
     };
   }
-  // New Player templates only — CSV-aligned fixed text binds (does not rewrite existing DB templates).
+  // New Player / Nostalgia-player templates only — CSV-aligned fixed text binds (does not rewrite existing DB templates).
   // Default canvas text = field label so boxes are visible (not empty, not leaked Automate fills).
-  if(cat==="player"){
+  if(cat==="player"||cat==="nostalgia_player"){
     return {
       layers:[
         bg,
@@ -1715,19 +1718,18 @@ function blankLayersForCategory(category){
       },
     };
   }
-  // nostalgia (unchanged starter — player photo + logos + name only)
+  // Fallback for unknown categories
   return {
     layers:[
       bg,
-      { id:"player", type:"image", bind:"player", x:240, y:180, w:600, h:900, z:12, fit:"contain", cropX:0.5, cropY:0.4, zoom:1 },
       { id:"logo", type:"image", bind:"logo", x:48, y:48, w:160, h:160, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
       { id:"conference", type:"image", bind:"conference", x:860, y:48, w:160, h:80, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
-      { id:"title", type:"text", bind:"playerName", label:"Player name", x:60, y:1120, w:960, h:100, size:56, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
+      { id:"title", type:"text", bind:"player_name", label:"Player name", x:60, y:1120, w:960, h:100, size:56, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
     ],
-    swapFields:["playerName"],
-    swapImages:["player","logo","conference","sponsor","background"],
-    fieldLabels:{ playerName:"Player name" },
-    seedText:{ playerName:"PLAYER NAME" },
+    swapFields:["player_name"],
+    swapImages:["logo","conference","sponsor","background"],
+    fieldLabels:{ player_name:"Player name" },
+    seedText:{ player_name:"Player name" },
   };
 }
 
@@ -9280,10 +9282,10 @@ function templateImageSlots(templateId){
   // Lite / incomplete templates: still expose category-appropriate uploads in Automate
   if(!keys.length){
     const cat=normalizeTemplateCategory(t._json?.category ?? t.category);
-    if(cat==="team"||cat==="player_no_image"){
+    if(cat==="team"||cat==="player_no_image"||cat==="nostalgia_team"){
       ["logo","conference","sponsor","background"].forEach(add);
     } else {
-      // player + nostalgia
+      // player + nostalgia_player
       ["player","logo","conference","sponsor","background"].forEach(add);
     }
   }

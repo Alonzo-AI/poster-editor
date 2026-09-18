@@ -7,7 +7,9 @@ const CAT_LABEL = {
   player: 'Player',
   team: 'Team',
   player_no_image: 'No image',
-  nostalgia: 'Nostalgia',
+  nostalgia_player: 'Nostalgia player',
+  nostalgia_team: 'Nostalgia team',
+  nostalgia: 'Nostalgia team', // legacy display
 }
 
 /**

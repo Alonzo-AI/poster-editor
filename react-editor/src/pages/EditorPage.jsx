@@ -96,7 +96,8 @@ export default function EditorPage({ Nav }) {
     { id: 'player', label: 'Player' },
     { id: 'team', label: 'Team' },
     { id: 'player_no_image', label: 'No image' },
-    { id: 'nostalgia', label: 'Nostalgia' },
+    { id: 'nostalgia_player', label: 'Nostalgia player' },
+    { id: 'nostalgia_team', label: 'Nostalgia team' },
   ]
 
   const teamOptions = useMemo(() => {
@@ -653,7 +654,13 @@ export default function EditorPage({ Nav }) {
     setTplMoveTeamOpen(false)
     setTplMoveCategoryOpen(false)
     if (!t?.id || !nextCategory) return
-    const category = ['player', 'team', 'player_no_image', 'nostalgia'].includes(nextCategory)
+    const category = [
+      'player',
+      'team',
+      'player_no_image',
+      'nostalgia_player',
+      'nostalgia_team',
+    ].includes(nextCategory)
       ? nextCategory
       : null
     if (!category) {
@@ -858,7 +865,13 @@ export default function EditorPage({ Nav }) {
         const liveMeta =
           (api.listTemplates?.() || []).find((t) => t.id === id) || listed || null
         const catRaw = String(json.category ?? liveMeta?.category ?? 'player').trim()
-        json.category = ['player', 'team', 'player_no_image', 'nostalgia'].includes(catRaw)
+        json.category = [
+          'player',
+          'team',
+          'player_no_image',
+          'nostalgia_player',
+          'nostalgia_team',
+        ].includes(catRaw)
           ? catRaw
           : 'player'
         const teamKey = normalizeTeamKey(

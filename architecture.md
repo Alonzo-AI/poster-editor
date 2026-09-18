@@ -35,7 +35,7 @@ Vanilla `index.html` / `automate.html` remain rollback. Prefer React for UI work
 |---|---|
 | **Canvas size** | Always **1080×1350**. Zoom is CSS only; export ignores zoom. |
 | **Paint ownership** | Stage paint/drag/bake live in `index.html`. React is chrome only. |
-| **Category ≠ college** | `category` = poster type (`player` \| `team` \| `player_no_image` \| `nostalgia`). `teamKey` / `teamLabel` = **college folder**. Never conflate them. |
+| **Category ≠ college** | `category` = poster type (`player` \| `team` \| `player_no_image` \| `nostalgia_player` \| `nostalgia_team`). `teamKey` / `teamLabel` = **college folder**. Never conflate them. |
 | **Save ≠ filter** | **Save** keeps the **active template’s** `teamKey` / `teamLabel` / `category`. Sidebar `formatTeamKey` / `formatCategory` are **filters only** — never use them to reassign ownership on Save. |
 | **Create vs Save vs Move** | **+ Add** may use the selected college/category. **Save** never moves college. **Move to team** (or explicit meta PATCH) is the only college reassignment. |
 | **Upsert by id** | `PUT/POST /api/templates` overwrites the same Mongo doc for that `id`. Do not invent a new id on normal Save. |
@@ -167,7 +167,7 @@ Loader + Save fill `TEMPLATES[id]` with `{ name, _json, stageBg, deco, layers }`
 
 ```
 Team folder (teamKey)          ← college, e.g. east_carolina
-  └── Category (category)      ← player | team | player_no_image | nostalgia
+  └── Category (category)      ← player | team | player_no_image | nostalgia_player | nostalgia_team
         └── Template (id)      ← slug id, upsert target
 ```
 

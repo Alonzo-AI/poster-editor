@@ -38,7 +38,7 @@ const templateSchema = new mongoose.Schema(
     name: { type: String, required: true },
     category: {
       type: String,
-      enum: ['player', 'team', 'player_no_image', 'nostalgia'],
+      enum: ['player', 'team', 'player_no_image', 'nostalgia_player', 'nostalgia_team'],
       default: 'player',
       index: true,
     },
@@ -77,7 +77,7 @@ const projectSchema = new mongoose.Schema(
     name: { type: String, required: true },
     category: {
       type: String,
-      enum: ['player', 'team', 'player_no_image', 'nostalgia'],
+      enum: ['player', 'team', 'player_no_image', 'nostalgia_player', 'nostalgia_team'],
       default: 'player',
       index: true,
     },
@@ -106,7 +106,7 @@ const automateSaveSchema = new mongoose.Schema(
     name: { type: String, required: true },
     category: {
       type: String,
-      enum: ['player', 'team', 'player_no_image', 'nostalgia'],
+      enum: ['player', 'team', 'player_no_image', 'nostalgia_player', 'nostalgia_team'],
       default: 'player',
       index: true,
     },
@@ -138,7 +138,9 @@ function normalizeCategory(raw) {
   ) {
     return 'player_no_image'
   }
-  if (v === 'nostalgia' || v === 'nostalgic') return 'nostalgia'
+  // Legacy nostalgia → nostalgia_team; accept hyphen/underscore forms
+  if (v === 'nostalgia_team' || v === 'nostalgia' || v === 'nostalgic') return 'nostalgia_team'
+  if (v === 'nostalgia_player') return 'nostalgia_player'
   return 'player'
 }
 

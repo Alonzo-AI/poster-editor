@@ -4,7 +4,13 @@
  */
 
 const UNASSIGNED = '__unassigned__'
-const BULK_CATEGORIES = ['player', 'team', 'player_no_image', 'nostalgia']
+const BULK_CATEGORIES = [
+  'player',
+  'team',
+  'player_no_image',
+  'nostalgia_player',
+  'nostalgia_team',
+]
 
 const HEADER_ALIASES = {
   college: 'college',
@@ -45,14 +51,20 @@ const CATEGORY_ALIASES = {
   no_image: 'player_no_image',
   noimage: 'player_no_image',
   'no image': 'player_no_image',
-  nostalgia: 'nostalgia',
+  nostalgia: 'nostalgia_team',
+  nostalgic: 'nostalgia_team',
+  nostalgia_team: 'nostalgia_team',
+  'nostalgia-team': 'nostalgia_team',
+  nostalgia_player: 'nostalgia_player',
+  'nostalgia-player': 'nostalgia_player',
 }
 
 const BULK_PREFERRED_BASE_IDS = {
   utsa: {
     player: 'UTSA',
     team: 'UTSA_2',
-    nostalgia: 'UTSA_3',
+    nostalgia_team: 'UTSA_3',
+    nostalgia_player: null,
     player_no_image: null,
   },
 }

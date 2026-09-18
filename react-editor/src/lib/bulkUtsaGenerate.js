@@ -5,14 +5,21 @@
 
 import { normalizeTeamKey, normalizeTeamLabel } from './templateTeam.js'
 
-export const BULK_CATEGORIES = ['player', 'team', 'player_no_image', 'nostalgia']
+export const BULK_CATEGORIES = [
+  'player',
+  'team',
+  'player_no_image',
+  'nostalgia_player',
+  'nostalgia_team',
+]
 
 /** Known preferred base template ids for UTSA (legacy). Other teams use first non-bulk template per category. */
 export const BULK_PREFERRED_BASE_IDS = {
   utsa: {
     player: 'UTSA',
     team: 'UTSA_2',
-    nostalgia: 'UTSA_3',
+    nostalgia_team: 'UTSA_3',
+    nostalgia_player: null,
     player_no_image: null,
   },
 }
@@ -62,7 +69,12 @@ const CATEGORY_ALIASES = {
   noimage: 'player_no_image',
   'no image': 'player_no_image',
   'no player': 'player_no_image',
-  nostalgia: 'nostalgia',
+  nostalgia: 'nostalgia_team',
+  nostalgic: 'nostalgia_team',
+  nostalgia_team: 'nostalgia_team',
+  'nostalgia-team': 'nostalgia_team',
+  nostalgia_player: 'nostalgia_player',
+  'nostalgia-player': 'nostalgia_player',
 }
 
 function normHeader(h) {
