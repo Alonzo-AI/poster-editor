@@ -1695,15 +1695,17 @@ function blankLayersForCategory(category){
         { id:"logo", type:"image", bind:"logo", x:48, y:48, w:160, h:160, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
         { id:"conference", type:"image", bind:"conference", x:860, y:48, w:160, h:80, z:21, fit:"contain", cropX:0.5, cropY:0.5 },
         { id:"player_name", type:"text", bind:"player_name", label:"Player name", x:60, y:900, w:960, h:72, size:52, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Player name" },
-        { id:"stat_name", type:"text", bind:"stat_name", label:"Stat name", x:60, y:980, w:960, h:48, size:28, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat name" },
-        { id:"stat_value", type:"text", bind:"stat_value", label:"Stat value", x:60, y:1032, w:960, h:56, size:40, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat value" },
-        { id:"story", type:"text", bind:"story", label:"Story", x:80, y:1100, w:920, h:80, size:22, weight:500, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Story" },
-        { id:"opponent_score", type:"text", bind:"opponent_score", label:"Opponent score", x:60, y:1190, w:960, h:48, size:26, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Opponent score" },
+        { id:"class_position", type:"text", bind:"class_position", label:"Class position", x:60, y:968, w:960, h:40, size:22, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Class position" },
+        { id:"stat_name", type:"text", bind:"stat_name", label:"Stat name", x:60, y:1020, w:960, h:48, size:28, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat name" },
+        { id:"stat_value", type:"text", bind:"stat_value", label:"Stat value", x:60, y:1072, w:960, h:56, size:40, weight:800, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Stat value" },
+        { id:"story", type:"text", bind:"story", label:"Story", x:80, y:1135, w:920, h:80, size:22, weight:500, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Story" },
+        { id:"opponent_score", type:"text", bind:"opponent_score", label:"Opponent score", x:60, y:1225, w:960, h:48, size:26, weight:600, align:"center", color:"white", font:"sans", z:20, manualSize:true, placeholder:"Opponent score" },
       ],
-      swapFields:["player_name","stat_name","stat_value","story","opponent_score"],
+      swapFields:["player_name","class_position","stat_name","stat_value","story","opponent_score"],
       swapImages:["player","logo","conference","sponsor","background"],
       fieldLabels:{
         player_name:"Player name",
+        class_position:"Class position",
         stat_name:"Stat name",
         stat_value:"Stat value",
         story:"Story",
@@ -1711,6 +1713,7 @@ function blankLayersForCategory(category){
       },
       seedText:{
         player_name:"Player name",
+        class_position:"Class position",
         stat_name:"Stat name",
         stat_value:"Stat value",
         story:"Story",
@@ -4363,6 +4366,7 @@ function labelFor(bind){
     player:"Player image", background:"Background", logo:"Team logo",
     conference:"Conference logo", sponsor:"Sponsor logo", calloutBox:"Callout box",
     teamName:"Team / match line", playerName:"Player name", playerMeta:"Class | Position",
+    class_position:"Class position",
     hashtag:"Date / hashtag", heroNumber:"Hero number", heroDesc:"Hero description",
     callout:"Callout", eyebrow:"Eyebrow", footer:"Footer",
   })[bind] || bind;
@@ -4521,8 +4525,22 @@ function snapRotateDeg(deg, excludeId){
   }
   return best!=null ? { rotate:best, snapped:true } : { rotate:normalizeRotateDeg(deg), snapped:false };
 }
+let _nudgeGuideTimer=0;
 function clearAlignGuides(){
+  if(_nudgeGuideTimer){ clearTimeout(_nudgeGuideTimer); _nudgeGuideTimer=0; }
   document.getElementById("alignGuidesOverlay")?.remove();
+}
+/** Same 4-side spacing pills as mouse-move; used after arrow-key nudge (render clears overlay). */
+function showNudgeSpacingGuides(id){
+  const def=layersOf()[id], g=geo(id);
+  if(!def||!g||g.hidden) return;
+  const live=layerBox(g, def);
+  renderAlignGuides([], [], computeSideSpacings(live, id));
+  if(_nudgeGuideTimer) clearTimeout(_nudgeGuideTimer);
+  _nudgeGuideTimer=setTimeout(()=>{
+    _nudgeGuideTimer=0;
+    document.getElementById("alignGuidesOverlay")?.remove();
+  }, 700);
 }
 /** Visible layer boxes for align/spacing (excludes hidden + self). */
 function collectVisibleBoxes(excludeId){
@@ -7622,11 +7640,12 @@ document.addEventListener("keydown",(e)=>{
   const id=state.selected; if(!id || !layersOf()[id]) return;
   const def=layersOf()[id], g=geo(id), step=e.shiftKey?10:1;
   let act=true;
+  let nudgeMove=false;
   switch(e.key){
-    case "ArrowLeft":  if(g.locked){ act=false; break; } pushUndo(); g.x-=step; break;
-    case "ArrowRight": if(g.locked){ act=false; break; } pushUndo(); g.x+=step; break;
-    case "ArrowUp":    if(g.locked){ act=false; break; } pushUndo(); g.y-=step; break;
-    case "ArrowDown":  if(g.locked){ act=false; break; } pushUndo(); g.y+=step; break;
+    case "ArrowLeft":  if(g.locked){ act=false; break; } pushUndo(); g.x-=step; nudgeMove=true; break;
+    case "ArrowRight": if(g.locked){ act=false; break; } pushUndo(); g.x+=step; nudgeMove=true; break;
+    case "ArrowUp":    if(g.locked){ act=false; break; } pushUndo(); g.y-=step; nudgeMove=true; break;
+    case "ArrowDown":  if(g.locked){ act=false; break; } pushUndo(); g.y+=step; nudgeMove=true; break;
     case "Delete":
       pushUndo(); g.hidden=true; select(null);
       buildTextFields(); buildCaptionColorControls();
@@ -7643,7 +7662,13 @@ document.addEventListener("keydown",(e)=>{
     case "h": case "H": if(g.locked){ act=false; break; } if(def.type==="image"){ pushUndo(); g.flipH=!g.flipH; } else act=false; break;
     default: act=false;
   }
-  if(act){ e.preventDefault(); render(); scheduleSave(); }
+  if(act){
+    e.preventDefault();
+    render();
+    scheduleSave();
+    // Arrow nudge: show same spacing numbers as mouse-move (no snap / position change)
+    if(nudgeMove && state.selected) showNudgeSpacingGuides(state.selected);
+  }
 });
 document.getElementById("autoPal")?.addEventListener("change", (e)=>{
   state.autoPalette=!!e.target.checked;

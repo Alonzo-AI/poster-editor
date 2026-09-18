@@ -9,7 +9,7 @@ export default function HomePage({ Nav }) {
       <header className="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line bg-panel px-4">
         <div>
           <div className="text-sm font-semibold text-paper">Poster Lab</div>
-          <div className="text-[11px] text-muted">Design · Automate · Projects · Saves</div>
+          <div className="text-[11px] text-muted">Design · Automate · Projects · Saves · QA</div>
         </div>
         {Nav ? <Nav /> : null}
       </header>
@@ -23,7 +23,7 @@ export default function HomePage({ Nav }) {
           </p>
         </section>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Link
             to="/"
             className="rounded-2xl border border-line bg-panel p-5 shadow-sm transition hover:border-blaze/40"
@@ -64,6 +64,18 @@ export default function HomePage({ Nav }) {
             <div className="mt-2 text-lg font-semibold text-paper">Saved from Automate</div>
             <p className="mt-2 text-[13px] text-muted">
               Posters you Save in Automate — separate from templates and CSV Projects.
+            </p>
+          </Link>
+          <Link
+            to="/qa-graphics"
+            className="rounded-2xl border border-line bg-panel p-5 shadow-sm transition hover:border-blaze/40 sm:col-span-2 lg:col-span-1"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-dim">
+              QA Graphics Testing
+            </div>
+            <div className="mt-2 text-lg font-semibold text-paper">Excel-like sheets</div>
+            <p className="mt-2 text-[13px] text-muted">
+              Named folders, each with its own spreadsheet — saves to Postgres when connected.
             </p>
           </Link>
         </section>

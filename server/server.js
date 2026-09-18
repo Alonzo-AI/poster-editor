@@ -17,6 +17,8 @@ import multer from 'multer'
 import mongoose from 'mongoose'
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { createExternalApiRouter } from './routes/externalApi.js'
+import { createQaGraphicsRouter } from './routes/qaGraphics.js'
+import { initQaPg } from './lib/qaPg.js'
 
 const PORT = Number(process.env.PORT || 8787)
 const MONGODB_URI =
@@ -1146,12 +1148,19 @@ app.use(
   }),
 )
 
+/* ---------- QA Graphics Testing (Postgres spreadsheet — additive only) ---------- */
+app.use('/api/qa-graphics', createQaGraphicsRouter())
+
 async function main() {
   // Force DB name even if URI omits the path (Atlas default is "test")
   const dbName = process.env.MONGODB_DB || 'narrative_styles'
   console.log('[api] connecting…', redactUri(MONGODB_URI), '→ db', dbName)
   await mongoose.connect(MONGODB_URI, { dbName })
   console.log('[api] Mongo connected · db=', mongoose.connection.name)
+  // Optional Postgres for QA sheet — failure must not block Editor/Automate/Projects
+  await initQaPg().catch((err) => {
+    console.error('[qa-pg] init error (non-fatal):', err?.message || err)
+  })
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[api] http://127.0.0.1:${PORT} (also 0.0.0.0:${PORT})`)
   })

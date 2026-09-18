@@ -8,6 +8,8 @@ const ProjectsPage = lazy(() => import('./pages/ProjectsPage.jsx'))
 const ProjectEditPage = lazy(() => import('./pages/ProjectEditPage.jsx'))
 const AutomateSavesPage = lazy(() => import('./pages/AutomateSavesPage.jsx'))
 const AutomateSaveEditPage = lazy(() => import('./pages/AutomateSaveEditPage.jsx'))
+const QaGraphicsPage = lazy(() => import('./pages/QaGraphicsPage.jsx'))
+const QaGraphicsFolderPage = lazy(() => import('./pages/QaGraphicsFolderPage.jsx'))
 
 function ShellNav() {
   return (
@@ -65,6 +67,16 @@ function ShellNav() {
       >
         Saves
       </NavLink>
+      <NavLink
+        to="/qa-graphics"
+        className={({ isActive }) =>
+          `rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+            isActive ? 'bg-panel text-paper shadow-sm' : 'text-dim hover:text-paper'
+          }`
+        }
+      >
+        QA
+      </NavLink>
     </nav>
   )
 }
@@ -91,6 +103,8 @@ export default function App() {
           <Route path="/projects/:id" element={<ProjectEditPage Nav={ShellNav} />} />
           <Route path="/automate-saves" element={<AutomateSavesPage Nav={ShellNav} />} />
           <Route path="/automate-saves/:id" element={<AutomateSaveEditPage Nav={ShellNav} />} />
+          <Route path="/qa-graphics" element={<QaGraphicsPage Nav={ShellNav} />} />
+          <Route path="/qa-graphics/:folderId" element={<QaGraphicsFolderPage Nav={ShellNav} />} />
         </Routes>
       </Suspense>
     </div>

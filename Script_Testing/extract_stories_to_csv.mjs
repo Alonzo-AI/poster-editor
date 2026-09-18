@@ -248,6 +248,47 @@ function parseJsonObject(text) {
   }
 }
 
+/** Poster story_context: fold "in a game in the SBC…" → "IN A SBC GAME THIS SEASON". */
+function normalizeStoryContext(raw) {
+  let s = String(raw || '').trim()
+  if (!s) return ''
+  s = s
+    .replace(/\bsun belt conference\b/gi, 'SBC')
+    .replace(/\bsoutheastern conference\b/gi, 'SEC')
+    .replace(/\bamerican athletic conference\b/gi, 'AAC')
+    .replace(/\bmountain west conference\b/gi, 'MWC')
+    .replace(/\bin the country\b/gi, 'NCAA')
+  // "in a game in the SBC this season so far" → "in a SBC game this season"
+  s = s.replace(
+    /\bin a game in the\s+(SBC|SEC|AAC|MWC|NCAA|Big Sky|Pac-12|PFL|Patriot|FCS)\b(?:\s+this season(?:\s+so far)?)?/gi,
+    'IN A $1 GAME THIS SEASON',
+  )
+  s = s.replace(
+    /\bin a game in the\s+(SBC|SEC|AAC|MWC|NCAA|Big Sky|Pac-12|PFL|Patriot|FCS)\b/gi,
+    'IN A $1 GAME',
+  )
+  // Already almost right but lowercase / still has "so far"
+  s = s.replace(
+    /\bin a\s+(SBC|SEC|AAC|MWC|NCAA|Big Sky|Pac-12|PFL|Patriot|FCS)\s+game(?:\s+this season)?(?:\s+so far)?/gi,
+    'IN A $1 GAME THIS SEASON',
+  )
+  s = s.replace(/\bin the\s+(SBC|SEC|AAC|MWC)\s+this week\b/gi, 'IN THE $1 THIS WEEK')
+  s = s.replace(/\bin\s+(SBC|SEC|AAC|MWC)\s+this week\b/gi, 'IN THE $1 THIS WEEK')
+  s = s.replace(/\s+so far\b/gi, '')
+  return s.replace(/\s+/g, ' ').trim().toUpperCase()
+}
+
+function normalizeCombinedStory(story, rank) {
+  const full = String(story || '').trim()
+  const r = String(rank || '').trim()
+  if (r && full.toLowerCase().startsWith(r.toLowerCase())) {
+    const rest = full.slice(r.length).trim()
+    const ctx = normalizeStoryContext(rest)
+    return ctx ? `${r} ${ctx}` : r
+  }
+  return normalizeStoryContext(full) || full
+}
+
 async function extractWithLlm(story, promptTemplate, cfg) {
   const prompt = buildLlmPrompt(promptTemplate, story)
   const url = `${cfg.baseUrl.replace(/\/$/, '')}/chat/completions`
@@ -289,9 +330,10 @@ async function extractWithLlm(story, promptTemplate, cfg) {
 
   // Sheet rule: poster story = rank + story_context (LLM returns them split)
   const rank = String(parsed.rank || row.rank || '').trim()
-  const ctx = String(
+  let ctx = String(
     parsed.story_context || parsed.story_qualifier || parsed.context || '',
   ).trim()
+  ctx = normalizeStoryContext(ctx)
   if (rank) row.rank = rank
   if (rank && ctx) {
     row.story = `${rank} ${ctx}`.replace(/\s+/g, ' ').trim()
@@ -300,8 +342,8 @@ async function extractWithLlm(story, promptTemplate, cfg) {
   } else if (ctx && !row.story) {
     row.story = ctx
   } else if (parsed.story != null && String(parsed.story).trim()) {
-    // If model already combined into story, keep it
-    row.story = String(parsed.story).trim()
+    // If model already combined into story, normalize the context half when possible
+    row.story = normalizeCombinedStory(String(parsed.story).trim(), rank)
   }
 
   // Prefer story college/category if LLM left blank
@@ -310,13 +352,24 @@ async function extractWithLlm(story, promptTemplate, cfg) {
     const ent = String(story.entity || story.category || parsed.category || 'player')
       .trim()
       .toLowerCase()
-    row.category = ent === 'team' ? 'team' : 'player'
+      .replace(/\s+/g, '_')
+    if (ent === 'team') row.category = 'team'
+    else if (ent === 'nostalgia' || ent.includes('nostalgia')) row.category = 'nostalgia'
+    else if (ent === 'no_image' || ent === 'player_no_image') row.category = 'player_no_image'
+    else row.category = 'player'
+  } else {
+    const c = String(row.category).trim().toLowerCase().replace(/\s+/g, '_')
+    if (c.includes('nostalgia')) row.category = 'nostalgia'
+    else if (c === 'team') row.category = 'team'
+    else if (c === 'no_image' || c === 'player_no_image') row.category = 'player_no_image'
+    else if (c === 'player') row.category = 'player'
   }
   if (!row.name) {
-    row.name =
-      row.category === 'team'
-        ? row.college || String(story.title || story.id || '').trim()
-        : row.player_name || String(story.title || story.id || '').trim()
+    if (row.category === 'team' || (row.category === 'nostalgia' && !row.player_name)) {
+      row.name = row.college || String(story.title || story.id || '').trim()
+    } else {
+      row.name = row.player_name || String(story.title || story.id || '').trim()
+    }
   }
   return row
 }
